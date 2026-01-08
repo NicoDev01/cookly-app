@@ -1,0 +1,10 @@
+# Environment Variables - .env.example file
+
+# Clerk Authentication
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_YOUR_CLERK_KEY_HERE
+
+# Convex Backend
+VITE_CONVEX_URL=https://your-project-name.convex.cloud
+
+# Google Gemini API (same key works for both dev and prod)
+VITE_GEMINI_API_KEY=AIza_YOUR_GEMINI_API_KEY_HERE
