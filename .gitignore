@@ -22,3 +22,23 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+.env.local.production
+.env.production
+*.key
+*.keystore
+.env.local
+
+# Android signing credentials (contains passwords!)
+android/gradle.properties
+
+# Windows reserved device names
+nul
+out.txt
+err.txt
+
+stripe_backup_code.txt
+
+docs 
+.kilocode
+.claude

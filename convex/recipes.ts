@@ -1,21 +1,207 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, action } from "./_generated/server";
 import { v } from "convex/values";
+import { internal, api } from "./_generated/api";
 
-// List all recipes for current user
+// Helper-Funktion: Authentifizierte Clerk ID abrufen
+async function getAuthenticatedClerkId(ctx: any) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    throw new Error("Not authenticated");
+  }
+  return identity.subject;
+}
+
+// Helper-Funktion: Kategorie-Statistiken aktualisieren
+async function adjustCategoryCount(ctx: any, category: string, amount: number, clerkId: string) {
+  const existing = await ctx.db
+    .query("categoryStats")
+    .withIndex("by_user_category", (q: any) => q.eq("clerkId", clerkId).eq("category", category))
+    .first();
+
+  if (existing) {
+    const newCount = Math.max(0, existing.count + amount);
+    if (newCount === 0) {
+      await ctx.db.delete(existing._id);
+    } else {
+      await ctx.db.patch(existing._id, { count: newCount });
+    }
+  } else if (amount > 0) {
+    await ctx.db.insert("categoryStats", {
+      clerkId,
+      category,
+      count: amount,
+    });
+  }
+}
+
+// Helper-Funktion: Stelle sicher, dass Kategorie in categories Tabelle existiert (mit clerkId!)
+async function ensureCategoryExists(ctx: any, category: string, clerkId: string) {
+  const existing = await ctx.db
+    .query("categories")
+    .withIndex("by_user_name", (q: any) => q.eq("clerkId", clerkId).eq("name", category))
+    .first();
+
+  if (existing) {
+    return; // Kategorie existiert bereits
+  }
+
+  // Max order für diesen User finden
+  const userCategories = await ctx.db
+    .query("categories")
+    .withIndex("by_user", (q: any) => q.eq("clerkId", clerkId))
+    .collect();
+
+  const maxOrder = userCategories.length > 0
+    ? Math.max(...userCategories.map((c: any) => c.order))
+    : 0;
+
+  // Neue Kategorie erstellen (MIT clerkId!)
+  await ctx.db.insert("categories", {
+    clerkId,
+    name: category,
+    icon: "restaurant",
+    color: "#6366f1",
+    order: maxOrder + 1,
+    isActive: true,
+  });
+
+  console.log(`[ensureCategoryExists] ✅ Created category "${category}" for user ${clerkId}`);
+}
+
+// List all recipes for current user (legacy - returns array directly)
 export const list = query({
+  args: {
+    includeIngredients: v.optional(v.boolean()),
+    search: v.optional(v.string()),
+    category: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const clerkId = await getAuthenticatedClerkId(ctx);
+
+    let recipes = await ctx.db
+      .query("recipes")
+      .withIndex("by_user", (q) => q.eq("clerkId", clerkId))
+      .collect();
+
+    // Filter by category if provided
+    if (args.category) {
+      recipes = recipes.filter(r => r.category === args.category);
+    }
+
+    if (args.search) {
+      const lowerQuery = args.search.toLowerCase();
+      recipes = recipes.filter(r =>
+        r.title.toLowerCase().includes(lowerQuery)
+      );
+    }
+
+    // Map recipes to include storage URL if available
+    const recipesWithUrl = await Promise.all(recipes.map(async (r) => {
+      let imageUrl = r.image;
+      if (r.imageStorageId) {
+         const url = await ctx.storage.getUrl(r.imageStorageId);
+         if (url) imageUrl = url;
+      }
+      return { ...r, image: imageUrl };
+    }));
+
+     if (args.includeIngredients === false) {
+      return recipesWithUrl.map(r => ({
+        ...r,
+        ingredients: undefined,
+      }));
+    }
+
+    return recipesWithUrl;
+  },
+});
+
+// List all recipe IDs for current user (for navigation)
+export const listIds = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return [];
-    }
+    const clerkId = await getAuthenticatedClerkId(ctx);
 
     const recipes = await ctx.db
       .query("recipes")
-      .withIndex("by_user", (q) => q.eq("clerkId", identity.subject))
+      .withIndex("by_user", (q) => q.eq("clerkId", clerkId))
       .collect();
 
-    return recipes;
+    return recipes.map(r => r._id);
+  },
+});
+
+// List recipes with pagination support
+export const listPaginated = query({
+  args: {
+    includeIngredients: v.optional(v.boolean()),
+    search: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const clerkId = await getAuthenticatedClerkId(ctx);
+    const limit = args.limit ?? 30;
+
+    let recipes = await ctx.db
+      .query("recipes")
+      .withIndex("by_user", (q) => q.eq("clerkId", clerkId))
+      .collect();
+
+    if (args.search) {
+      const lowerQuery = args.search.toLowerCase();
+      recipes = recipes.filter(r =>
+        r.title.toLowerCase().includes(lowerQuery)
+      );
+    }
+
+    const hasMore = recipes.length > limit;
+    const paginatedRecipes = recipes.slice(0, limit);
+
+    // Map recipes to include storage URL if available
+    const recipesWithUrl = await Promise.all(paginatedRecipes.map(async (r) => {
+      let imageUrl = r.image;
+      if (r.imageStorageId) {
+         const url = await ctx.storage.getUrl(r.imageStorageId);
+         if (url) imageUrl = url;
+      }
+      return { ...r, image: imageUrl };
+    }));
+
+    if (args.includeIngredients === false) {
+      return {
+        recipes: recipesWithUrl.map(r => ({
+          ...r,
+          ingredients: undefined,
+        })),
+        hasMore,
+        total: recipes.length,
+      };
+    }
+
+    return {
+      recipes: recipesWithUrl,
+      hasMore,
+      total: recipes.length,
+    };
+  },
+});
+
+// Get recipe by source URL (for deduplication)
+export const getBySourceUrl = query({
+  args: { url: v.string() },
+  handler: async (ctx, args) => {
+    // Note: This returns the FIRST recipe found with this URL globally.
+    // In a multi-tenant app, you might want to scope this, 
+    // but for deduplication avoiding double-scraping, global check is okay (or check by user).
+    // For now, let's return it regardless of user to prevent re-scraping same content?
+    // Actually, users might want to import the same thing. 
+    // Let's scope it to the user if we want strict privacy, or global if we want cache.
+    // Given the previous code, let's keep it simple: find ANY recipe with this URL.
+    const recipe = await ctx.db
+      .query("recipes")
+      .withIndex("by_sourceUrl", (q) => q.eq("sourceUrl", args.url))
+      .first();
+    return recipe ? recipe._id : null;
   },
 });
 
@@ -23,20 +209,58 @@ export const list = query({
 export const get = query({
   args: { id: v.id("recipes") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return null;
-    }
+    const clerkId = await getAuthenticatedClerkId(ctx);
 
     const recipe = await ctx.db.get(args.id);
 
-    if (!recipe || recipe.clerkId !== identity.subject) {
+    if (!recipe || recipe.clerkId !== clerkId) {
       return null;
+    }
+
+    // Resolve storage URL if exists
+    if (recipe.imageStorageId) {
+      const url = await ctx.storage.getUrl(recipe.imageStorageId);
+      if (url) {
+        return { ...recipe, image: url };
+      }
     }
 
     return recipe;
   },
 });
+
+// Get category stats
+export const getCategoryStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const clerkId = await getAuthenticatedClerkId(ctx);
+
+    const recipes = await ctx.db
+      .query("recipes")
+      .withIndex("by_user", (q) => q.eq("clerkId", clerkId))
+      .collect();
+
+    // Calculate stats
+    const categoryMap = new Map<string, number>();
+    recipes.forEach(recipe => {
+      categoryMap.set(recipe.category, (categoryMap.get(recipe.category) || 0) + 1);
+    });
+
+    const categories = Array.from(categoryMap.entries()).map(([name, count]) => ({
+      name,
+      count,
+      image: undefined,
+    }));
+
+    return {
+      total: recipes.length,
+      categories,
+    };
+  },
+});
+
+// Get categories (alias for frontend compatibility)
+export const getCategories = getCategoryStats;
 
 // Create new recipe
 export const create = mutation({
@@ -51,7 +275,7 @@ export const create = mutation({
       v.object({
         name: v.string(),
         amount: v.optional(v.string()),
-        checked: v.boolean(),
+        checked: v.optional(v.boolean()),
       })
     ),
     instructions: v.array(
@@ -61,33 +285,179 @@ export const create = mutation({
       })
     ),
     tags: v.optional(v.array(v.string())),
+    // Image fields
+    image: v.optional(v.string()),
+    imageAlt: v.optional(v.string()),
+    imageStorageId: v.optional(v.id("_storage")),
+    imageBlurhash: v.optional(v.string()),
+    sourceImageUrl: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    isFavorite: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
+    const clerkId = await getAuthenticatedClerkId(ctx);
+
+    // ============================================================
+    // 1. Feature-Typ bestimmen
+    // ============================================================
+    let featureType: "manual_recipes" | "link_imports" | "photo_scans";
+
+    if (args.sourceUrl) {
+      // URL vorhanden = Link Import (Instagram/Website)
+      featureType = "link_imports";
+    } else if (args.sourceImageUrl) {
+      // sourceImageUrl vorhanden = Foto Scan
+      featureType = "photo_scans";
+    } else {
+      // Sonst = Manuelles Rezept
+      featureType = "manual_recipes";
     }
 
-    const now = Date.now();
-    const recipeId = await ctx.db.insert("recipes", {
-      clerkId: identity.subject,
-      title: args.title,
-      description: args.description,
-      category: args.category,
-      prepTimeMinutes: args.prepTimeMinutes,
-      difficulty: args.difficulty,
-      portions: args.portions,
-      ingredients: args.ingredients,
-      instructions: args.instructions,
-      tags: args.tags,
-      isFavorite: false,
-      createdAt: now,
-      updatedAt: now,
-    });
+    // ============================================================
+    // 2. User laden und Subscription prüfen
+    // ============================================================
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
+      .first();
 
-    return recipeId;
+    if (!user) {
+      throw new Error("NOT_AUTHENTICATED");
+    }
+
+    // ============================================================
+    // 3. Pro User haben keine Limits
+    // ============================================================
+    if (user.subscription !== "free") {
+      // Rezept erstellen (Counter nicht erhöhen für Pro)
+      const recipeId = await insertRecipe(ctx, clerkId, args);
+      await adjustCategoryCount(ctx, args.category, 1, clerkId);
+      await ensureCategoryExists(ctx, args.category, clerkId); // <-- CRITICAL: Kategorie mit clerkId erstellen!
+      return recipeId;
+    }
+
+    // ============================================================
+    // 4. Free User: Limit prüfen
+    // ============================================================
+    const stats = user.usageStats || {
+      manualRecipes: 0,
+      linkImports: 0,
+      photoScans: 0,
+      subscriptionStartDate: undefined,
+      subscriptionEndDate: undefined,
+      resetOnDowngrade: false,
+    };
+
+    let currentCount: number;
+    let limit: number;
+
+    switch (featureType) {
+      case "manual_recipes":
+        currentCount = stats.manualRecipes || 0;
+        limit = 100; // FREE_LIMITS.MANUAL_RECIPES
+        break;
+      case "link_imports":
+        currentCount = stats.linkImports || 0;
+        limit = 50; // FREE_LIMITS.LINK_IMPORTS
+        break;
+      case "photo_scans":
+        currentCount = stats.photoScans || 0;
+        limit = 50; // FREE_LIMITS.PHOTO_SCANS
+        break;
+    }
+
+    if (currentCount >= limit) {
+      // Strukturierter Error für Frontend
+      const errorData = {
+        type: "LIMIT_REACHED",
+        feature: featureType,
+        current: currentCount,
+        limit: limit,
+        message: getLimitMessage(featureType, limit),
+      };
+      throw new Error(JSON.stringify(errorData));
+    }
+
+    // ============================================================
+    // 5. Rezept erstellen (CRITICAL: Erst insert, dann Counter erhöhen!)
+    // ============================================================
+    try {
+      const recipeId = await insertRecipe(ctx, clerkId, args);
+
+      // ============================================================
+      // 6. Counter erhöhen (NUR nach erfolgreichem Insert!)
+      // ============================================================
+      await ctx.runMutation(internal.users.incrementUsageCounter, {
+        clerkId,
+        feature: featureType,
+      });
+
+      // ============================================================
+      // 7. Category Stats aktualisieren + Kategorie in Tabelle erstellen
+      // ============================================================
+      await adjustCategoryCount(ctx, args.category, 1, clerkId);
+      await ensureCategoryExists(ctx, args.category, clerkId); // <-- CRITICAL: Kategorie mit clerkId erstellen!
+
+      return recipeId;
+
+    } catch (error) {
+      // Insert fehlgeschlagen -> Counter wurde NICHT erhöht (korrekt!)
+      throw error;
+    }
   },
 });
+
+// ============================================================
+// HELPER - Recipe Insert
+// ============================================================
+async function insertRecipe(
+  ctx: any,
+  clerkId: string,
+  args: any
+): Promise<any> {
+  const ingredientsWithChecked = args.ingredients.map((ing: any) => ({
+    ...ing,
+    checked: ing.checked ?? false,
+  }));
+
+  const now = Date.now();
+  return await ctx.db.insert("recipes", {
+    clerkId,
+    title: args.title,
+    description: args.description,
+    category: args.category,
+    prepTimeMinutes: args.prepTimeMinutes,
+    difficulty: args.difficulty,
+    portions: args.portions,
+    ingredients: ingredientsWithChecked,
+    instructions: args.instructions,
+    tags: args.tags,
+    isFavorite: args.isFavorite ?? false,
+    image: args.image,
+    imageAlt: args.imageAlt,
+    imageStorageId: args.imageStorageId,
+    imageBlurhash: args.imageBlurhash,
+    sourceImageUrl: args.sourceImageUrl,
+    sourceUrl: args.sourceUrl,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+// ============================================================
+// HELPER - Error Message
+// ============================================================
+function getLimitMessage(
+  feature: "manual_recipes" | "link_imports" | "photo_scans",
+  limit: number
+): string {
+  const messages = {
+    manual_recipes: `Du hast dein Limit von ${limit} manuellen Rezepten erreicht.`,
+    link_imports: `Du hast dein Limit von ${limit} Link-Imports erreicht.`,
+    photo_scans: `Du hast dein Limit von ${limit} Foto-Scans erreicht.`,
+  };
+  return messages[feature];
+}
 
 // Update recipe
 export const update = mutation({
@@ -104,10 +474,18 @@ export const update = mutation({
         v.object({
           name: v.string(),
           amount: v.optional(v.string()),
-          checked: v.boolean(),
+          checked: v.optional(v.boolean()),
         })
       )
     ),
+    // Image fields
+    image: v.optional(v.string()),
+    imageAlt: v.optional(v.string()),
+    imageStorageId: v.optional(v.id("_storage")),
+    imageBlurhash: v.optional(v.string()),
+    sourceImageUrl: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    isFavorite: v.optional(v.boolean()),
     instructions: v.optional(
       v.array(
         v.object({
@@ -119,53 +497,129 @@ export const update = mutation({
     tags: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    const clerkId = await getAuthenticatedClerkId(ctx);
 
     const recipe = await ctx.db.get(args.id);
-    if (!recipe || recipe.clerkId !== identity.subject) {
+    if (!recipe || recipe.clerkId !== clerkId) {
       throw new Error("Recipe not found or access denied");
     }
 
-    const { id, ...updates } = args;
-    await ctx.db.patch(args.id, {
-      ...updates,
-      updatedAt: Date.now(),
-    });
+    const { id, ingredients, image, imageStorageId, ...otherUpdates } = args;
+
+    // STORAGE CLEANUP: Wenn neue imageStorageId übergeben wird, alte löschen
+    if (imageStorageId && recipe.imageStorageId && recipe.imageStorageId !== imageStorageId) {
+      // Altes Bild aus Storage löschen (mit Fehlerbehandlung falls ID nicht existiert)
+      try {
+        await ctx.storage.delete(recipe.imageStorageId);
+      } catch (e) {
+        console.warn('Could not delete old storage file:', e);
+        // Nicht fatal, mit update fortfahren
+      }
+    }
+
+    // BILD-LOGIK: Nur updaten wenn Bild sich tatsächlich geändert hat
+    const updates: Record<string, unknown> = { ...otherUpdates, updatedAt: Date.now() };
+
+    // image nur updaten wenn explizit übergeben UND nicht leer
+    if (image !== undefined) {
+      // Wenn image leeren String oder nur whitespace, NICHT updaten (bleibt wie es ist)
+      if (image.trim() !== '' && !image.startsWith('blob:')) {
+        updates.image = image;
+      }
+      // Wenn image leer ist, nichts tun (Bild behalten)
+    }
+
+    // imageStorageId nur updaten wenn übergeben
+    if (imageStorageId !== undefined) {
+      updates.imageStorageId = imageStorageId;
+    }
+
+    if (ingredients) {
+      updates.ingredients = ingredients.map(ing => ({
+        ...ing,
+        checked: ing.checked ?? false,
+      }));
+    }
+
+    // Handle category stats update if category changed
+    if (args.category && args.category !== recipe.category) {
+      await adjustCategoryCount(ctx, recipe.category, -1, clerkId);
+      await adjustCategoryCount(ctx, args.category, 1, clerkId);
+      await ensureCategoryExists(ctx, args.category, clerkId); // <-- CRITICAL: Neue Kategorie mit clerkId erstellen!
+    }
+
+    await ctx.db.patch(args.id, updates);
   },
 });
 
 // Delete recipe
-export const remove = mutation({
+export const deleteRecipe = mutation({
   args: { id: v.id("recipes") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    const clerkId = await getAuthenticatedClerkId(ctx);
 
+    // 1. Identifikation & Berechtigungsprüfung
     const recipe = await ctx.db.get(args.id);
-    if (!recipe || recipe.clerkId !== identity.subject) {
+    if (!recipe || recipe.clerkId !== clerkId) {
       throw new Error("Recipe not found or access denied");
     }
 
+    // 2. Foto-Löschung (File Storage) - Aufräumen von Dateileichen
+    if (recipe.imageStorageId) {
+      try {
+        await ctx.storage.delete(recipe.imageStorageId);
+      } catch (e) {
+        console.warn(`[Cleanup] Could not delete image storage file ${recipe.imageStorageId}:`, e);
+      }
+    }
+
+    // 3. Kategorie-Statistiken aktualisieren
+    await adjustCategoryCount(ctx, recipe.category, -1, clerkId);
+
+    // 4. Datenbank-Eintrag löschen
     await ctx.db.delete(args.id);
   },
 });
+
+// Delete multiple recipes
+export const deleteRecipes = mutation({
+  args: { ids: v.array(v.id("recipes")) },
+  handler: async (ctx, args) => {
+    const clerkId = await getAuthenticatedClerkId(ctx);
+
+    for (const id of args.ids) {
+      const recipe = await ctx.db.get(id);
+      if (recipe && recipe.clerkId === clerkId) {
+        // 1. Storage Cleanup
+        if (recipe.imageStorageId) {
+          try {
+            await ctx.storage.delete(recipe.imageStorageId);
+          } catch (e) {
+            console.warn(`[Batch Cleanup] Could not delete image ${recipe.imageStorageId}:`, e);
+          }
+        }
+
+        // 2. Stats Adjustment
+        await adjustCategoryCount(ctx, recipe.category, -1, clerkId);
+
+        // 3. Document Deletion
+        await ctx.db.delete(id);
+      }
+    }
+  },
+});
+
+// Alias for compatibility
+export const remove = deleteRecipe;
 
 // Toggle favorite
 export const toggleFavorite = mutation({
   args: { id: v.id("recipes") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    const clerkId = await getAuthenticatedClerkId(ctx);
 
     const recipe = await ctx.db.get(args.id);
-    if (!recipe || recipe.clerkId !== identity.subject) {
+    if (!recipe || recipe.clerkId !== clerkId) {
       throw new Error("Recipe not found or access denied");
     }
 
@@ -179,18 +633,260 @@ export const toggleFavorite = mutation({
 export const getFavorites = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return [];
-    }
+    const clerkId = await getAuthenticatedClerkId(ctx);
 
     const recipes = await ctx.db
       .query("recipes")
-      .withIndex("by_favorite", (q) => 
-        q.eq("clerkId", identity.subject).eq("isFavorite", true)
+      .withIndex("by_favorite", (q) =>
+        q.eq("clerkId", clerkId).eq("isFavorite", true)
       )
       .collect();
 
-    return recipes;
+    // Map recipes to include storage URL if available
+    const recipesWithUrl = await Promise.all(recipes.map(async (r) => {
+      let imageUrl = r.image;
+      if (r.imageStorageId) {
+         const url = await ctx.storage.getUrl(r.imageStorageId);
+         if (url) imageUrl = url;
+      }
+      return { ...r, image: imageUrl };
+    }));
+
+    return recipesWithUrl;
+  },
+});
+
+// Get favorite recipe IDs only
+export const getFavoritesIds = query({
+  args: {},
+  handler: async (ctx) => {
+    const clerkId = await getAuthenticatedClerkId(ctx);
+
+    const recipes = await ctx.db
+      .query("recipes")
+      .withIndex("by_favorite", (q) =>
+        q.eq("clerkId", clerkId).eq("isFavorite", true)
+      )
+      .collect();
+
+    return recipes.map(r => r._id);
+  },
+});
+
+// Get recipe IDs that are in the weekly plan
+export const getWeeklyListIds = query({
+  args: {},
+  handler: async (ctx) => {
+    const clerkId = await getAuthenticatedClerkId(ctx);
+
+    const weeklyMeals = await ctx.db
+      .query("weeklyMeals")
+      .withIndex("by_user_date", (q) => q.eq("clerkId", clerkId))
+      .collect();
+
+    // Extract unique recipe IDs
+    const recipeIds = new Set<string>();
+    for (const meal of weeklyMeals) {
+      recipeIds.add(meal.recipeId);
+    }
+
+    return Array.from(recipeIds);
+  },
+});
+
+// Backfill Category Stats (Migration helper)
+export const backfillCategoryStats = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const clerkId = await getAuthenticatedClerkId(ctx);
+
+    // Clear existing user stats to avoid duplication
+    const existingStats = await ctx.db
+      .query("categoryStats")
+      .withIndex("by_user_category", (q) => q.eq("clerkId", clerkId))
+      .collect();
+
+    for (const stat of existingStats) {
+      await ctx.db.delete(stat._id);
+    }
+
+    // Get all user recipes
+    const recipes = await ctx.db
+      .query("recipes")
+      .withIndex("by_user", (q) => q.eq("clerkId", clerkId))
+      .collect();
+
+    // Count by category
+    const counts = new Map<string, number>();
+    for (const recipe of recipes) {
+      const current = counts.get(recipe.category) || 0;
+      counts.set(recipe.category, current + 1);
+    }
+
+    // Get max order for new categories
+    const userCategories = await ctx.db
+      .query("categories")
+      .withIndex("by_user", (q) => q.eq("clerkId", clerkId))
+      .collect();
+    const maxOrder = userCategories.length > 0
+      ? Math.max(...userCategories.map((c) => c.order))
+      : 0;
+
+    // Write new stats AND create categories
+    let order = maxOrder + 1;
+    for (const [category, count] of counts.entries()) {
+      // Create stats
+      await ctx.db.insert("categoryStats", {
+        clerkId,
+        category,
+        count
+      });
+
+      // Create category if not exists
+      const existing = await ctx.db
+        .query("categories")
+        .withIndex("by_user_name", (q) => q.eq("clerkId", clerkId).eq("name", category))
+        .first();
+
+      if (!existing) {
+        await ctx.db.insert("categories", {
+          clerkId,
+          name: category,
+          icon: "restaurant",
+          color: "#6366f1",
+          order: order++,
+          isActive: true,
+        });
+        console.log(`[backfillCategoryStats] ✅ Created category "${category}" for user ${clerkId}`);
+      }
+    }
+
+    return { success: true, processed: recipes.length, categories: counts.size };
+  }
+});
+
+// Seed Data Import (for development/testing)
+export const importSeedData = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const clerkId = await getAuthenticatedClerkId(ctx);
+
+    // Check if data already exists
+    const existingRecipes = await ctx.db
+      .query("recipes")
+      .withIndex("by_user", (q) => q.eq("clerkId", clerkId))
+      .collect();
+
+    if (existingRecipes.length > 0) {
+      console.log("[Seed Data] Recipes already exist, skipping import");
+      return { success: false, message: "Data already exists" };
+    }
+
+    // Import seed data
+    const seedModule = await import("../data/seed");
+    const { SEED_DATA } = seedModule;
+    const now = Date.now();
+
+    for (const recipe of SEED_DATA) {
+      await ctx.db.insert("recipes", {
+        clerkId,
+        title: recipe.title,
+        category: recipe.category,
+        image: recipe.image,
+        imageAlt: recipe.imageAlt,
+        prepTimeMinutes: recipe.prepTimeMinutes,
+        difficulty: recipe.difficulty as "Einfach" | "Mittel" | "Schwer",
+        portions: recipe.portions,
+        isFavorite: recipe.isFavorite,
+        ingredients: recipe.ingredients.map((ing: any) => ({
+          ...ing,
+          checked: false,
+        })),
+        instructions: recipe.instructions,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    console.log(`[Seed Data] Imported ${SEED_DATA.length} recipes for user ${clerkId}`);
+    return { success: true, imported: SEED_DATA.length };
+  },
+});
+
+
+// --- FRONTEND COMPATIBILITY LAYER ---
+
+// Alias functions to match old frontend API
+export const createFromAI = create;
+export const updateRecipe = update;
+export const generateImageUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+// Delete a storage file (for cleanup when replacing images)
+export const deleteStorageFile = mutation({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, args) => {
+    const clerkId = await getAuthenticatedClerkId(ctx);
+
+    // Verify this storage ID is associated with one of user's recipes
+    const recipes = await ctx.db
+      .query("recipes")
+      .withIndex("by_user", (q) => q.eq("clerkId", clerkId))
+      .collect();
+
+    const ownsImage = recipes.some(r => r.imageStorageId === args.storageId);
+    if (!ownsImage) {
+      throw new Error("Not authorized to delete this file");
+    }
+
+    // Try to delete, but don't throw if file doesn't exist
+    try {
+      await ctx.storage.delete(args.storageId);
+    } catch (e) {
+      console.warn('Storage file already deleted or not found:', e);
+      // Nicht fatal - Datei existiert vielleicht nicht mehr
+    }
+  },
+});
+
+// Get storage URL for a storage ID
+export const getStorageUrl = query({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, args) => {
+    return await ctx.storage.getUrl(args.storageId);
+  },
+});
+
+// Generate AI image URL (KEIN Download - URL funktioniert direkt!)
+export const generateAndStoreAiImage = action({
+  args: {
+    recipeTitle: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ url: string }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // API Key aus Environment Variable holen
+    const apiKey = process.env.POLLINATIONS_API_KEY || '';
+    if (!apiKey) {
+      throw new Error('POLLINATIONS_API_KEY not set. Please add it to your .env file.');
+    }
+
+    // Einfach die Pollinations URL generieren (kein Download nötig!)
+    const { getConsistentSeed, buildRecipeImageUrl } = await import("./pollinationsHelper");
+    const seed = getConsistentSeed(args.recipeTitle);
+
+    const pollinationsUrl = buildRecipeImageUrl(args.recipeTitle, seed, apiKey);
+
+    console.log(`[Recipe Image] ✅ Generated URL for "${args.recipeTitle}":`, pollinationsUrl);
+
+    // URL direkt zurückgeben (kein Storage nötig)
+    return { url: pollinationsUrl };
   },
 });

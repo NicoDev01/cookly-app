@@ -63,6 +63,51 @@ export const addShoppingItem = mutation({
   },
 });
 
+// Toggle shopping item by name and amount (add if not exists, remove if exists)
+export const toggleShoppingItemByDetails = mutation({
+  args: {
+    name: v.string(),
+    amount: v.optional(v.string()),
+    recipeId: v.optional(v.id("recipes")),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Normalize for deduplication
+    const normalizedName = args.name.toLowerCase().trim();
+    const normalizedAmount = args.amount?.toLowerCase().trim() || "";
+    const key = `${normalizedName}|${normalizedAmount}`;
+
+    // Check if item already exists
+    const existing = await ctx.db
+      .query("shoppingItems")
+      .withIndex("by_key", (q) => q.eq("key", key))
+      .first();
+
+    if (existing) {
+      // Item exists, remove it (toggle off)
+      await ctx.db.delete(existing._id);
+      return { action: "removed", id: existing._id };
+    } else {
+      // Item doesn't exist, add it (toggle on)
+      const itemId = await ctx.db.insert("shoppingItems", {
+        clerkId: identity.subject,
+        name: args.name,
+        amount: args.amount,
+        normalizedName,
+        key,
+        checked: false,
+        recipeId: args.recipeId,
+        createdAt: Date.now(),
+      });
+      return { action: "added", id: itemId };
+    }
+  },
+});
+
 // Toggle shopping item checked status
 export const toggleShoppingItem = mutation({
   args: { id: v.id("shoppingItems") },

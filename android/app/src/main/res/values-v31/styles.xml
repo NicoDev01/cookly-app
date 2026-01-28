@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ (API 31+) Splash Screen Theme -->
+    <!-- On Android 12+, the OS controls the splash screen -->
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <!-- Background color for Android 12+ splash screen -->
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <!-- Icon to show in center (uses layered drawable) -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+        <!-- Icon background color (same as splash background) -->
+        <item name="windowSplashScreenIconBackgroundColor">@color/splash_background</item>
+        <!-- Theme to transition to after splash -->
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+        <item name="android:statusBarColor">@color/splash_background</item>
+        <item name="android:navigationBarColor">@color/splash_background</item>
+    </style>
+</resources>

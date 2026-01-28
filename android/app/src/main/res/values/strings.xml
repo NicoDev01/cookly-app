@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Cookly</string>
+    <string name="title_activity_main">Cookly</string>
+    <string name="package_name">com.cookly.recipe</string>
+    <string name="custom_url_scheme">com.cookly.recipe</string>
+</resources>
+

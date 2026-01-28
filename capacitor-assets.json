@@ -1,0 +1,12 @@
+{
+  "icon": {
+    "source": "public/logo.png",
+    "background": "#b2c8ba",
+    "foreground": "public/logo.png"
+  },
+  "splash": {
+    "source": "assets/splash.png",
+    "color": "#b2c8ba",
+    "androidScaleType": "CENTER_CROP"
+  }
+}
