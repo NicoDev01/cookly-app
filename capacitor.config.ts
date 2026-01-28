@@ -22,7 +22,7 @@ const config: CapacitorConfig = {
   },
   android: {
     allowMixedContent: false, // SECURITY: Only HTTPS in production
-    captureInput: true,
+    captureInput: false, // FIX: Enable keyboard autocomplete suggestions
     webContentsDebuggingEnabled: false, // CRITICAL: Must be false for Play Store
   },
 };

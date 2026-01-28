@@ -123,11 +123,9 @@ export const SignInPage: React.FC = () => {
                 E-Mail
               </label>
               <input
-                type="email"
-                inputMode="email"
+                type="text"
                 autoCapitalize="none"
                 autoCorrect="off"
-                autoComplete="email"
                 spellCheck={false}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -143,7 +141,6 @@ export const SignInPage: React.FC = () => {
               </label>
               <input
                 type="password"
-                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
