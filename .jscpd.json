@@ -1,0 +1,25 @@
+{
+  "threshold": 10,
+  "reporters": ["html", "console", "json"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/android/**",
+    "**/ios/**",
+    "**/dist/**",
+    "**/*.test.{ts,tsx}",
+    "**/*.spec.{ts,tsx}",
+    "**/*.d.ts",
+    "**/*.config.{ts,js}",
+    "convex/_generated/**"
+  ],
+  "absolute": true,
+  "gitignore": true,
+  "minLines": 5,
+  "minTokens": 50,
+  "maxLines": 500,
+  "maxSize": "100kb",
+  "output": "./reports/jscpd",
+  "formats": [
+    { "name": "typescript", "extensions": [".ts", ".tsx"] }
+  ]
+}

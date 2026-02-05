@@ -3,6 +3,7 @@ import { useSignIn, useAuth } from '@clerk/clerk-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
+import { Input, Button, IconButton, Card, CardContent } from '../components/ui/cookly';
 
 export const SignInPage: React.FC = () => {
   const { isLoaded: signInLoaded, signIn, setActive } = useSignIn();
@@ -14,6 +15,7 @@ export const SignInPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (authLoaded && isSignedIn) {
@@ -89,8 +91,8 @@ export const SignInPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 via-background-light to-secondary/10 dark:from-primary/20 dark:via-background-dark dark:to-secondary/20 p-4">
-      <div className="w-full max-w-md">
+    <div className="cookly-page cookly-page--no-nav flex items-center justify-center">
+      <div className="w-full max-w-md px-4">
         {/* Logo Header */}
         <div className="flex justify-center mb-8">
           <img
@@ -101,81 +103,90 @@ export const SignInPage: React.FC = () => {
         </div>
 
         <div className="text-center mb-8">
-          <p className="text-text-secondary-light dark:text-text-secondary-dark">
+          <p className="cookly-text-caption">
             Deine KI-gestützte Rezept-App
           </p>
         </div>
 
-        <div className="bg-white dark:bg-surface-dark rounded-2xl shadow-xl p-8">
-          <h2 className="text-2xl font-bold text-text-primary-light dark:text-text-primary-dark mb-6">
-            Anmelden
-          </h2>
+        <Card variant="elevated" className="p-6">
+          <CardContent className="p-0">
+            <h2 className="cookly-text-title mb-6">
+              Anmelden
+            </h2>
 
-          {error && (
-            <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg text-sm whitespace-pre-wrap">
-              {error}
-            </div>
-          )}
+            {error && (
+              <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg text-sm whitespace-pre-wrap">
+                {error}
+              </div>
+            )}
 
-          <form onSubmit={handleSignIn} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-text-primary-light dark:text-text-primary-dark mb-2">
-                E-Mail
-              </label>
-              <input
-                type="text"
+            <form onSubmit={handleSignIn} className="space-y-4">
+              <Input
+                type="email"
+                label="E-Mail"
+                icon="mail"
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark"
                 placeholder="deine@email.de"
               />
+
+              <div className="relative">
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  label="Passwort"
+                  icon="lock"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  placeholder="••••••••"
+                  className="pr-12"
+                />
+                <div className="absolute right-2 top-[calc(50%+10px)] -translate-y-1/2">
+                  <IconButton
+                    icon={showPassword ? 'visibility_off' : 'visibility'}
+                    variant="default"
+                    size="sm"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Passwort verbergen' : 'Passwort anzeigen'}
+                  />
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                variant="primary"
+                size="lg"
+                fullWidth
+                loading={loading}
+                className="mt-6"
+              >
+                {loading ? 'Wird geladen...' : 'Anmelden'}
+              </Button>
+            </form>
+
+            <div className="mt-6 text-center">
+              <Link
+                to="/sign-up"
+                className="text-sm font-medium text-[hsl(146,17%,74%)] hover:underline"
+              >
+                Noch kein Konto? Jetzt registrieren
+              </Link>
             </div>
+          </CardContent>
+        </Card>
 
-            <div>
-              <label className="block text-sm font-medium text-text-primary-light dark:text-text-primary-dark mb-2">
-                Passwort
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark"
-                placeholder="••••••••"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 px-4 bg-primary text-white rounded-xl font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Wird geladen...' : 'Anmelden'}
-            </button>
-          </form>
-
-          <div className="mt-6 text-center">
-            <Link
-              to="/sign-up"
-              className="text-primary hover:underline font-medium"
-            >
-              Noch kein Konto? Jetzt registrieren
-            </Link>
-          </div>
-        </div>
-
-        <div className="text-center mt-6">
-          <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
+        <div className="text-center mt-6 px-4">
+          <p className="cookly-text-caption">
             Mit der Anmeldung stimmst du unseren{' '}
-            <a href="/terms" className="text-primary hover:underline">
+            <a href="/terms" className="text-[hsl(146,17%,74%)] hover:underline">
               Nutzungsbedingungen
             </a>{' '}
             und der{' '}
-            <a href="/privacy" className="text-primary hover:underline">
+            <a href="/privacy" className="text-[hsl(146,17%,74%)] hover:underline">
               Datenschutzerklärung
             </a>{' '}
             zu.

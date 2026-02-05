@@ -1,0 +1,652 @@
+/**
+ * ============================================================================
+ * Cookly Component Styles
+ * ============================================================================
+ *
+ * Component styles for the Cookly Design System.
+ * Defines the look and feel for all Cookly components.
+ */
+
+/* ============================================================================
+   Page Layout
+   ============================================================================ */
+
+.cookly-page {
+  min-height: 100dvh;
+  background-color: var(--color-bg-secondary, #f9fafb);
+  color: var(--color-text-primary, #111827);
+  padding-bottom: var(--nav-height, 80px);
+}
+
+.dark .cookly-page {
+  background-color: var(--dark-color-bg-secondary, #1f2937);
+  color: var(--dark-color-text-primary, #f9fafb);
+}
+
+.cookly-page--no-nav {
+  padding-bottom: 0;
+}
+
+/* ============================================================================
+   Typography
+   ============================================================================ */
+
+.cookly-text-display {
+  font-size: var(--font-size-4xl, 2.25rem);
+  font-weight: var(--font-weight-bold, 700);
+  line-height: var(--line-height-tight, 1.25);
+  color: var(--color-text-primary, #111827);
+}
+
+.dark .cookly-text-display {
+  color: var(--dark-color-text-primary, #f9fafb);
+}
+
+.cookly-text-headline {
+  font-size: var(--font-size-3xl, 1.875rem);
+  font-weight: var(--font-weight-bold, 700);
+  line-height: var(--line-height-tight, 1.25);
+  color: var(--color-text-primary, #111827);
+}
+
+.dark .cookly-text-headline {
+  color: var(--dark-color-text-primary, #f9fafb);
+}
+
+.cookly-text-title {
+  font-size: var(--font-size-xl, 1.25rem);
+  font-weight: var(--font-weight-semibold, 600);
+  line-height: var(--line-height-normal, 1.5);
+  color: var(--color-text-primary, #111827);
+}
+
+.dark .cookly-text-title {
+  color: var(--dark-color-text-primary, #f9fafb);
+}
+
+.cookly-text-subtitle {
+  font-size: var(--font-size-lg, 1.125rem);
+  font-weight: var(--font-weight-medium, 500);
+  line-height: var(--line-height-normal, 1.5);
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.dark .cookly-text-subtitle {
+  color: var(--dark-color-text-secondary, #d1d5db);
+}
+
+.cookly-text-body {
+  font-size: var(--font-size-base, 1rem);
+  font-weight: var(--font-weight-normal, 400);
+  line-height: var(--line-height-normal, 1.5);
+  color: var(--color-text-primary, #111827);
+}
+
+.dark .cookly-text-body {
+  color: var(--dark-color-text-primary, #f9fafb);
+}
+
+.cookly-text-caption {
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: var(--font-weight-normal, 400);
+  line-height: var(--line-height-normal, 1.5);
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+.dark .cookly-text-caption {
+  color: var(--dark-color-text-tertiary, #9ca3af);
+}
+
+/* ============================================================================
+   Card Component
+   ============================================================================ */
+
+.cookly-card {
+  background-color: var(--color-bg-card, #ffffff);
+  border-radius: var(--radius-md, 0.75rem);
+  transition: all var(--transition-fast, 150ms);
+}
+
+.dark .cookly-card {
+  background-color: var(--dark-color-bg-card, #1f2937);
+}
+
+/* Card Variants */
+.cookly-card--elevated {
+  box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
+  border: 1px solid var(--color-border-light, #f3f4f6);
+}
+
+.dark .cookly-card--elevated {
+  box-shadow: var(--dark-shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.3));
+  border-color: var(--dark-color-border-light, #4b5563);
+}
+
+.cookly-card--pressed {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.06);
+  background-color: var(--color-bg-tertiary, #f3f4f6);
+}
+
+.dark .cookly-card--pressed {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+  background-color: var(--dark-color-bg-tertiary, #374151);
+}
+
+.cookly-card--flat {
+  border: 1px solid var(--color-border, #e5e7eb);
+  box-shadow: none;
+}
+
+.dark .cookly-card--flat {
+  border-color: var(--dark-color-border, #374151);
+}
+
+.cookly-card--interactive {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cookly-card--interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.1));
+}
+
+.dark .cookly-card--interactive:hover {
+  box-shadow: var(--dark-shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.4));
+}
+
+.cookly-card--interactive:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Card Sizes */
+.cookly-card--sm {
+  padding: var(--spacing-sm, 0.5rem);
+}
+
+.cookly-card--lg {
+  padding: var(--spacing-lg, 1.5rem);
+}
+
+/* ============================================================================
+   Input Component
+   ============================================================================ */
+
+.cookly-input {
+  width: 100%;
+  padding: var(--input-padding, 0.75rem 1rem);
+  font-size: var(--font-size-base, 1rem);
+  font-weight: var(--font-weight-normal, 400);
+  line-height: var(--line-height-normal, 1.5);
+  color: var(--color-text-primary, #111827);
+  background-color: var(--color-bg-primary, #ffffff);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-md, 0.75rem);
+  transition: all var(--transition-fast, 150ms);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.dark .cookly-input {
+  color: var(--dark-color-text-primary, #f9fafb);
+  background-color: var(--dark-color-bg-primary, #111827);
+  border-color: var(--dark-color-border, #374151);
+}
+
+.cookly-input::placeholder {
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+.dark .cookly-input::placeholder {
+  color: var(--dark-color-text-tertiary, #9ca3af);
+}
+
+.cookly-input:hover {
+  border-color: var(--color-text-tertiary, #9ca3af);
+}
+
+.dark .cookly-input:hover {
+  border-color: var(--dark-color-text-tertiary, #9ca3af);
+}
+
+.cookly-input:focus {
+  border-color: var(--color-primary-500, #10b981);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+.cookly-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: var(--color-bg-tertiary, #f3f4f6);
+}
+
+.dark .cookly-input:disabled {
+  background-color: var(--dark-color-bg-tertiary, #374151);
+}
+
+/* Input Variants */
+.cookly-input--ghost {
+  background-color: transparent;
+  border-color: transparent;
+}
+
+.dark .cookly-input--ghost {
+  background-color: transparent;
+}
+
+.cookly-input--ghost:hover {
+  background-color: var(--color-bg-tertiary, #f3f4f6);
+}
+
+.dark .cookly-input--ghost:hover {
+  background-color: var(--dark-color-bg-tertiary, #374151);
+}
+
+.cookly-input--ghost:focus {
+  background-color: var(--color-bg-primary, #ffffff);
+  border-color: var(--color-primary-500, #10b981);
+}
+
+.dark .cookly-input--ghost:focus {
+  background-color: var(--dark-color-bg-primary, #111827);
+}
+
+/* Input Sizes */
+.cookly-input--sm {
+  padding: 0.5rem 0.75rem;
+  font-size: var(--font-size-sm, 0.875rem);
+}
+
+.cookly-input--lg {
+  padding: 1rem 1.25rem;
+  font-size: var(--font-size-lg, 1.125rem);
+}
+
+/* Select Styles */
+.cookly-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+  background-position: right 0.75rem center;
+  background-repeat: no-repeat;
+  background-size: 1.25rem;
+  padding-right: 2.5rem;
+}
+
+.dark .cookly-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+}
+
+/* ============================================================================
+   Button Component
+   ============================================================================ */
+
+.cookly-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm, 0.5rem);
+  padding: var(--button-padding-md, 0.75rem 1.5rem);
+  font-size: var(--font-size-base, 1rem);
+  font-weight: var(--button-font-weight, 600);
+  line-height: var(--line-height-normal, 1.5);
+  border-radius: var(--radius-md, 0.75rem);
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast, 150ms);
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  text-decoration: none;
+}
+
+.cookly-button:focus-visible {
+  outline: 2px solid var(--color-primary-500, #10b981);
+  outline-offset: 2px;
+}
+
+.cookly-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Button Variants */
+.cookly-button--primary {
+  background-color: var(--color-primary-500, #10b981);
+  color: #ffffff;
+}
+
+.cookly-button--primary:hover {
+  background-color: var(--color-primary-600, #059669);
+}
+
+.cookly-button--primary:active {
+  transform: scale(0.95);
+}
+
+.cookly-button--secondary {
+  background-color: var(--color-bg-tertiary, #f3f4f6);
+  color: var(--color-text-primary, #111827);
+}
+
+.dark .cookly-button--secondary {
+  background-color: var(--dark-color-bg-tertiary, #374151);
+  color: var(--dark-color-text-primary, #f9fafb);
+}
+
+.cookly-button--secondary:hover {
+  background-color: var(--color-border, #e5e7eb);
+}
+
+.dark .cookly-button--secondary:hover {
+  background-color: var(--dark-color-border-light, #4b5563);
+}
+
+.cookly-button--ghost {
+  background-color: transparent;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.dark .cookly-button--ghost {
+  color: var(--dark-color-text-secondary, #d1d5db);
+}
+
+.cookly-button--ghost:hover {
+  background-color: var(--color-bg-tertiary, #f3f4f6);
+  color: var(--color-text-primary, #111827);
+}
+
+.dark .cookly-button--ghost:hover {
+  background-color: var(--dark-color-bg-tertiary, #374151);
+  color: var(--dark-color-text-primary, #f9fafb);
+}
+
+.cookly-button--danger {
+  background-color: var(--color-error, #ef4444);
+  color: #ffffff;
+}
+
+.cookly-button--danger:hover {
+  background-color: #dc2626;
+}
+
+/* Button Sizes */
+.cookly-button--sm {
+  padding: var(--button-padding-sm, 0.5rem 1rem);
+  font-size: var(--font-size-sm, 0.875rem);
+}
+
+.cookly-button--lg {
+  padding: var(--button-padding-lg, 1rem 2rem);
+  font-size: var(--font-size-lg, 1.125rem);
+}
+
+/* Full Width Button */
+.cookly-button--full-width {
+  width: 100%;
+}
+
+/* Icon Button */
+.cookly-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border-radius: var(--radius-md, 0.75rem);
+  background-color: transparent;
+  color: var(--color-text-secondary, #6b7280);
+  cursor: pointer;
+  transition: all var(--transition-fast, 150ms);
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  border: none;
+}
+
+.dark .cookly-icon-button {
+  color: var(--dark-color-text-secondary, #d1d5db);
+}
+
+.cookly-icon-button:hover {
+  background-color: var(--color-bg-tertiary, #f3f4f6);
+  color: var(--color-text-primary, #111827);
+}
+
+.dark .cookly-icon-button:hover {
+  background-color: var(--dark-color-bg-tertiary, #374151);
+  color: var(--dark-color-text-primary, #f9fafb);
+}
+
+.cookly-icon-button--sm {
+  width: 2rem;
+  height: 2rem;
+}
+
+.cookly-icon-button--lg {
+  width: 3rem;
+  height: 3rem;
+}
+
+/* ============================================================================
+   Badge Component
+   ============================================================================ */
+
+.cookly-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: var(--font-weight-semibold, 600);
+  border-radius: var(--radius-full, 9999px);
+  background-color: var(--color-bg-tertiary, #f3f4f6);
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.dark .cookly-badge {
+  background-color: var(--dark-color-bg-tertiary, #374151);
+  color: var(--dark-color-text-secondary, #d1d5db);
+}
+
+/* Badge Variants */
+.cookly-badge--primary {
+  background-color: var(--color-primary-100, #d1fae5);
+  color: var(--color-primary-700, #047857);
+}
+
+.dark .cookly-badge--primary {
+  background-color: rgba(16, 185, 129, 0.2);
+  color: var(--color-primary-300, #6ee7b7);
+}
+
+.cookly-badge--success {
+  background-color: #dcfce7;
+  color: #16a34a;
+}
+
+.dark .cookly-badge--success {
+  background-color: rgba(22, 163, 74, 0.2);
+  color: #86efac;
+}
+
+.cookly-badge--warning {
+  background-color: #fef3c7;
+  color: #d97706;
+}
+
+.dark .cookly-badge--warning {
+  background-color: rgba(217, 119, 6, 0.2);
+  color: #fcd34d;
+}
+
+.cookly-badge--error {
+  background-color: #fee2e2;
+  color: #dc2626;
+}
+
+.dark .cookly-badge--error {
+  background-color: rgba(220, 38, 38, 0.2);
+  color: #fca5a5;
+}
+
+/* ============================================================================
+   Header Component
+   ============================================================================ */
+
+.cookly-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky, 1100);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-md, 1rem) var(--spacing-md, 1rem);
+  background-color: var(--color-bg-primary, #ffffff);
+  border-bottom: 1px solid var(--color-border-light, #f3f4f6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.dark .cookly-header {
+  background-color: rgba(17, 24, 39, 0.8);
+  border-bottom-color: var(--dark-color-border-light, #4b5563);
+}
+
+.cookly-header--transparent {
+  background-color: transparent;
+  border-bottom-color: transparent;
+}
+
+.cookly-header__title {
+  font-size: var(--font-size-xl, 1.25rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-primary, #111827);
+}
+
+.dark .cookly-header__title {
+  color: var(--dark-color-text-primary, #f9fafb);
+}
+
+/* ============================================================================
+   Glass Panel Component
+   ============================================================================ */
+
+.cookly-glass-panel {
+  background-color: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-lg, 1rem);
+}
+
+.dark .cookly-glass-panel {
+  background-color: rgba(31, 41, 55, 0.7);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.cookly-glass-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: var(--z-modal-backdrop, 1300);
+}
+
+/* ============================================================================
+   Loading States
+   ============================================================================ */
+
+@keyframes cookly-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.cookly-spinner {
+  display: inline-block;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: cookly-spin 0.6s linear infinite;
+}
+
+.cookly-spinner--sm {
+  width: 1rem;
+  height: 1rem;
+  border-width: 1.5px;
+}
+
+.cookly-spinner--lg {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-width: 2.5px;
+}
+
+/* ============================================================================
+   Utility Classes
+   ============================================================================ */
+
+.cookly-divider {
+  height: 1px;
+  background-color: var(--color-border, #e5e7eb);
+  border: none;
+  margin: var(--spacing-md, 1rem) 0;
+}
+
+.dark .cookly-divider {
+  background-color: var(--dark-color-border, #374151);
+}
+
+.cookly-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-tertiary, #f3f4f6) 0%,
+    var(--color-bg-secondary, #f9fafb) 50%,
+    var(--color-bg-tertiary, #f3f4f6) 100%
+  );
+  background-size: 200% 100%;
+  animation: cookly-skeleton 1.5s ease-in-out infinite;
+  border-radius: var(--radius-md, 0.75rem);
+}
+
+.dark .cookly-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--dark-color-bg-tertiary, #374151) 0%,
+    var(--dark-color-bg-secondary, #1f2937) 50%,
+    var(--dark-color-bg-tertiary, #374151) 100%;
+  );
+}
+
+@keyframes cookly-skeleton {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ============================================================================
+   Responsive Helpers
+   ============================================================================ */
+
+@media (max-width: 640px) {
+  .cookly-text-display {
+    font-size: var(--font-size-3xl, 1.875rem);
+  }
+
+  .cookly-text-headline {
+    font-size: var(--font-size-2xl, 1.5rem);
+  }
+
+  .cookly-text-title {
+    font-size: var(--font-size-lg, 1.125rem);
+  }
+}

@@ -17,7 +17,7 @@ function buildAiScanImageUrl(keywords: string, seed?: number): string {
   const encoded = encodeURIComponent(`realistic food photography ${cleaned}`);
   const seedParam = seed ?? Math.floor(Math.random() * 1000000000);
 
-  return `https://image.pollinations.ai/prompt/${encoded}?width=1200&height=800&model=zimage&nologo=true&seed=${seedParam}`;
+  return `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&model=klein&nologo=true&seed=${seedParam}`;
 }
 
 export type AiScanFallback = {

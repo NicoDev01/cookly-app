@@ -294,8 +294,40 @@ const WeeklyPage: React.FC = () => {
             </div>
           )}
 
-          {/* WEEKLY VIEW MODE */}
-          {viewMode === 'weekly' && (
+          {/* EMPTY STATE - No meals planned */}
+          {!isWeekLoading && allWeeklyMeals.length === 0 && (
+            <div className="flex flex-col items-center justify-center px-6 pt-12 animate-in fade-in">
+              {/* Icon with Headline */}
+              <div className="flex flex-col items-center">
+                {/* Animated Icon */}
+                <span className="material-symbols-outlined text-8xl text-primary animate-pulse mb-4">
+                  restaurant_menu
+                </span>
+
+                {/* Headline */}
+                <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-center">
+                  Noch keine <span className="text-primary italic">Gerichte</span> geplant
+                </h2>
+              </div>
+
+              {/* Subtext */}
+              <p className="text-body text-text-secondary-light dark:text-text-secondary-dark text-center max-w-sm mt-4">
+                Plane deine Woche und erstelle einen Essensplan.
+              </p>
+
+              {/* CTA Button */}
+              <button
+                onClick={() => openAddModal(startDateStr + '#WEEKLY')}
+                className="mt-8 flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-white font-semibold shadow-neo-light-convex hover:bg-primary-dark transition-all touch-btn"
+              >
+                <span className="material-symbols-outlined">add_circle</span>
+                Erstes Gericht hinzufügen
+              </button>
+            </div>
+          )}
+
+          {/* WEEKLY VIEW MODE - only show when there are meals */}
+          {viewMode === 'weekly' && allWeeklyMeals.length > 0 && (
             <div className="flex flex-col gap-3">
               {allWeeklyMeals.map((item) => {
                 const isDeleting = deletingMealIds.has(item.mealId);
@@ -364,8 +396,8 @@ const WeeklyPage: React.FC = () => {
             </div>
           )}
 
-          {/* DAILY VIEW MODE (Original) */}
-          {viewMode === 'daily' && weekDays.map((date) => {
+          {/* DAILY VIEW MODE (Original) - only show when there are meals */}
+          {viewMode === 'daily' && allWeeklyMeals.length > 0 && weekDays.map((date) => {
             const dateStr = formatDate(date);
             // Filter out #WEEKLY items if they accidentally land here (though map logic usually handles specific keys)
             const meals = planByDate[dateStr] || [];

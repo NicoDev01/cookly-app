@@ -1,6 +1,5 @@
-import { query, mutation, internalMutation, action } from "./_generated/server";
+import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { internal, api } from "./_generated/api";
 
 /**
  * Gibt alle Kategorien des aktuellen Users zurück (ohne Stats)
@@ -51,49 +50,12 @@ export const list = query({
 });
 
 /**
- * Prüft, ob ein Kategorie-Image bereits existiert (für aktuellen User)
- */
-export const getExistingImageUrl = query({
-  args: { name: v.string() },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-    const clerkId = identity.subject;
-
-    const categories = await ctx.db
-      .query("categories")
-      .withIndex("by_user_name", (q) =>
-        q.eq("clerkId", clerkId).eq("name", args.name)
-      )
-      .filter((q) => q.eq(q.field("isActive"), true))
-      .collect();
-
-    if (categories.length === 0) {
-      return null;
-    }
-
-    const category = categories[0];
-
-    // Priorität: imageUrl > imageStorageId
-    if (category.imageUrl) {
-      return category.imageUrl;
-    }
-
-    if (category.imageStorageId) {
-      return await ctx.storage.getUrl(category.imageStorageId);
-    }
-
-    return null;
-  },
-});
-
-/**
  * Gibt alle Kategorien des Users mit Rezept-Anzahl zurück
  *
  * Erweiterung: Gibt auch Kategorien zurück die nur in categoryStats existieren
  * (für Kategorien die noch kein Bild in der categories Tabelle haben)
+ *
+ * NEU: Kategorie-Bilder kommen vom ersten Rezept in der Kategorie
  */
 export const getCategoriesWithStats = query({
   args: {},
@@ -135,10 +97,29 @@ export const getCategoriesWithStats = query({
         .map(async (categoryName) => {
           const cat = categoriesMap.get(categoryName);
 
+          // NEU: Bild vom ersten Rezept in der Kategorie holen
           let imageUrl: string | undefined;
-          if (cat?.imageUrl) {
+          
+          // Erstes Rezept in dieser Kategorie finden
+          const firstRecipe = await ctx.db
+            .query("recipes")
+            .withIndex("by_user", (q) => q.eq("clerkId", clerkId))
+            .filter((q) => q.eq(q.field("category"), categoryName))
+            .first();
+
+          if (firstRecipe) {
+            // Recipe image resolution logic (wie in recipes.ts)
+            imageUrl = firstRecipe.image;
+            if (firstRecipe.imageStorageId) {
+              const url = await ctx.storage.getUrl(firstRecipe.imageStorageId);
+              if (url) imageUrl = url;
+            }
+          }
+
+          // Fallback: Kategorie-eigenes Bild falls kein Rezept-Bild vorhanden
+          if (!imageUrl && cat?.imageUrl) {
             imageUrl = cat.imageUrl;
-          } else if (cat?.imageStorageId) {
+          } else if (!imageUrl && cat?.imageStorageId) {
             imageUrl = await ctx.storage.getUrl(cat.imageStorageId);
           }
 
@@ -152,124 +133,8 @@ export const getCategoriesWithStats = query({
         })
     );
 
-    return result;
-  },
-});
-
-/**
- * INTERNAL: Erstellt oder aktualisiert eine Kategorie mit Bild
- * clerkId wird als Argument übergeben (wie categoryStats)
- */
-export const upsertCategoryWithImage = internalMutation({
-  args: {
-    clerkId: v.string(),
-    name: v.string(),
-    imageStorageId: v.id("_storage"),
-    oldStorageId: v.optional(v.id("_storage")),
-  },
-  handler: async (ctx, args) => {
-    const { clerkId, name, imageStorageId, oldStorageId } = args;
-
-    if (oldStorageId && oldStorageId !== imageStorageId) {
-      try {
-        await ctx.storage.delete(oldStorageId);
-      } catch (e) {
-        console.warn('Could not delete old category image:', e);
-      }
-    }
-
-    // Prüfe ob Kategorie für diesen User bereits existiert
-    const categories = await ctx.db
-      .query("categories")
-      .withIndex("by_user_name", (q) =>
-        q.eq("clerkId", clerkId).eq("name", name)
-      )
-      .filter((q) => q.eq(q.field("isActive"), true))
-      .collect();
-
-    const category = categories[0];
-
-    if (category) {
-      await ctx.db.patch(category._id, {
-        imageStorageId,
-      });
-      return { action: "updated", id: category._id };
-    } else {
-      // Max order für diesen User finden
-      const userCategories = await ctx.db
-        .query("categories")
-        .withIndex("by_user", (q) => q.eq("clerkId", clerkId))
-        .collect();
-
-      const maxOrder = userCategories.length > 0
-        ? Math.max(...userCategories.map((c) => c.order))
-        : 0;
-
-      const newId = await ctx.db.insert("categories", {
-        clerkId,
-        name,
-        icon: "restaurant",
-        color: "#6366f1",
-        imageStorageId,
-        order: maxOrder + 1,
-        isActive: true,
-      });
-      return { action: "created", id: newId };
-    }
-  },
-});
-
-/**
- * INTERNAL: Speichert Kategorie mit direkter URL
- * clerkId wird als Argument übergeben (wie categoryStats)
- */
-export const upsertCategoryWithImageUrl = internalMutation({
-  args: {
-    clerkId: v.string(),
-    name: v.string(),
-    imageUrl: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const { clerkId, name, imageUrl } = args;
-
-    // Prüfe ob Kategorie für diesen User bereits existiert
-    const categories = await ctx.db
-      .query("categories")
-      .withIndex("by_user_name", (q) =>
-        q.eq("clerkId", clerkId).eq("name", name)
-      )
-      .filter((q) => q.eq(q.field("isActive"), true))
-      .collect();
-
-    const category = categories[0];
-
-    if (category) {
-      await ctx.db.patch(category._id, {
-        imageUrl,
-      });
-      return { action: "updated", id: category._id };
-    } else {
-      // Max order für diesen User finden
-      const userCategories = await ctx.db
-        .query("categories")
-        .withIndex("by_user", (q) => q.eq("clerkId", clerkId))
-        .collect();
-
-      const maxOrder = userCategories.length > 0
-        ? Math.max(...userCategories.map((c) => c.order))
-        : 0;
-
-      const newId = await ctx.db.insert("categories", {
-        clerkId,
-        name,
-        icon: "restaurant",
-        color: "#6366f1",
-        imageUrl,
-        order: maxOrder + 1,
-        isActive: true,
-      });
-      return { action: "created", id: newId };
-    }
+    // Filter out categories with 0 recipes
+    return result.filter((category) => category.count > 0);
   },
 });
 
@@ -309,55 +174,6 @@ export const deleteCategory = mutation({
 
     await ctx.db.delete(category._id);
     console.log(`[Delete Category] ✅ Deleted category: ${args.name}`);
-  },
-});
-
-/**
- * Action: Generiert Pollinations-Bild URL (für aktuellen User)
- */
-export const generateAndStoreCategoryImage = action({
-  args: {
-    categoryName: v.string(),
-  },
-  handler: async (ctx, args): Promise<{ url: string } | null> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const clerkId = identity.subject;
-
-    // Prüfe ob bereits eine URL existiert
-    const existingUrl = await ctx.runQuery(api.categories.getExistingImageUrl, {
-      name: args.categoryName,
-    });
-
-    if (existingUrl) {
-      return { url: existingUrl };
-    }
-
-    // API Key aus Environment Variable holen
-    const apiKey = process.env.POLLINATIONS_API_KEY || '';
-    if (!apiKey) {
-      throw new Error('POLLINATIONS_API_KEY not set. Please add it to your .env file.');
-    }
-
-    // Pollinations URL generieren
-    const { getConsistentSeed, buildCategoryImageUrl } = await import("./pollinationsHelper");
-    const seed = getConsistentSeed(args.categoryName);
-
-    const pollinationsUrl = buildCategoryImageUrl(args.categoryName, seed, apiKey);
-
-    console.log(`[Category Image] ✅ Generated URL for "${args.categoryName}":`, pollinationsUrl);
-
-    // URL in Datenbank speichern (mit clerkId!)
-    await ctx.runMutation(internal.categories.upsertCategoryWithImageUrl, {
-      clerkId,
-      name: args.categoryName,
-      imageUrl: pollinationsUrl,
-    });
-
-    return { url: pollinationsUrl };
   },
 });
 

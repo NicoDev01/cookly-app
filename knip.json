@@ -1,0 +1,41 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "index.tsx",
+    "prefetch.ts",
+    "capacitor.config.ts"
+  ],
+  "project": [
+    "**/*.{ts,tsx}"
+  ],
+  "ignore": [
+    "**/*.d.ts",
+    "android/**",
+    "ios/**",
+    "convex/_generated/**"
+  ],
+  "ignoreDependencies": [
+    "@types/node",
+    "@types/html2canvas",
+    "autoprefixer",
+    "postcss",
+    "tailwindcss",
+    "typescript"
+  ],
+  "vite": {
+    "config": [
+      "vite.config.ts"
+    ],
+    "entry": [
+      "index.html"
+    ]
+  },
+  "rules": {
+    "exports": "warn",
+    "types": "warn",
+    "dependencies": "error",
+    "unlisted": "warn",
+    "binaries": "warn",
+    "unresolved": "warn"
+  }
+}

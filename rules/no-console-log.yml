@@ -1,0 +1,25 @@
+# Regel: Warnung bei console.log in Production-Code
+# https://ast-grep.github.io/guide/rule-config/introduction.html
+
+id: no-console-log
+language: tsx
+severity: warning
+message: "Remove console.log before production build. Use a proper logger instead."
+
+rule:
+  pattern: console.log($$$ARGS)
+
+constraints:
+  ARGS:
+    kind: arguments
+
+fix: |-
+  // TODO: Remove or replace with proper logging
+
+files:
+  - "**/*.ts"
+  - "**/*.tsx"
+
+ignores:
+  - "**/*.test.{ts,tsx}"
+  - "**/*.spec.{ts,tsx}"

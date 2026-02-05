@@ -1,10 +1,12 @@
-import React, { useCallback, useState, startTransition } from 'react';
-import { useQuery, useAction, useMutation } from "convex/react";
+import React, { useState, startTransition } from 'react';
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Link, useSearchParams } from 'react-router-dom';
 import SafeImage from '../components/SafeImage';
+import EmptyState from '../components/EmptyState';
 import { prefetchCategoryRecipesPage, prefetchRecipePage } from '../prefetch';
 import { useDebounce } from 'use-debounce';
+import { useModal } from '../contexts/ModalContext';
 
 
 interface CategoryImageCache {
@@ -12,14 +14,14 @@ interface CategoryImageCache {
 }
 
 const CategoriesPage: React.FC = () => {
+  const { openAddModal } = useModal();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = React.useState("");
   // PERFORMANCE (QW-5): Debounce auf 300ms erhöht für weniger Query-Aufrufe
   const [debouncedSearch] = useDebounce(searchQuery, 300);
   const [categoryImageCache, setCategoryImageCache] = useState<CategoryImageCache>({});
+  
 
-  // Hook für Kategorie-Bild-Generierung (useAction, nicht useMutation!)
-  const generateCategoryImage = useAction(api.categories.generateAndStoreCategoryImage);
 
   // PERFORMANCE (QW-2): NICHT für Kategorien verwenden!
   // Kategorien ändern sich (Bilder werden nachträglich hinzugefügt)
@@ -33,7 +35,6 @@ const CategoriesPage: React.FC = () => {
     if (categoriesWithStats && categoriesWithStats.length > 0) {
       const totalCount = categoriesWithStats.reduce((sum, c) => sum + c.count, 0);
       if (totalCount === 0) {
-        console.log("Triggering category stats sync...");
         syncStats();
       }
     }
@@ -113,6 +114,8 @@ const CategoriesPage: React.FC = () => {
     ];
   }, [stats, allRecipes]);
 
+  const isEmptyState = !categoriesLoading && !isFiltering && categoriesList.length > 0 && categoriesList[0].count === 0;
+
   const filteredRecipes = React.useMemo(() => {
     if (!allRecipes) return [];
     let result = allRecipes as any[];
@@ -143,53 +146,6 @@ const CategoriesPage: React.FC = () => {
     setSelectedIngredients(selectedIngredients.filter(i => i !== ing));
   };
 
-  // Funktion: Generiert Kategorie-Bild wenn nicht vorhanden
-  const ensureCategoryImage = useCallback(async (categoryName: string): Promise<string | undefined> => {
-    // Prüfen ob bereits im Cache oder fehlgeschlagen
-    if (categoryImageCache[categoryName] === false) {
-      return undefined; // Bereits fehlgeschlagen, nicht erneut versuchen
-    }
-    if (categoryImageCache[categoryName]) {
-      return categoryImageCache[categoryName] || undefined;
-    }
-
-    // stats ist jetzt ein Array, kein Objekt mit categories property
-    const category = stats && Array.isArray(stats) ? stats.find(c => c.name === categoryName) : undefined;
-    if (category?.image) {
-      // Bild existiert bereits in DB
-      setCategoryImageCache(prev => ({ ...prev, [categoryName]: category.image! }));
-      return category.image;
-    }
-
-    // Prüfen ob bereits geladen wird
-    if (categoryImageCache[categoryName] === null) {
-      return undefined; // Bereits am Laden
-    }
-
-    // Bild generieren
-    setCategoryImageCache(prev => ({ ...prev, [categoryName]: null })); // Loading state
-
-    try {
-      const result = await generateCategoryImage({ categoryName });
-      if (result) {
-        setCategoryImageCache(prev => ({ ...prev, [categoryName]: result.url }));
-        return result.url;
-      } else {
-        // Bild existierte bereits
-        // Erneut prüfen - stats ist ein Array
-        const updatedCategory = stats && Array.isArray(stats) ? stats.find(c => c.name === categoryName) : undefined;
-        const imageUrl = updatedCategory?.image;
-        setCategoryImageCache(prev => ({ ...prev, [categoryName]: imageUrl ?? false }));
-        return imageUrl;
-      }
-    } catch (error) {
-      console.error(`Failed to generate image for category ${categoryName}:`, error);
-      // Auf false setzen = fehlgeschlagen, nicht erneut versuchen
-      setCategoryImageCache(prev => ({ ...prev, [categoryName]: false }));
-      return undefined;
-    }
-  }, [categoryImageCache, stats, generateCategoryImage]);
-
   // CRITICAL: Initialisiere Cache mit DB-Bildern wenn stats sich ändert
   // Dieser Effect hängt nur von stats ab, nicht vom Cache selbst!
   React.useEffect(() => {
@@ -209,90 +165,44 @@ const CategoriesPage: React.FC = () => {
     }
   }, [stats]); // Nur von stats abhängig!
 
-  // Trigger Bild-Generierung für Kategorien ohne Bild
-  React.useEffect(() => {
-    if (stats && Array.isArray(stats) && !isFiltering) {
-      stats.forEach(category => {
-        // Nur versuchen wenn Bild fehlt UND nicht bereits fehlgeschlagen UND nicht bereits am Laden
-        if (!category.image && categoryImageCache[category.name] === undefined) {
-          ensureCategoryImage(category.name);
-        }
-      });
-    }
-  }, [stats, isFiltering, categoryImageCache, ensureCategoryImage]);
-
-
   return (
     <div className="page-enter min-h-screen bg-background-light dark:bg-background-dark font-display pb-nav">
       <div className="flex flex-col flex-1 pb-nav">
 
-        {/* Logo Header */}
-        <div className="flex items-center px-4 pt-4 pb-2" style={{ paddingTop: 'max(1rem, var(--safe-area-inset-top))' }}>
-          <img
-            src="/logo.png"
-            alt="Cookly"
-            className="h-10 w-auto"
-          />
-        </div>
-
-        {/* Search Bar */}
-        <div className="px-4 py-2">
-          <form 
-            onSubmit={(e) => e.preventDefault()}
-            className="flex items-stretch rounded-xl h-12 bg-card-light dark:bg-card-dark shadow-neo-light-convex dark:shadow-neo-dark-convex transition-all duration-200 focus-within:bg-primary/10 focus-within:shadow-none focus-within:ring-2 focus-within:ring-primary group"
-          >
-            <label htmlFor="global-search" className="sr-only">Rezepte suchen</label>
-            <div className="text-text-secondary-light dark:text-text-secondary-dark group-focus-within:text-primary flex items-center justify-center pl-4 transition-colors">
-              <span className="material-symbols-outlined">search</span>
-            </div>
-            <input
-              id="global-search"
-              name="search"
-              className="flex-1 bg-transparent border-none outline-none focus:outline-none focus:ring-0 focus:ring-transparent text-black dark:text-white placeholder:text-text-secondary-light dark:placeholder:text-text-secondary-dark px-4 text-base transition-all"
-              placeholder="Suche nach Rezepten..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value); // Immediate update for input
-                startTransition(() => {
-                  // Debounced search runs in background via useDebouncedValue
-                });
-              }}
-              autoComplete="on"
-              autoCorrect="on"
-              autoCapitalize="sentences"
-              spellCheck={true}
-              inputMode="text"
+        {!isEmptyState && (
+          <div className="flex items-center px-4 pt-4 pb-2" style={{ paddingTop: 'max(1rem, var(--safe-area-inset-top))' }}>
+            <img
+              src="/logo.png"
+              alt="Cookly"
+              className="h-10 w-auto"
             />
-          </form>
-        </div>
+          </div>
+        )}
 
-        {/* Page Title */}
-        <h1 className="text-text-primary-light dark:text-text-primary-dark text-[26px] font-bold px-4 pt-2 pb-2">
-          {isFiltering ? 'Suchergebnisse' : 'Kategorien'}
-        </h1>
-
-        <div className="px-4 py-2">
-          <button
-            onClick={() => setIsFilterOpen(!isFilterOpen)}
-            className={`touch-btn flex items-center gap-2 rounded-xl px-4 py-2.5 transition-colors ${isFilterOpen || selectedIngredients.length > 0 ? 'bg-primary/10 text-primary' : 'text-text-secondary-light dark:text-text-secondary-dark'}`}
-          >
-            <span className="material-symbols-outlined text-xl">filter_list</span>
-            <span className="text-sm font-medium">Filtern nach Zutaten</span>
-          </button>
-
-          {isFilterOpen && (
-            <div className="mt-3 animate-in fade-in slide-in-from-top-2 space-y-3">
-              <form onSubmit={(e) => { e.preventDefault(); }}>
-                <label htmlFor="ingredient-filter" className="sr-only">Zutat filtern</label>
+        {!isEmptyState && (
+          <>
+            {/* Search Bar */}
+            <div className="px-4 py-2">
+              <form
+                onSubmit={(e) => e.preventDefault()}
+                className="flex items-stretch rounded-xl h-12 bg-card-light dark:bg-card-dark shadow-neo-light-convex dark:shadow-neo-dark-convex transition-all duration-200 focus-within:bg-primary/10 focus-within:shadow-none focus-within:ring-2 focus-within:ring-primary group"
+              >
+                <label htmlFor="global-search" className="sr-only">Rezepte suchen</label>
+                <div className="text-text-secondary-light dark:text-text-secondary-dark group-focus-within:text-primary flex items-center justify-center pl-4 transition-colors">
+                  <span className="material-symbols-outlined">search</span>
+                </div>
                 <input
-                  id="ingredient-filter"
-                  name="ingredient"
-                  autoFocus
-                  className="w-full bg-card-light dark:bg-card-dark border-0 rounded-xl p-4 text-black dark:text-white shadow-inner focus:ring-2 focus:ring-primary focus:shadow-primary-glow text-base transition-all"
-                  placeholder="Zutat eingeben und Enter drücken..."
-                  value={ingredientInput}
-                  onChange={(e) => setIngredientInput(e.target.value)}
-                  onKeyDown={handleAddIngredient}
+                  id="global-search"
+                  name="search"
+                  className="flex-1 bg-transparent border-none outline-none focus:outline-none focus:ring-0 focus:ring-transparent text-black dark:text-white placeholder:text-text-secondary-light dark:placeholder:text-text-secondary-dark px-4 text-base transition-all"
+                  placeholder="Suche nach Rezepten..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value); // Immediate update for input
+                    startTransition(() => {
+                      // Debounced search runs in background via useDebouncedValue
+                    });
+                  }}
                   autoComplete="on"
                   autoCorrect="on"
                   autoCapitalize="sentences"
@@ -300,25 +210,63 @@ const CategoriesPage: React.FC = () => {
                   inputMode="text"
                 />
               </form>
+            </div>
 
-              {selectedIngredients.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {selectedIngredients.map((ing, idx) => (
-                    <span
-                      key={ing}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${getColorClass(idx)} text-black dark:text-white shadow-sm`}
-                    >
-                      {ing}
-                      <button onClick={() => removeIngredient(ing)} className="touch-btn hover:text-red-500 ml-0.5 p-0.5">
-                        <span className="material-symbols-outlined text-sm">close</span>
-                      </button>
-                    </span>
-                  ))}
+            {/* Page Title */}
+            <h1 className="text-text-primary-light dark:text-text-primary-dark text-[26px] font-bold px-4 pt-2 pb-2">
+              {isFiltering ? 'Suchergebnisse' : 'Kategorien'}
+            </h1>
+
+            <div className="px-4 py-2">
+              <button
+                onClick={() => setIsFilterOpen(!isFilterOpen)}
+                className={`touch-btn flex items-center gap-2 rounded-xl px-4 py-2.5 transition-colors ${isFilterOpen || selectedIngredients.length > 0 ? 'bg-primary/10 text-primary' : 'text-text-secondary-light dark:text-text-secondary-dark'}`}
+              >
+                <span className="material-symbols-outlined text-xl">filter_list</span>
+                <span className="text-sm font-medium">Filtern nach Zutaten</span>
+              </button>
+
+              {isFilterOpen && (
+                <div className="mt-3 animate-in fade-in slide-in-from-top-2 space-y-3">
+                  <form onSubmit={(e) => { e.preventDefault(); }}>
+                    <label htmlFor="ingredient-filter" className="sr-only">Zutat filtern</label>
+                    <input
+                      id="ingredient-filter"
+                      name="ingredient"
+                      autoFocus
+                      className="w-full bg-card-light dark:bg-card-dark border-0 rounded-xl p-4 text-black dark:text-white shadow-inner focus:ring-2 focus:ring-primary focus:shadow-primary-glow text-base transition-all"
+                      placeholder="Zutat eingeben und Enter drücken..."
+                      value={ingredientInput}
+                      onChange={(e) => setIngredientInput(e.target.value)}
+                      onKeyDown={handleAddIngredient}
+                      autoComplete="on"
+                      autoCorrect="on"
+                      autoCapitalize="sentences"
+                      spellCheck={true}
+                      inputMode="text"
+                    />
+                  </form>
+
+                  {selectedIngredients.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedIngredients.map((ing, idx) => (
+                        <span
+                          key={ing}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${getColorClass(idx)} text-black dark:text-white shadow-sm`}
+                        >
+                          {ing}
+                          <button onClick={() => removeIngredient(ing)} className="touch-btn hover:text-red-500 ml-0.5 p-0.5">
+                            <span className="material-symbols-outlined text-sm">close</span>
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          )}
-        </div>
+          </>
+        )}
 
         <div className="pb-4">
           {isFiltering ? (
@@ -374,6 +322,11 @@ const CategoriesPage: React.FC = () => {
                 <div className="flex items-center justify-center py-20">
                   <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
                 </div>
+              )}
+
+              {/* Empty State - zeige wenn keine Rezepte vorhanden */}
+              {!categoriesLoading && !isFiltering && categoriesList.length > 0 && categoriesList[0].count === 0 && (
+                <EmptyState openAddModal={openAddModal} />
               )}
 
               {/* PERFORMANCE (AC-1): Virtualisierte Kategorien-Liste */}

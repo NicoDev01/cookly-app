@@ -21,7 +21,28 @@ async function adjustCategoryCount(ctx: any, category: string, amount: number, c
   if (existing) {
     const newCount = Math.max(0, existing.count + amount);
     if (newCount === 0) {
+      // Delete categoryStats entry
       await ctx.db.delete(existing._id);
+
+      // Also delete from categories table if it exists
+      const categoryEntry = await ctx.db
+        .query("categories")
+        .withIndex("by_user_name", (q: any) => q.eq("clerkId", clerkId).eq("name", category))
+        .first();
+
+      if (categoryEntry) {
+        // Delete storage image if present (non-fatal)
+        if (categoryEntry.imageStorageId) {
+          try {
+            await ctx.storage.delete(categoryEntry.imageStorageId);
+          } catch (e) {
+            console.warn(`[adjustCategoryCount] Could not delete category image:`, e);
+          }
+        }
+
+        // Delete the category entry
+        await ctx.db.delete(categoryEntry._id);
+      }
     } else {
       await ctx.db.patch(existing._id, { count: newCount });
     }

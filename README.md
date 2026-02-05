@@ -2,10 +2,14 @@
 
 AI-powered Recipe SaaS App with multi-user support.
 
+Save recipes from anywhere – snap a photo, paste a URL, or add manually. Cookly uses Google Gemini AI to extract and structure recipes automatically from images and web pages.
+
 ## Features
 
 - 🤖 **AI Recipe Scanner** - Scan recipes from photos using Google Gemini
-- 👥 **Multi-user Authentication** - Secure login with Clerk
+- 🌐 **URL Import** - Save recipes from any website (auto-extraction)
+- 📸 **Instagram Import** - Import recipes directly from Instagram posts
+-  **Multi-user Authentication** - Secure login with Clerk
 - 💳 **Stripe Subscriptions** - Monthly, Yearly, and Lifetime plans
 - 📱 **Native Android App** - Built with Capacitor
 - 🛒 **Shopping Lists** - Smart shopping list with deduplication
@@ -21,6 +25,15 @@ AI-powered Recipe SaaS App with multi-user support.
 - **AI**: Google Gemini API
 - **Styling**: Tailwind CSS
 - **Mobile**: Capacitor (Android)
+
+## Architecture
+
+Cookly follows a **multi-tenant architecture** where all user data is isolated by `clerkId`. Key patterns:
+
+- **Identity Verification**: Every Convex function uses `ctx.auth.getUserIdentity()` to validate requests
+- **Subscription Limits**: Backend enforces import limits and validates ownership before mutations
+- **Rate Limiting**: 1 scrape per 10 seconds per user to prevent abuse
+- **Linear Control Flow**: Clear async/await structure without nested callbacks
 
 ## Getting Started
 
@@ -157,20 +170,11 @@ npx cap open android
 npx convex env set GEMINI_API_KEY your_key_here
 npx convex env set CLERK_WEBHOOK_SECRET your_secret_here
 npx convex env set STRIPE_SECRET_KEY your_key_here --prod
+npx convex env set STRIPE_WEBHOOK_SECRET your_webhook_secret_here --prod
 ```
 
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-MIT License - see LICENSE file for details
+**Note**: Stripe webhooks are required for subscription lifecycle events (created, updated, canceled).
 
 ## Support
 
 For support, email support@cookly.app or open an issue on GitHub.
-
----
-
-Built with ❤️ using React, Convex, and Clerk

@@ -6,17 +6,10 @@
 
 // Einfache Configs - nur Dimensionen
 export const RECIPE_IMAGE_CONFIG = {
-  width: 1200,
-  height: 800,
-  model: 'zimage',
+  width: 1024,
+  height: 1024,
+  model: 'klein',
 };
-
-export const CATEGORY_IMAGE_CONFIG = {
-  width: 512,
-  height: 512,
-  model: 'zimage',
-};
-
 /**
  * Bereinigt Text für Prompts (Umlaute, Sonderzeichen)
  */
@@ -47,58 +40,20 @@ export function getConsistentSeed(text: string): number {
 }
 
 /**
- * Übersetzungen für Kategorien (Deutsch → Englisch)
- * Nur die wichtigsten Kategorien - alles andere nutzt den deutschen Namen direkt
- */
-const CATEGORY_TRANSLATIONS: Record<string, string> = {
-  "nudeln": "pasta",
-  "pasta": "pasta",
-  "hauptgericht": "main course",
-  "hauptgerichte": "main course",
-  "suppen": "soup",
-  "suppe": "soup",
-  "eintopf": "stew",
-  "eintöpfe": "stew",
-  "salate": "salad",
-  "salat": "salad",
-  "dessert": "dessert",
-  "desserts": "dessert",
-  "frühstück": "breakfast",
-  "snacks": "snacks",
-  "snack": "snack",
-  "getränke": "drink",
-  "getränk": "drink",
-  "backen": "baking",
-  "fleisch": "meat",
-  "fisch": "fish",
-  "vegetarisch": "vegetarian",
-  "vegan": "vegan",
-  "beilagen": "side dish",
-  "beilage": "side dish",
-  "saucen": "sauce",
-  "sauce": "sauce",
-};
-
-export function getEnglishCategoryTerm(germanName: string): string {
-  const normalized = cleanPrompt(germanName);
-  // Bei bekannter Übersetzung nutzen, sonst deutschen Namen
-  return CATEGORY_TRANSLATIONS[normalized] || normalized;
-}
-
-/**
  * Generiert Pollinations URL
- * Format: https://gen.pollinations.ai/image/{prompt}?model=zimage&width=1200&height=800&seed=42&key=API_KEY
+ * Format: https://gen.pollinations.ai/image/{prompt}?model=klein&width=1024&height=1024&seed=42&key=API_KEY
  */
 function buildPollinationsUrl(
   prompt: string,
   width: number,
   height: number,
   seed: number,
+  model: string,
   apiKey: string
 ): string {
   const encodedPrompt = encodeURIComponent(prompt);
   const params = new URLSearchParams({
-    model: 'zimage',
+    model: model,
     width: width.toString(),
     height: height.toString(),
     seed: seed.toString(),
@@ -122,23 +77,7 @@ export function buildRecipeImageUrl(title: string, seed: number, apiKey: string)
     RECIPE_IMAGE_CONFIG.width,
     RECIPE_IMAGE_CONFIG.height,
     seed,
-    apiKey
-  );
-}
-
-/**
- * Generiert URL für Kategoriebild
- * Nutzt englische Begriffe + minimalistischer Black & White Sketch Stil
- */
-export function buildCategoryImageUrl(categoryName: string, seed: number, apiKey: string): string {
-  const englishTerm = getEnglishCategoryTerm(categoryName);
-  const prompt = `${englishTerm} minimalistic black and white sketch`;
-
-  return buildPollinationsUrl(
-    prompt,
-    CATEGORY_IMAGE_CONFIG.width,
-    CATEGORY_IMAGE_CONFIG.height,
-    seed,
+    RECIPE_IMAGE_CONFIG.model,
     apiKey
   );
 }

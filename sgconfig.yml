@@ -1,0 +1,26 @@
+# Ast-Grep Configuration
+# https://ast-grep.github.io/guide/project/setup.html
+
+ruleDirs:
+  - rules
+
+utilDirs:
+  - utils
+
+testConfigs:
+  - testDir: tests
+    language: tsx
+
+ignores:
+  - android/**
+  - ios/**
+  - node_modules/**
+  - dist/**
+  - "**/*.config.{ts,js}"
+  - convex/_generated/**
+
+languageOptions:
+  - language: ts
+    target: es2022
+  - language: tsx
+    target: es2022

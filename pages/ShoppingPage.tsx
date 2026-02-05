@@ -66,10 +66,33 @@ const ShoppingPage: React.FC = () => {
         {/* Content */}
         <div className="px-4 py-2">
           {items && items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <span className="material-symbols-outlined text-6xl text-gray-300 dark:text-gray-600 mb-4">shopping_cart</span>
-              <p className="text-body text-text-secondary-light dark:text-text-secondary-dark mb-4">Deine Einkaufsliste ist leer.</p>
-              <Link to="/tabs/categories" className="touch-btn text-primary font-bold px-4 py-2 radius-md bg-primary/10">Rezepte öffnen</Link>
+            <div className="flex flex-col items-center justify-center px-6 pt-12 animate-in fade-in">
+              {/* Icon with Headline */}
+              <div className="flex flex-col items-center">
+                {/* Animated Icon */}
+                <span className="material-symbols-outlined text-8xl text-primary animate-pulse mb-4">
+                  shopping_basket
+                </span>
+
+                {/* Headline */}
+                <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-center">
+                  Noch keine <span className="text-primary italic">Zutaten</span>
+                </h2>
+              </div>
+
+              {/* Subtext */}
+              <p className="text-body text-text-secondary-light dark:text-text-secondary-dark text-center max-w-sm mt-4">
+                Füge Zutaten aus deinen Rezepten hinzu.
+              </p>
+
+              {/* CTA Button */}
+              <Link
+                to="/tabs/categories"
+                className="mt-8 flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-white font-semibold shadow-neo-light-convex hover:bg-primary-dark transition-all touch-btn"
+              >
+                <span className="material-symbols-outlined">restaurant_menu</span>
+                Rezepte öffnen
+              </Link>
             </div>
           ) : (
             <div className="flex flex-wrap gap-2.5">

@@ -10,6 +10,7 @@ import { compressImage, uploadJpegToConvexStorage } from './addRecipeModal/recip
 import { encodeImageToBlurhash } from '../utils/blurhash';
 import ManualRecipeForm from './addRecipeModal/ManualRecipeForm';
 import UpgradeModal from './UpgradeModal';
+import { useModal } from '../contexts/ModalContext';
 
 interface AddRecipeModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ interface AddRecipeModalProps {
 }
 
 const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initialData }) => {
+  const { addModalImportUrl, addModalInitialTab } = useModal();
   const navigate = useNavigate();
   const createRecipe = useMutation(api.recipes.create);
   const updateRecipe = useMutation(api.recipes.updateRecipe);
@@ -247,11 +249,19 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         instructions: [{ text: '' }],
         image: 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?q=80&w=2626&auto=format&fit=crop',
         imageAlt: 'Leckeres Gericht',
-        sourceImageUrl: ''
+        sourceImageUrl: addModalImportUrl || ''
       });
       setRecipeImageStorageId(null);
       setRecipeImagePreviewUrl(null);
-      setActiveTab('ai');
+      // If we have an import URL, switch to manual tab where the URL input is visible
+      // Otherwise use initialTab if provided, default to 'ai'
+      if (addModalImportUrl) {
+        setActiveTab('manual');
+      } else if (addModalInitialTab) {
+        setActiveTab(addModalInitialTab);
+      } else {
+        setActiveTab('ai');
+      }
       setEditAfterScan(true);
 
       setImageChanged(false);

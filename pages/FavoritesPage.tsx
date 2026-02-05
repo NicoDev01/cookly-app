@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React from 'react';
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Link } from 'react-router-dom';
@@ -34,10 +34,36 @@ const FavoritesPage: React.FC = () => {
         {/* Recipe List - PERFORMANCE (AC-1): Standard Grid statt Virtuoso für bessere Shadows */}
         <div className="pb-4">
           {favoriteRecipes && favoriteRecipes.length === 0 ? (
-             <div className="flex flex-col items-center justify-center py-20 text-center">
-                <span className="material-symbols-outlined text-6xl text-gray-300 dark:text-gray-600 mb-4">favorite_border</span>
-                <p className="text-body text-text-secondary-light dark:text-text-secondary-dark mb-4">Du hast noch keine Favoriten.</p>
-                <Link to="/tabs/categories" className="touch-btn text-primary font-bold px-4 py-2 rounded-xl bg-primary/10">Rezepte entdecken</Link>
+              <div className="flex flex-col items-center justify-center px-6 pt-12 animate-in fade-in">
+                 {/* Heart Icon with Headline */}
+                 <div className="flex flex-col items-center">
+                    {/* Animated Heart Icon */}
+                    <span className="material-symbols-outlined text-8xl text-red-500 animate-pulse mb-4">
+                       favorite
+                    </span>
+
+                    {/* Headline */}
+                    <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-center">
+                       Noch keine <span className="text-primary italic">Favoriten</span>
+                    </h2>
+                 </div>
+
+                 {/* Subtext */}
+                 <p className="text-body text-text-secondary-light dark:text-text-secondary-dark text-center max-w-sm mt-4">
+                   Speichere Rezepte, die dir gefallen, mit einem Klick auf das Herz-Symbol.
+                </p>
+                <p className="text-body text-text-secondary-light dark:text-text-secondary-dark text-center mb-8 max-w-sm">
+                   So hast du sie schnell wieder zur Hand.
+                </p>
+
+                {/* CTA Button */}
+                <Link
+                   to="/tabs/categories"
+                   className="flex items-center gap-2 px-6 py-3 rounded-xl bg-card-light dark:bg-card-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all touch-btn text-body font-semibold text-text-primary-light dark:text-text-primary-dark hover:text-primary"
+                >
+                   <span className="material-symbols-outlined">explore</span>
+                   Rezepte entdecken
+                </Link>
              </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 p-6 pb-24">

@@ -232,7 +232,7 @@ export const scrapePost = action({
       // Fallback: Pollinations
       try {
         const safeTitle = encodeURIComponent(recipeData.title || "Delicious Food");
-        const pollinationsUrl = `https://image.pollinations.ai/prompt/realistic%20food%20photography%20${safeTitle}?width=1080&height=1080&nologo=true`;
+        const pollinationsUrl = `https://image.pollinations.ai/prompt/realistic%20food%20photography%20${safeTitle}?width=1024&height=1024&model=klein&nologo=true`;
 
         const pollRes = await fetch(pollinationsUrl);
         if (pollRes.ok) {

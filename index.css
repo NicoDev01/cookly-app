@@ -1,3 +1,23 @@
+/**
+ * ============================================================================
+ * Cookly App - Haupt-Stylesheet
+ * ============================================================================
+ * 
+ * Diese Datei importiert das Cookly Design System und Tailwind CSS.
+ * 
+ * Struktur:
+ * 1. Design System Imports (Tokens, Components, Utilities)
+ * 2. Tailwind Directives
+ * 3. Basis-Styles und Custom Components
+ * 4. Animationen und Utilities
+ */
+
+/* Cookly Design System Imports */
+@import './styles/design-tokens.css';
+@import './styles/components.css';
+@import './styles/utilities.css';
+
+/* Tailwind CSS */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

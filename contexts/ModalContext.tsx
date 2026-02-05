@@ -2,13 +2,17 @@ import React, { createContext, useContext, useState, ReactNode, useMemo } from '
 
 interface ModalContextType {
   isAddModalOpen: boolean;
-  openAddModal: () => void;
+  openAddModal: (options?: { importUrl?: string; initialTab?: 'ai' | 'manual' }) => void;
   closeAddModal: () => void;
   isAddMealModalOpen: boolean;
   openAddMealModal: () => void;
   closeAddMealModal: () => void;
   isAnyModalOpen: boolean;
   closeAllModals: () => void;
+  // URL to pre-fill when opening the add modal
+  addModalImportUrl: string | null;
+  // Initial tab for the add modal
+  addModalInitialTab: 'ai' | 'manual' | null;
 }
 
 const ModalContext = createContext<ModalContextType | undefined>(undefined);
@@ -24,9 +28,19 @@ export const useModal = () => {
 export const ModalProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isAddMealModalOpen, setIsAddMealModalOpen] = useState(false);
+  const [addModalImportUrl, setAddModalImportUrl] = useState<string | null>(null);
+  const [addModalInitialTab, setAddModalInitialTab] = useState<'ai' | 'manual' | null>(null);
 
-  const openAddModal = () => setIsAddModalOpen(true);
-  const closeAddModal = () => setIsAddModalOpen(false);
+  const openAddModal = (options?: { importUrl?: string; initialTab?: 'ai' | 'manual' }) => {
+    setAddModalImportUrl(options?.importUrl ?? null);
+    setAddModalInitialTab(options?.initialTab ?? null);
+    setIsAddModalOpen(true);
+  };
+  const closeAddModal = () => {
+    setIsAddModalOpen(false);
+    setAddModalImportUrl(null);
+    setAddModalInitialTab(null);
+  };
 
   const openAddMealModal = () => setIsAddMealModalOpen(true);
   const closeAddMealModal = () => setIsAddMealModalOpen(false);
@@ -51,6 +65,8 @@ export const ModalProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       closeAddMealModal,
       isAnyModalOpen,
       closeAllModals,
+      addModalImportUrl,
+      addModalInitialTab,
     }}>
       {children}
     </ModalContext.Provider>
