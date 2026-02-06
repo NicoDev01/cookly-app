@@ -12,6 +12,7 @@ const ShareTargetPage: React.FC = () => {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const scrapePost = useAction(api.instagram.scrapePost);
+    const scrapeFacebookPost = useAction(api.facebook.scrapePost);
     const scrapeWebsite = useAction(api.website.scrapeWebsite);
     const [status, setStatus] = useState<'idle' | 'analyzing' | 'success' | 'error'>('idle');
     const [error, setError] = useState<string | null>(null);
@@ -19,6 +20,7 @@ const ShareTargetPage: React.FC = () => {
     const [savedRecipeId, setSavedRecipeId] = useState<string | null>(null);
     const [phase, setPhase] = useState<ProcessingPhase>('analyzing');
     const processingRef = useRef(false);
+    const shareInvocationRef = useRef(0);
     const backButtonHandlerRef = useRef<Promise<{ remove: () => void }> | null>(null);
 
     const handleClose = useCallback(async () => {
@@ -67,17 +69,24 @@ const ShareTargetPage: React.FC = () => {
             if (processingRef.current) return;
             processingRef.current = true;
 
+            shareInvocationRef.current += 1;
+            const shareRunId = shareInvocationRef.current;
+            console.log(`[ShareTarget] handleShare start #${shareRunId}`);
+
             const title = searchParams.get('title');
             const text = searchParams.get('text');
             const urlParam = searchParams.get('url');
 
             const combinedText = `${title || ''} ${text || ''} ${urlParam || ''}`;
+            console.log(`[ShareTarget] #${shareRunId} params`, { title, text, urlParam });
             const instagramMatch = combinedText.match(/instagram\.com\/(p|reel)\/([A-Za-z0-9_-]+)/);
+            const facebookMatch = combinedText.match(/https?:\/\/(?:www\.)?(?:facebook\.com|fb\.watch)\/[^\s]+/i);
             const genericUrlMatch = combinedText.match(/(https?:\/\/[^\s]+)/);
 
             try {
                 if (instagramMatch) {
                     const postUrl = `https://www.instagram.com/${instagramMatch[1]}/${instagramMatch[2]}/`;
+                    console.log(`[ShareTarget] #${shareRunId} instagramMatch`, { postUrl });
                     setStatus('analyzing');
 
                     // Phase 1: Analysieren
@@ -88,6 +97,28 @@ const ShareTargetPage: React.FC = () => {
                     setPhase('extrahieren');
 
                     const recipeId = await scrapePost({ url: postUrl });
+                    console.log(`[ShareTarget] #${shareRunId} scrapePost result`, { recipeId });
+
+                    // Phase 3: Importieren
+                    setPhase('importieren');
+                    await new Promise(r => setTimeout(r, 800));
+
+                    setSavedRecipeId(recipeId);
+                    setStatus('success');
+                } else if (facebookMatch) {
+                    const postUrl = facebookMatch[0];
+                    console.log(`[ShareTarget] #${shareRunId} facebookMatch`, { postUrl });
+                    setStatus('analyzing');
+
+                    // Phase 1: Analysieren
+                    setPhase('analyzing');
+                    await new Promise(r => setTimeout(r, 1500));
+
+                    // Phase 2: Extrahieren
+                    setPhase('extrahieren');
+
+                    const recipeId = await scrapeFacebookPost({ url: postUrl });
+                    console.log(`[ShareTarget] #${shareRunId} scrapeFacebookPost result`, { recipeId });
 
                     // Phase 3: Importieren
                     setPhase('importieren');
@@ -97,6 +128,7 @@ const ShareTargetPage: React.FC = () => {
                     setStatus('success');
                 } else if (genericUrlMatch) {
                     const websiteUrl = genericUrlMatch[1];
+                    console.log(`[ShareTarget] #${shareRunId} genericUrlMatch`, { websiteUrl });
                     setStatus('analyzing');
 
                     // Phase 1: Analysieren
@@ -107,6 +139,7 @@ const ShareTargetPage: React.FC = () => {
                     setPhase('extrahieren');
 
                     const recipeId = await scrapeWebsite({ url: websiteUrl });
+                    console.log(`[ShareTarget] #${shareRunId} scrapeWebsite result`, { recipeId });
 
                     // Phase 3: Importieren
                     setPhase('importieren');
@@ -118,9 +151,10 @@ const ShareTargetPage: React.FC = () => {
                     setError("Kein gültiger Link gefunden. Bitte teile eine URL.");
                     setStatus('error');
                 }
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error(err);
-                const msg = err.message || "";
+                const msg = err instanceof Error ? err.message : String(err ?? "");
+                console.error(`[ShareTarget] #${shareRunId} error`, { msg });
 
                 // Try to parse structured error JSON
                 try {
@@ -143,7 +177,7 @@ const ShareTargetPage: React.FC = () => {
                         setError(msg || "Ein unerwarteter Fehler ist aufgetreten.");
                         setStatus('error');
                     }
-                } catch (parseError) {
+                } catch {
                     // Fallback to string-based error detection
                     if (msg.includes("No data found") || msg.includes("parse recipe data")) {
                         setError("Kein Rezept gefunden 😕");
@@ -157,6 +191,7 @@ const ShareTargetPage: React.FC = () => {
                     }
                 }
             } finally {
+                console.log(`[ShareTarget] handleShare end #${shareRunId}`);
                 processingRef.current = false;
             }
         };
@@ -164,7 +199,7 @@ const ShareTargetPage: React.FC = () => {
         if (status === 'idle') {
             handleShare();
         }
-    }, [searchParams, scrapePost, scrapeWebsite, status]);
+    }, [searchParams, scrapePost, scrapeFacebookPost, scrapeWebsite, status]);
 
     // Native Back Button Handler - führt zu Instagram zurück während des Imports
     useEffect(() => {

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Recipe } from '../types';
+import { FaFacebook, FaInstagram, FaGlobe } from 'react-icons/fa';
 
 interface RecipeMetaProps {
   recipe: Recipe;
@@ -12,10 +13,24 @@ const RecipeMeta: React.FC<RecipeMetaProps> = ({ recipe }) => {
   const difficulty = typeof recipe.difficulty === 'string' ? recipe.difficulty : String(recipe.difficulty ?? '');
   const portions = typeof recipe.portions === 'number' ? recipe.portions : Number(recipe.portions) || 0;
 
-  // Determine source type (Instagram vs. Website)
+  // Determine source type (Instagram vs. Facebook vs. Website)
   const isInstagram = recipe.sourceUrl?.includes('instagram.com');
-  const sourceIcon = isInstagram ? 'smart_display' : 'language';
-  const sourceLabel = isInstagram ? 'IG' : 'Web';
+  const isFacebook = recipe.sourceUrl?.includes('facebook.com');
+
+  // Use react-icons (Font Awesome) for reliable brand icons
+  let SourceIcon: React.ComponentType<any> = FaGlobe;
+  let sourceLabel: string;
+
+  if (isInstagram) {
+    SourceIcon = FaInstagram;
+    sourceLabel = 'IG';
+  } else if (isFacebook) {
+    SourceIcon = FaFacebook;
+    sourceLabel = 'FB';
+  } else {
+    SourceIcon = FaGlobe;
+    sourceLabel = 'Web';
+  }
 
   return (
     <div className="mb-2">
@@ -42,7 +57,7 @@ const RecipeMeta: React.FC<RecipeMetaProps> = ({ recipe }) => {
             className="flex items-center gap-0.5 whitespace-nowrap hover:text-primary transition-colors"
             onClick={(e) => e.stopPropagation()}
           >
-            <span className="material-symbols-outlined !text-sm">{sourceIcon}</span>
+            <SourceIcon className="!text-sm" aria-hidden />
             <span>{sourceLabel}</span>
           </a>
         )}

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 
 interface PersonalizationStepProps {
-  onNext: (data: { cookingFrequency: string; preferredCuisines: string[] }) => void;
+  onNext: (data: { name: string; cookingFrequency: string; preferredCuisines: string[] }) => void;
 }
 
 export const PersonalizationStep: React.FC<PersonalizationStepProps> = ({ onNext }) => {
+  const [name, setName] = useState<string>('');
   const [cookingFrequency, setCookingFrequency] = useState<string>('regular');
   const [preferredCuisines, setPreferredCuisines] = useState<string[]>([]);
 
@@ -26,7 +27,7 @@ export const PersonalizationStep: React.FC<PersonalizationStepProps> = ({ onNext
   };
 
   const handleNext = () => {
-    onNext({ cookingFrequency, preferredCuisines });
+    onNext({ name: name.trim(), cookingFrequency, preferredCuisines });
   };
 
   return (
@@ -34,6 +35,18 @@ export const PersonalizationStep: React.FC<PersonalizationStepProps> = ({ onNext
       <h2 className="text-3xl font-bold tracking-tight mb-6">
         Personalisiere dein <span className="text-primary italic">Erlebnis</span>
       </h2>
+
+      <div className="mb-6 w-full max-w-md">
+        <h3 className="font-semibold mb-3">Wie heißt du?</h3>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Dein Name"
+          autoComplete="name"
+          className="w-full p-4 rounded-full border-2 border-primary/20 bg-transparent text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none transition"
+        />
+      </div>
 
       <div className="mb-6 w-full max-w-md">
         <h3 className="font-semibold mb-3">Wie oft kochst du?</h3>

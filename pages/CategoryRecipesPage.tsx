@@ -147,8 +147,8 @@ const CategoryRecipesPage: React.FC = () => {
   };
 
   return (
-    <div className="relative flex h-auto min-h-screen w-full flex-col group/design-root overflow-x-hidden bg-background-light dark:bg-background-dark font-display pb-nav">
-      <div className="flex flex-col flex-1 pb-24">
+    <div className="relative flex h-auto w-full flex-col group/design-root overflow-x-hidden bg-background-light dark:bg-background-dark font-display pb-nav">
+      <div className="flex flex-col flex-1">
         
         {/* Header */}
         <div className="flex items-center px-6 py-4 pt-[calc(max(1rem,var(--safe-area-inset-top))+1rem)] justify-between relative z-30 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md sticky top-0">
@@ -302,6 +302,7 @@ const CategoryRecipesPage: React.FC = () => {
             </div>
           )}
         </div>
+        <div style={{ height: 'calc(var(--nav-height) + var(--safe-area-inset-bottom, 0px))' }} className="w-full shrink-0" />
       </div>
       
     </div>

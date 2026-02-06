@@ -263,6 +263,7 @@ export const createOrUpdateUser = mutation({
  */
 export const updateOnboarding = mutation({
   args: {
+    name: v.optional(v.string()),
     cookingFrequency: v.optional(v.string()),
     preferredCuisines: v.optional(v.array(v.string())),
     notificationsEnabled: v.boolean(),
@@ -283,6 +284,7 @@ export const updateOnboarding = mutation({
     }
 
     await ctx.db.patch(user._id, {
+      name: args.name ?? user.name,
       cookingFrequency: args.cookingFrequency ?? user.cookingFrequency,
       preferredCuisines: args.preferredCuisines ?? user.preferredCuisines,
       notificationsEnabled: args.notificationsEnabled,

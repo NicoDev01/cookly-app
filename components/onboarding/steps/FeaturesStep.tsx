@@ -22,8 +22,8 @@ export const FeaturesStep: React.FC<FeaturesStepProps> = ({ onNext }) => {
     {
       id: 'instagram',
       icon: Globe,
-      title: 'Instagram & Website Import',
-      description: 'Importiere Rezepte direkt von Instagram oder anderen Websites. Einfach den Link kopieren und Cookly übernimmt den Rest.',
+      title: 'Instagram, Facebook & Website Import',
+      description: 'Importiere Rezepte direkt von Instagram, Facebook oder anderen Websites. Einfach den Link kopieren und Cookly übernimmt den Rest.',
     },
     {
       id: 'ai-scan',
@@ -42,7 +42,7 @@ export const FeaturesStep: React.FC<FeaturesStepProps> = ({ onNext }) => {
   return (
     <div className="flex flex-col items-center justify-center px-4 py-6">
       <h2 className="text-3xl font-bold tracking-tight mb-6">
-        Entdecke <span className="text-primary italic">Cookly</span>
+        Die Cookly <span className="text-primary italic">Features:</span>
       </h2>
       <div className="flex flex-col gap-4 mb-8 w-full max-w-md">
         {features.map((feature) => {

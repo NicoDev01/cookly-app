@@ -152,4 +152,14 @@ export default defineSchema({
     count: v.number(),
   })
   .index("by_user_category", ["clerkId", "category"]),
+
+  // IMPORT LOCKS - Verhindert doppelte Apify-Aufrufe bei parallelen Requests
+  importLocks: defineTable({
+    url: v.string(),
+    clerkId: v.string(),
+    startedAt: v.number(),
+    status: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed")),
+  })
+  .index("by_url", ["url"])
+  .index("by_url_and_user", ["url", "clerkId"]),
 });

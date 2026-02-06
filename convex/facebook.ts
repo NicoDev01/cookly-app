@@ -9,12 +9,23 @@ import { checkRateLimit, getRateLimitStatus } from "./rateLimiter";
 const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
-const INSTAGRAM_PROMPT = `
-  Extrahiere aus dieser Instagram-Caption ein strukturiertes Rezept:
+type RecipeData = {
+  title?: string;
+  category?: string;
+  prepTimeMinutes?: number;
+  difficulty?: "Einfach" | "Mittel" | "Schwer";
+  portions?: number;
+  ingredients?: Array<{ name: string; amount?: string; checked?: boolean }>;
+  instructions?: Array<{ text: string; icon?: string }>;
+  imageKeywords?: string;
+};
+
+const FACEBOOK_PROMPT = `
+  Extrahiere aus diesem Facebook-Post ein strukturiertes Rezept:
   - Titel (erste Zeile oder Zusammenfassung)
   - Zutaten (Liste)
   - Zubereitung (Schritte)
-  - Quelle: Instagram Post
+  - Quelle: Facebook Post
 
   Caption:
   {{TEXT}}
@@ -34,6 +45,66 @@ const INSTAGRAM_PROMPT = `
   Wähle für die Icons passende Material Symbols aus (z.B. outdoor_grill, timer, restaurant, blender, oven_gen, skillet, cookie, local_pizza, set_meal, soup_kitchen, flatware, egg, kitchen, microwave).
   Antworte NUR mit dem JSON.
 `;
+
+const extractCaptionFromPost = (post: Record<string, unknown>): string => {
+  // Facebook Reels/Videos: message.text enthält den Caption-Text
+  const message = post.message as Record<string, unknown> | undefined;
+  if (message && typeof message.text === "string" && message.text.trim().length > 0) {
+    return message.text;
+  }
+  
+  // Fallback für normale Posts: text oder message als String
+  if (typeof post.text === "string" && post.text.trim().length > 0) {
+    return post.text;
+  }
+  if (typeof post.message === "string" && post.message.trim().length > 0) {
+    return post.message;
+  }
+  if (typeof post.caption === "string" && post.caption.trim().length > 0) {
+    return post.caption;
+  }
+  if (typeof post.story === "string" && post.story.trim().length > 0) {
+    return post.story;
+  }
+  
+  return "";
+};
+
+const extractImageFromPost = (post: Record<string, unknown>): string => {
+  // 1. Versuche media array (normale Posts mit Bildern)
+  if (Array.isArray(post.media) && post.media.length > 0) {
+    const media = post.media[0] as Record<string, unknown>;
+    const photoImage = media.photo_image as Record<string, unknown> | undefined;
+    if (photoImage?.uri && typeof photoImage.uri === "string") {
+      return photoImage.uri;
+    }
+    if (typeof media.thumbnail === "string") {
+      return media.thumbnail;
+    }
+  }
+  
+  // 2. Versuche short_form_video_context für Reels
+  const videoContext = post.short_form_video_context as Record<string, unknown> | undefined;
+  if (videoContext) {
+    const playbackVideo = videoContext.playback_video as Record<string, unknown> | undefined;
+    const thumbnail = playbackVideo?.thumbnailImage as Record<string, unknown> | undefined;
+    if (thumbnail?.uri && typeof thumbnail.uri === "string") {
+      return thumbnail.uri;
+    }
+    const preferredThumbnail = playbackVideo?.preferred_thumbnail as Record<string, unknown> | undefined;
+    const prefImage = preferredThumbnail?.image as Record<string, unknown> | undefined;
+    if (prefImage?.uri && typeof prefImage.uri === "string") {
+      return prefImage.uri;
+    }
+    // video.first_frame_thumbnail
+    const video = videoContext.video as Record<string, unknown> | undefined;
+    if (typeof video?.first_frame_thumbnail === "string") {
+      return video.first_frame_thumbnail;
+    }
+  }
+  
+  return "";
+};
 
 export const scrapePost = action({
   args: { url: v.string() },
@@ -65,8 +136,8 @@ export const scrapePost = action({
     // ============================================================
     // 3. URL Validation
     // ============================================================
-    if (!args.url.includes("instagram.com/p/") && !args.url.includes("instagram.com/reel/")) {
-      throw new Error("INVALID_INSTAGRAM_URL");
+    if (!args.url.includes("facebook.com") && !args.url.includes("fb.watch")) {
+      throw new Error("INVALID_FACEBOOK_URL");
     }
 
     // ============================================================
@@ -94,7 +165,17 @@ export const scrapePost = action({
       }));
     }
 
-    console.log(`Starting Instagram import for: ${args.url}`);
+    console.log(`Starting Facebook import for: ${args.url}`);
+    
+    // DEBUG: URL-Analyse für Diagnose
+    const isShareUrl = args.url.includes("/share/r/") || args.url.includes("/share/v/");
+    const shareIdMatch = args.url.match(/\/share\/[rv]\/([A-Za-z0-9]+)/);
+    const requestedShareId = shareIdMatch ? shareIdMatch[1] : null;
+    console.log("=== URL ANALYSIS ===", {
+      originalUrl: args.url,
+      isShareUrl,
+      requestedShareId,
+    });
 
     // ============================================================
     // 5. Apify Call mit Graceful Degradation
@@ -103,15 +184,13 @@ export const scrapePost = action({
     let imageUrl: string;
 
     try {
-      // Apify Run starten
       const runResponse = await fetch(
-        `https://api.apify.com/v2/acts/apify~instagram-scraper/runs?token=${APIFY_TOKEN}`,
+        `https://api.apify.com/v2/acts/apify~facebook-posts-scraper/runs?token=${APIFY_TOKEN}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            directUrls: [args.url],
-            resultsType: "posts",
+            startUrls: [{ url: args.url }],
             resultsLimit: 1,
           }),
         }
@@ -155,19 +234,51 @@ export const scrapePost = action({
       );
       const items = await itemsRes.json();
 
+      // ===== DEBUG: Komplette Apify Response loggen =====
+      console.log("=== APIFY COMPLETE RESPONSE ===");
+      console.log("Items array length:", items?.length);
+      console.log("Full items array:", JSON.stringify(items, null, 2));
+      // =================================================
+
       if (!items || items.length === 0) {
         throw new Error("No data found in Apify dataset");
       }
 
-      const post = items[0];
-      caption = post.caption || "";
+      const post = items[0] as Record<string, unknown>;
+      
+      // ===== DEBUG: Komplettes Post-Objekt loggen =====
+      console.log("=== COMPLETE POST OBJECT ===");
+      console.log(JSON.stringify(post, null, 2));
+      console.log("=== POST OBJECT KEYS ===");
+      console.log("Top-level keys:", Object.keys(post));
+      // ================================================
+      
+      // ===== DEBUG: URL-VALIDIERUNG - Prüfe ob richtiges Video =====
+      const returnedUrl = post.url || post.postUrl || post.inputUrl;
+      const pageName = post.pageName;
+      const postId = post.postId || post.id;
+      console.log("=== URL VALIDATION CHECK ===", {
+        requestedUrl: args.url,
+        requestedShareId,
+        returnedUrl,
+        pageName,
+        postId,
+        urlsMatch: args.url === returnedUrl || String(returnedUrl).includes(String(requestedShareId)),
+        isLikelyWrongVideo: pageName === "reel" && requestedShareId !== null,
+      });
+      // ==============================================================
+      
+      console.log("Facebook post debug", {
+        hasMessage: !!post.message,
+        messageType: typeof post.message,
+        messageTextType: typeof (post.message as Record<string, unknown>)?.text,
+      });
+      caption = extractCaptionFromPost(post);
+      console.log("Facebook caption extracted", { length: caption.length, preview: caption.substring(0, 100) });
 
       // Image Extraction
-      if (post.images && post.images.length > 0) {
-        imageUrl = post.images[0];
-      } else {
-        imageUrl = post.displayUrl || post.thumbnailUrl || post.videoUrl || "";
-      }
+      imageUrl = extractImageFromPost(post);
+      console.log("Facebook image extracted", { imageUrl: imageUrl.substring(0, 80) });
 
     } catch (apifyError) {
       console.error("Apify error:", apifyError);
@@ -181,28 +292,18 @@ export const scrapePost = action({
         service: "apify",
         fallbackMode: "manual",
         prefillUrl: args.url,
-        message: "Der Instagram-Service ist gerade nicht verfügbar. Bitte gib das Rezept manuell ein.",
+        message: "Der Facebook-Service ist gerade nicht verfügbar. Bitte gib das Rezept manuell ein.",
       }));
     }
 
     // ============================================================
     // 6. Gemini AI Parsing mit Graceful Degradation
     // ============================================================
-    type RecipeData = {
-      title?: string;
-      category?: string;
-      prepTimeMinutes?: number;
-      difficulty?: "Einfach" | "Mittel" | "Schwer";
-      portions?: number;
-      ingredients?: Array<{ name: string; amount?: string; checked?: boolean }>;
-      instructions?: Array<{ text: string; icon?: string }>;
-      imageKeywords?: string;
-    };
     let recipeData: RecipeData;
 
     try {
       const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
-      const prompt = INSTAGRAM_PROMPT.replace("{{TEXT}}", caption);
+      const prompt = FACEBOOK_PROMPT.replace("{{TEXT}}", caption);
 
       const result = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
@@ -215,14 +316,14 @@ export const scrapePost = action({
       }
 
       const jsonStr = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
-      recipeData = JSON.parse(jsonStr);
+      recipeData = JSON.parse(jsonStr) as RecipeData;
 
     } catch (geminiError) {
       console.error("Gemini error:", geminiError);
 
       // Graceful Degradation: Fallback auf Basis-Rezept
       recipeData = {
-        title: "Instagram Rezept",
+        title: "Facebook Rezept",
         category: "Sonstiges",
         prepTimeMinutes: 15,
         difficulty: "Mittel",
@@ -257,7 +358,7 @@ export const scrapePost = action({
         }
       }
     } catch (imageError) {
-      console.warn("Instagram image download failed:", imageError);
+      console.warn("Facebook image download failed:", imageError);
       // Fallback: Pollinations
       try {
         const safeTitle = encodeURIComponent(recipeData.title || "Delicious Food");
@@ -297,7 +398,7 @@ export const scrapePost = action({
 
     try {
       const newRecipeId = await ctx.runMutation(api.recipes.create, {
-        title: recipeData.title || "Instagram Rezept",
+        title: recipeData.title || "Facebook Rezept",
         category: recipeData.category || "Sonstiges",
         prepTimeMinutes: recipeData.prepTimeMinutes || 15,
         difficulty: recipeData.difficulty || "Mittel",
@@ -307,8 +408,8 @@ export const scrapePost = action({
         image: finalImageUrl,
         imageStorageId: imageStorageId,
         sourceImageUrl: imageUrl,
-        sourceUrl: args.url,  // Setzt featureType = "link_imports"
-        imageAlt: recipeData.title,
+        sourceUrl: args.url,
+        imageAlt: recipeData.title || "Facebook Rezept",
         isFavorite: false,
       });
 

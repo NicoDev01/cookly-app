@@ -55,7 +55,7 @@ export default function SubscribePage() {
   const createCheckout = useAction(api.stripe.createCheckoutSession);
   const createPortal = useAction(api.stripe.createPortalSession);
   const [loading, setLoading] = useState<string | null>(null);
-  const [isYearly, setIsYearly] = useState(true);
+  const [isYearly, setIsYearly] = useState(false);
 
   React.useEffect(() => {
     window.scrollTo(0, 0);
@@ -165,9 +165,11 @@ export default function SubscribePage() {
         <div className="max-w-xl mx-auto">
           <Card className="flex flex-col border-2 border-primary bg-primary/5 backdrop-blur-sm shadow-2xl shadow-primary/10 relative overflow-hidden group">
             {/* Ribbon/Banner fixed */}
-            <div className="absolute top-6 -right-12 px-14 py-1.5 bg-primary text-primary-foreground text-[10px] font-bold uppercase tracking-widest transform rotate-45 z-10">
-              Empfohlen
-            </div>
+            {!isYearly && (
+              <div className="absolute top-6 -right-12 px-14 py-1.5 bg-primary text-primary-foreground text-[10px] font-bold uppercase tracking-widest transform rotate-45 z-10">
+                Empfohlen
+              </div>
+            )}
             
             <CardHeader className="pb-8">
               <CardTitle className="text-2xl font-bold flex items-center gap-2">
@@ -182,10 +184,7 @@ export default function SubscribePage() {
                   </span>
                   <span className="text-muted-foreground text-xl">/{proPeriod}</span>
                 </div>
-                <p className={cn(
-                  "text-sm font-medium mt-2 transition-colors",
-                  isYearly ? "text-primary" : "text-muted-foreground"
-                )}>
+                <p className="text-sm font-medium mt-2 text-primary">
                   {isYearly ? "Jährliche Abrechnung (Gesamt €50)" : "Monatliche Abrechnung (Gesamt €60/Jahr)"}
                 </p>
               </div>
@@ -264,10 +263,10 @@ export default function SubscribePage() {
           </p>
           <div className="pt-4">
             <a 
-              href="mailto:support@cookly.app" 
+              href="mailto:support@cookly.de" 
               className="text-xs font-bold text-primary hover:underline underline-offset-4"
             >
-              FRAGEN? SUPPORT@COOKLY.APP
+              Fragen? Support@Cookly.de
             </a>
           </div>
         </div>

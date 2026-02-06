@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useNavigate } from 'react-router-dom';
@@ -11,14 +11,23 @@ export const WelcomeScreen: React.FC = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
   const [onboardingData, setOnboardingData] = useState({
+    name: '',
     cookingFrequency: 'regular',
     preferredCuisines: [] as string[],
   });
 
   const updateOnboarding = useMutation(api.users.updateOnboarding);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const totalSteps = 3;
+
+  // Scroll to top when step changes
+  useEffect(() => {
+    if (contentRef.current) {
+      contentRef.current.scrollTop = 0;
+    }
+  }, [currentStep]);
 
   const handleNext = () => {
     if (currentStep < totalSteps - 1) {
@@ -37,6 +46,7 @@ export const WelcomeScreen: React.FC = () => {
   };
 
   const handlePersonalizationSubmit = (data: {
+    name: string;
     cookingFrequency: string;
     preferredCuisines: string[];
   }) => {
@@ -45,6 +55,7 @@ export const WelcomeScreen: React.FC = () => {
   };
 
   const handleCompleteOnboarding = async (data?: {
+    name: string;
     cookingFrequency: string;
     preferredCuisines: string[];
   }) => {
@@ -52,6 +63,7 @@ export const WelcomeScreen: React.FC = () => {
       // Update onboarding data if provided
       if (data) {
         await updateOnboarding({
+          name: data.name || undefined,
           cookingFrequency: data.cookingFrequency,
           preferredCuisines: data.preferredCuisines,
           notificationsEnabled: false,
@@ -88,7 +100,7 @@ export const WelcomeScreen: React.FC = () => {
   return (
     <div className="h-screen overflow-hidden flex flex-col bg-white dark:bg-slate-950">
       <OnboardingProgress currentStep={currentStep} totalSteps={totalSteps} />
-      <div className="flex-1 overflow-y-auto">
+      <div ref={contentRef} className="flex-1 overflow-y-auto">
         {renderStep()}
       </div>
 

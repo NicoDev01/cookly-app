@@ -2,10 +2,8 @@ import React from 'react';
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Link } from 'react-router-dom';
-import { useBackNavigation } from '../hooks/useBackNavigation';
 
 const FavoritesPage: React.FC = () => {
-  const handleBack = useBackNavigation();
   const favoriteRecipes = useQuery(api.recipes.getFavorites, {});
 
   const favoriteIds = React.useMemo(() => {
@@ -15,17 +13,11 @@ const FavoritesPage: React.FC = () => {
 
 
   return (
-    <div className="page-enter min-h-screen bg-background-light dark:bg-background-dark font-display pb-nav">
-      <div className="flex flex-col flex-1 pb-nav">
+    <div className="page-enter relative flex w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark font-display">
+      <div className="flex flex-col flex-1">
 
         {/* Header */}
-        <div className="flex items-center px-4 py-3 gap-4" style={{ paddingTop: 'max(1.5rem, var(--safe-area-inset-top))' }}>
-          <button
-            onClick={handleBack}
-            className="touch-btn flex h-11 w-11 items-center justify-center radius-md bg-card-light dark:bg-card-dark text-text-primary-light dark:text-text-primary-dark elevation-2"
-          >
-            <span className="material-symbols-outlined">arrow_back</span>
-          </button>
+        <div className="flex items-center px-6 py-3 gap-4" style={{ paddingTop: 'max(1.5rem, var(--safe-area-inset-top))' }}>
           <h1 className="text-headline text-text-primary-light dark:text-text-primary-dark">
             Favoriten
           </h1>
@@ -66,7 +58,7 @@ const FavoritesPage: React.FC = () => {
                 </Link>
              </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 p-6 pb-24">
+            <div className="grid grid-cols-1 gap-4 p-6 pb-4">
               {favoriteRecipes?.map((recipe, index) => (
                 <Link
                   key={recipe._id}
@@ -112,6 +104,7 @@ const FavoritesPage: React.FC = () => {
             </div>
           )}
         </div>
+        <div style={{ height: 'calc(var(--nav-height) + var(--safe-area-inset-bottom, 0px))' }} className="w-full shrink-0" />
       </div>
     </div>
   );

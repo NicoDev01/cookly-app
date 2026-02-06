@@ -3,7 +3,7 @@ import { SendIntent } from '@supernotes/capacitor-send-intent';
 import { Capacitor } from '@capacitor/core';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { App as CapacitorApp } from '@capacitor/app';
-import { useNavigate, useLocation, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { useNavigate, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from "@clerk/clerk-react";
 import { useConvexAuth, useQuery, useMutation } from 'convex/react';
 import { api } from './convex/_generated/api';
@@ -119,7 +119,8 @@ const ProtectedLayout: React.FC = () => {
 
 const AppContent: React.FC = () => {
   const navigate = useNavigate();
-  const location = useLocation();
+  const intentCheckCountRef = useRef(0);
+  const lastIntentSignatureRef = useRef<string | null>(null);
 
   // Native Back Button Handler (Android)
   const { isAnyModalOpen, closeAllModals } = useModal();
@@ -130,14 +131,24 @@ const AppContent: React.FC = () => {
 
 
     // Helper to check for intents
-    const checkIntent = async () => {
+    const checkIntent = async (source: 'cold-start' | 'resume') => {
         if (!Capacitor.isNativePlatform()) return;
         
         try {
+            intentCheckCountRef.current += 1;
+            const checkId = intentCheckCountRef.current;
+            console.log(`[SendIntent] checkIntent #${checkId} (${source})`);
+
             const result = await SendIntent.checkSendIntentReceived();
+            console.log(`[SendIntent] checkIntent #${checkId} result:`, result);
             if (result && (result.title || result.description || result.url)) {
                 console.log('SendIntent received:', result);
                 const { title, description, url } = result;
+
+                const signature = `${title ?? ''}|${description ?? ''}|${url ?? ''}`;
+                const isDuplicate = lastIntentSignatureRef.current === signature;
+                console.log(`[SendIntent] checkIntent #${checkId} has intent (duplicate=${isDuplicate})`, { signature });
+                lastIntentSignatureRef.current = signature;
                 
                 // Redirect to ShareTargetPage with query params
                 const params = new URLSearchParams();
@@ -153,7 +164,7 @@ const AppContent: React.FC = () => {
     };
 
     // Initial check (Cold Start)
-    checkIntent();
+    checkIntent('cold-start');
 
     // Listen for App Resume (Warm Start)
     const setupListener = async () => {
@@ -162,7 +173,7 @@ const AppContent: React.FC = () => {
         await CapacitorApp.addListener('appStateChange', ({ isActive }) => {
             if (isActive) {
                 console.log('App resumed, checking for intent...');
-                checkIntent();
+                checkIntent('resume');
             }
         });
     };

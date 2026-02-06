@@ -100,44 +100,43 @@ export const TabsLayout: React.FC = () => {
 
   return (
     <ErrorBoundary>
-      <div className="antialiased min-h-screen bg-background-light dark:bg-background-dark">
+      <div className="antialiased h-[100dvh] w-full flex flex-col overflow-hidden bg-background-light dark:bg-background-dark">
         <OfflineBanner />
 
-        {/* Page Content */}
-        <Suspense fallback={null}>
-          {isTabRoute ? (
-            /* TAB-ROUTEN: Alle Tabs mounten, aber nur den aktiven anzeigen */
-            <div className="relative">
-              {tabRoutes.map((tabPath) => (
-                <div
-                  key={tabPath}
-                  ref={(el) => { tabRefs.current[tabPath] = el; }}
-                  style={{
-                    display: currentPath === tabPath ? 'block' : 'none',
-                    // Scroll-Verhalten für Tabs
-                    overflowY: 'auto',
-                    height: '100vh',
-                  }}
-                  className="page-enter"
-                >
-                  {tabPath === '/tabs/categories' && <CategoriesPage />}
-                  {tabPath === '/tabs/favorites' && <FavoritesPage />}
-                  {tabPath === '/tabs/weekly' && <WeeklyPage />}
-                  {tabPath === '/tabs/shopping' && <ShoppingPage />}
-                  {tabPath === '/tabs/profile' && <ProfilePage />}
-                  {tabPath === '/tabs/subscribe' && <SubscribePage />}
-                </div>
-              ))}
-            </div>
-          ) : (
-            /* OUTLET-ROUTEN: category/:category, recipe/:id, etc. */
-            <div key={currentPath} className="page-enter">
-              <Outlet />
-            </div>
-          )}
-        </Suspense>
+        {/* Page Content Area - Expands to fill available space */}
+        <div className="flex-1 relative w-full overflow-hidden">
+          <Suspense fallback={null}>
+            {isTabRoute ? (
+              /* TAB-ROUTEN: Alle Tabs mounten, persistent im DOM */
+              <>
+                {tabRoutes.map((tabPath) => (
+                  <div
+                    key={tabPath}
+                    ref={(el) => { tabRefs.current[tabPath] = el; }}
+                    style={{
+                      display: currentPath === tabPath ? 'block' : 'none',
+                    }}
+                    className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden touch-pan-y page-enter"
+                  >
+                    {tabPath === '/tabs/categories' && <CategoriesPage />}
+                    {tabPath === '/tabs/favorites' && <FavoritesPage />}
+                    {tabPath === '/tabs/weekly' && <WeeklyPage />}
+                    {tabPath === '/tabs/shopping' && <ShoppingPage />}
+                    {tabPath === '/tabs/profile' && <ProfilePage />}
+                    {tabPath === '/tabs/subscribe' && <SubscribePage />}
+                  </div>
+                ))}
+              </>
+            ) : (
+              /* OUTLET-ROUTEN: category/:category, recipe/:id, etc. */
+              <div key={currentPath} className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden touch-pan-y page-enter">
+                <Outlet />
+              </div>
+            )}
+          </Suspense>
+        </div>
 
-        {/* Navigation */}
+        {/* Navigation - Fixed overlay on bottom */}
         {!isAnyModalOpen && <AppNav onAddRecipe={handleAddRecipe} />}
 
         {/* Add Recipe Modal */}

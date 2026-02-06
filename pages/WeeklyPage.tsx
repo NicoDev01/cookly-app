@@ -210,11 +210,11 @@ const WeeklyPage: React.FC = () => {
 
 
   return (
-    <div className="page-enter min-h-screen bg-background-light dark:bg-background-dark font-display pb-nav">
-      <div className="flex flex-col flex-1 pb-nav">
+    <div className="page-enter relative flex w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark font-display">
+      <div className="flex flex-col flex-1">
 
         {/* Header */}
-        <div className="flex flex-col px-4 pt-6 pb-4 gap-4" style={{ paddingTop: 'max(1.5rem, var(--safe-area-inset-top))' }}>
+        <div className="flex flex-col px-6 pt-6 pb-4 gap-4" style={{ paddingTop: 'max(1.5rem, var(--safe-area-inset-top))' }}>
           {/* Title Row */}
           <div className="flex items-center justify-between">
             <h1 className="text-[28px] font-bold text-text-primary-light dark:text-text-primary-dark tracking-tight">
@@ -284,7 +284,7 @@ const WeeklyPage: React.FC = () => {
         </div>
 
         {/* Content Area */}
-        <div className={`flex flex-col gap-4 px-4 relative transition-opacity duration-200 ${isWeekLoading ? 'opacity-60' : 'opacity-100'}`}>
+        <div className={`flex flex-col gap-4 px-6 relative transition-opacity duration-200 ${isWeekLoading ? 'opacity-60' : 'opacity-100'}`}>
           {/* Loading Overlay - only show when there's content */}
           {isWeekLoading && !isInitialLoad && (
             <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
@@ -482,6 +482,7 @@ const WeeklyPage: React.FC = () => {
             );
           })}
         </div>
+        <div style={{ height: 'calc(var(--nav-height) + var(--safe-area-inset-bottom, 0px))' }} className="w-full shrink-0" />
       </div>
 
       {/* Add Meal Modal */}

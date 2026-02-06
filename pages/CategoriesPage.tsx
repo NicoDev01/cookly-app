@@ -166,11 +166,11 @@ const CategoriesPage: React.FC = () => {
   }, [stats]); // Nur von stats abhängig!
 
   return (
-    <div className="page-enter min-h-screen bg-background-light dark:bg-background-dark font-display pb-nav">
-      <div className="flex flex-col flex-1 pb-nav">
+    <div className="page-enter relative flex w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark font-display">
+      <div className="flex flex-col flex-1">
 
         {!isEmptyState && (
-          <div className="flex items-center px-4 pt-4 pb-2" style={{ paddingTop: 'max(1rem, var(--safe-area-inset-top))' }}>
+          <div className="flex items-center px-6 pt-4 pb-2" style={{ paddingTop: 'max(1rem, var(--safe-area-inset-top))' }}>
             <img
               src="/logo.png"
               alt="Cookly"
@@ -182,7 +182,7 @@ const CategoriesPage: React.FC = () => {
         {!isEmptyState && (
           <>
             {/* Search Bar */}
-            <div className="px-4 py-2">
+            <div className="px-6 py-2">
               <form
                 onSubmit={(e) => e.preventDefault()}
                 className="flex items-stretch rounded-xl h-12 bg-card-light dark:bg-card-dark shadow-neo-light-convex dark:shadow-neo-dark-convex transition-all duration-200 focus-within:bg-primary/10 focus-within:shadow-none focus-within:ring-2 focus-within:ring-primary group"
@@ -213,11 +213,11 @@ const CategoriesPage: React.FC = () => {
             </div>
 
             {/* Page Title */}
-            <h1 className="text-text-primary-light dark:text-text-primary-dark text-[26px] font-bold px-4 pt-2 pb-2">
+            <h1 className="text-text-primary-light dark:text-text-primary-dark text-[26px] font-bold px-6 pt-2 pb-2">
               {isFiltering ? 'Suchergebnisse' : 'Kategorien'}
             </h1>
 
-            <div className="px-4 py-2">
+            <div className="px-6 py-2">
               <button
                 onClick={() => setIsFilterOpen(!isFilterOpen)}
                 className={`touch-btn flex items-center gap-2 rounded-xl px-4 py-2.5 transition-colors ${isFilterOpen || selectedIngredients.length > 0 ? 'bg-primary/10 text-primary' : 'text-text-secondary-light dark:text-text-secondary-dark'}`}
@@ -276,7 +276,7 @@ const CategoriesPage: React.FC = () => {
                 Keine Rezepte gefunden.
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-4 p-6 pb-24">
+              <div className="grid grid-cols-1 gap-4 p-6 pb-4">
                 {filteredRecipes.map((recipe, index) => (
                   <Link
                     key={recipe._id}
@@ -331,7 +331,7 @@ const CategoriesPage: React.FC = () => {
 
               {/* PERFORMANCE (AC-1): Virtualisierte Kategorien-Liste */}
               {categoriesList.length > 0 && (
-                <div className="grid grid-cols-1 gap-4 p-6 pb-24 pt-4">
+                <div className="grid grid-cols-1 gap-4 p-6 pb-4 pt-4">
                   {categoriesList.map((category) => {
                     // Special case for "Alle Rezepte" card
                     if (category.name === 'ALL_RECIPES_SPECIAL') {
@@ -405,6 +405,7 @@ const CategoriesPage: React.FC = () => {
             </>
           )}
         </div>
+        <div style={{ height: 'calc(var(--nav-height) + var(--safe-area-inset-bottom, 0px))' }} className="w-full shrink-0" />
       </div>
     </div>
   );
