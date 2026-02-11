@@ -191,7 +191,3 @@ Download: [Play Store Link]
 5. **Preise** in der Beschreibung aktuell halten bei Änderungen
 6. **Call-to-Action** am Ende der Beschreibung nicht vergessen
 
----
-
-*Letzte Aktualisierung: Januar 2026*  
-*Version: 1.0 (Initial Release)*

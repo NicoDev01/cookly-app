@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
@@ -8,10 +9,11 @@ interface AddMealModalProps {
     isOpen: boolean;
     onClose: () => void;
     date: string; // YYYY-MM-DD
+    scope?: 'day' | 'week'; // day = specific day, week = for the whole week
     formattedDate: string; // e.g. "Montag, 5. Jan"
 }
 
-const AddMealModal: React.FC<AddMealModalProps> = ({ isOpen, onClose, date, formattedDate }) => {
+const AddMealModal: React.FC<AddMealModalProps> = ({ isOpen, onClose, date, scope = 'day', formattedDate }) => {
     const [activeTab, setActiveTab] = useState<'all' | 'favorites'>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedRecipes, setSelectedRecipes] = useState<Set<Id<"recipes">>>(new Set());
@@ -64,6 +66,7 @@ const AddMealModal: React.FC<AddMealModalProps> = ({ isOpen, onClose, date, form
             await addMeals({
                 recipeIds: Array.from(selectedRecipes),
                 date,
+                scope,
             });
             onClose();
         } catch (err) {
@@ -92,8 +95,8 @@ const AddMealModal: React.FC<AddMealModalProps> = ({ isOpen, onClose, date, form
 
     if (!isOpen) return null;
 
-    return (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center">
+    return createPortal(
+        <div className="fixed inset-0 z-[60] flex items-end justify-center pointer-events-auto">
             {/* Backdrop */}
             <div
                 className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
@@ -101,7 +104,7 @@ const AddMealModal: React.FC<AddMealModalProps> = ({ isOpen, onClose, date, form
             />
 
             {/* Slide-up Panel */}
-            <div className="relative w-full h-[calc(100vh-12px)] bg-background-light dark:bg-background-dark rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up" style={{ paddingBottom: 'var(--safe-area-inset-bottom, 0px)' }}>
+            <div className="relative w-full h-[92vh] bg-background-light dark:bg-background-dark rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up pb-safe-offset">
 
                 {/* Drag Handle */}
                 <div className="flex justify-center pt-3 pb-1">
@@ -196,6 +199,7 @@ const AddMealModal: React.FC<AddMealModalProps> = ({ isOpen, onClose, date, form
                                                     blurhash={recipe.imageBlurhash}
                                                     alt={recipe.title}
                                                     className="w-full h-full object-cover"
+                                                    forceLoad={true}
                                                 />
                                             ) : (
                                                 <div className="w-full h-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
@@ -257,8 +261,12 @@ const AddMealModal: React.FC<AddMealModalProps> = ({ isOpen, onClose, date, form
         .animate-slide-up {
           animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
+        .pb-safe-offset {
+          padding-bottom: env(safe-area-inset-bottom, 20px);
+        }
       `}</style>
-        </div>
+        </div>,
+        document.body
     );
 };
 

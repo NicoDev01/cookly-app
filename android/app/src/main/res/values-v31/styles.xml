@@ -3,11 +3,12 @@
     <!-- Android 12+ (API 31+) Splash Screen Theme -->
     <!-- On Android 12+, the OS controls the splash screen -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <!-- Background color for Android 12+ splash screen -->
+        <!-- Background color -->
         <item name="windowSplashScreenBackground">@color/splash_background</item>
-        <!-- Icon to show in center (uses layered drawable) -->
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
-        <!-- Icon background color (same as splash background) -->
+        <!-- Use TRANSPARENT icon to prevent distorted "box in middle" glitch -->
+        <!-- Lottie animation will render on top via capacitor-lottie-splash-screen plugin -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/transparent</item>
+        <item name="windowSplashScreenAnimationDuration">0</item>
         <item name="windowSplashScreenIconBackgroundColor">@color/splash_background</item>
         <!-- Theme to transition to after splash -->
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>

@@ -1,11 +1,12 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useTransition, useEffect } from 'react';
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Link } from 'react-router-dom';
-import AddMealModal from '../components/AddMealModal';
+import MealPlanModal from '../components/MealPlanModal';
 import ImageWithBlurhash from '../components/ImageWithBlurhash';
 import { Id } from "../convex/_generated/dataModel";
 import { useModal } from '../contexts/ModalContext';
+import { useAction } from 'convex/react';
 
 const WeeklyPage: React.FC = () => {
   // State for Week Navigation
@@ -17,6 +18,9 @@ const WeeklyPage: React.FC = () => {
     start.setHours(0, 0, 0, 0);
     return start;
   });
+
+  // Transition for optimistic UI updates
+  const [isPending, startTransition] = useTransition();
 
   // Store previous data to show during loading
   const prevWeeklyPlanRef = useRef<typeof weeklyPlan | null>(null);
@@ -31,11 +35,12 @@ const WeeklyPage: React.FC = () => {
     localStorage.setItem('weeklyViewMode', viewMode);
   }, [viewMode]);
 
-  const { isAddMealModalOpen, openAddMealModal, closeAddMealModal } = useModal();
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const { isAddMealModalOpen, openAddMealModal, closeAddMealModal, addMealModalOptions } = useModal();
   const [deletingMealIds, setDeletingMealIds] = useState<Set<Id<"weeklyMeals">>>(new Set());
+  const [proxiedImages, setProxiedImages] = useState<Set<Id<"recipes">>>(new Set());
 
   const removeMeal = useMutation(api.weekly.removeMeal);
+  const proxyImages = useAction(api.recipes.proxyExternalImages);
 
   // Helper to format date as YYYY-MM-DD for backend (Local Time)
   const formatDate = (d: Date) => {
@@ -77,6 +82,28 @@ const WeeklyPage: React.FC = () => {
   const displayPlan = weeklyPlan ?? prevWeeklyPlanRef.current;
   const isInitialLoad = weeklyPlan === undefined && prevWeeklyPlanRef.current === null;
 
+  // Auto-proxy Instagram images when plan loads
+  useEffect(() => {
+    if (!displayPlan) return;
+
+    // Find recipes that need proxy (have sourceImageUrl but no imageStorageId)
+    const recipesNeedingProxy = displayPlan
+      .filter(item => item.recipe.sourceImageUrl && !item.recipe.imageStorageId)
+      .filter(item => !proxiedImages.has(item.recipe._id))
+      .map(item => item.recipe._id);
+
+    if (recipesNeedingProxy.length > 0) {
+      proxyImages({ recipeIds: recipesNeedingProxy })
+        .then(result => {
+          // Mark as proxied so we don't try again
+          setProxiedImages(prev => new Set([...prev, ...recipesNeedingProxy]));
+        })
+        .catch(err => {
+          console.error('[WeeklyPage] Proxy failed:', err);
+        });
+    }
+  }, [displayPlan, proxiedImages, proxyImages]);
+
   // Derived state mapping: DateString -> Array(PlanItem)
   const planByDate = useMemo(() => {
     const map: Record<string, typeof displayPlan> = {};
@@ -95,23 +122,38 @@ const WeeklyPage: React.FC = () => {
     return [...displayPlan].sort((a, b) => a.date.localeCompare(b.date));
   }, [displayPlan]);
 
+  // Filter meals by scope for Daily View
+  const dailyMeals = useMemo(() => {
+    if (!displayPlan) return [];
+    return displayPlan.filter(item => item.scope !== 'week');
+  }, [displayPlan]);
+
+  // Filter meals by scope for Weekly View
+  const weeklyScopeMeals = useMemo(() => {
+    if (!displayPlan) return [];
+    return displayPlan.filter(item => item.scope === 'week');
+  }, [displayPlan]);
+
   const handlePrevWeek = () => {
-    setIsWeekLoading(true);
-    const newStart = new Date(currentWeekStart);
-    newStart.setDate(newStart.getDate() - 7);
-    setCurrentWeekStart(newStart);
+    startTransition(() => {
+      setIsWeekLoading(true);
+      const newStart = new Date(currentWeekStart);
+      newStart.setDate(newStart.getDate() - 7);
+      setCurrentWeekStart(newStart);
+    });
   };
 
   const handleNextWeek = () => {
-    setIsWeekLoading(true);
-    const newStart = new Date(currentWeekStart);
-    newStart.setDate(newStart.getDate() + 7);
-    setCurrentWeekStart(newStart);
+    startTransition(() => {
+      setIsWeekLoading(true);
+      const newStart = new Date(currentWeekStart);
+      newStart.setDate(newStart.getDate() + 7);
+      setCurrentWeekStart(newStart);
+    });
   };
 
-  const openAddModal = (dateStr: string) => {
-    setSelectedDate(dateStr);
-    openAddMealModal();
+  const openAddModal = (dateStr: string, scope: 'day' | 'week' = 'day') => {
+    openAddMealModal({ date: dateStr, scope });
   };
 
   const handleRemoveWithAnimation = async (mealId: Id<"weeklyMeals">) => {
@@ -165,13 +207,15 @@ const WeeklyPage: React.FC = () => {
     let shareText = `ESSENSPLAN KW ${kw}\n${start} – ${end}\n\n`;
 
     if (viewMode === 'weekly') {
+      // Show all meals in weekly view
       allWeeklyMeals.forEach(item => {
         shareText += `• ${item.recipe.title}\n`;
       });
     } else {
+      // Daily view: Group by day, show weekly-scope items at the end
       weekDays.forEach(date => {
         const dateStr = formatDate(date);
-        const meals = planByDate[dateStr] || [];
+        const meals = (planByDate[dateStr] || []).filter(item => item.scope !== 'week');
 
         if (meals.length > 0) {
           shareText += `*${getDayName(date)}*\n`;
@@ -182,7 +226,8 @@ const WeeklyPage: React.FC = () => {
         }
       });
 
-      const extraMeals = allWeeklyMeals.filter(item => item.date.includes('#WEEKLY'));
+      // Add weekly-scope meals at the end
+      const extraMeals = weeklyScopeMeals;
       if (extraMeals.length > 0) {
         shareText += `*Weitere Gerichte*\n`;
         extraMeals.forEach(item => {
@@ -256,26 +301,28 @@ const WeeklyPage: React.FC = () => {
 
             <div className="flex items-center gap-1">
               <button
+                type="button"
                 onClick={handlePrevWeek}
-                disabled={isWeekLoading}
+                disabled={isWeekLoading || isPending}
                 className={`touch-btn p-2 text-text-primary-light dark:text-text-primary-dark transition-all duration-200 ${
-                  isWeekLoading ? 'opacity-50 scale-95' : 'hover:scale-105'
+                  isWeekLoading || isPending ? 'opacity-50 scale-95' : 'hover:scale-105'
                 }`}
                 title="Vorherige Woche"
               >
-                <span className={`material-symbols-outlined text-2xl ${isWeekLoading ? 'animate-pulse' : ''}`}>
+                <span className={`material-symbols-outlined text-2xl ${isWeekLoading || isPending ? 'animate-pulse' : ''}`}>
                   chevron_left
                 </span>
               </button>
               <button
+                type="button"
                 onClick={handleNextWeek}
-                disabled={isWeekLoading}
+                disabled={isWeekLoading || isPending}
                 className={`touch-btn p-2 text-text-primary-light dark:text-text-primary-dark transition-all duration-200 ${
-                  isWeekLoading ? 'opacity-50 scale-95' : 'hover:scale-105'
+                  isWeekLoading || isPending ? 'opacity-50 scale-95' : 'hover:scale-105'
                 }`}
                 title="Nächste Woche"
               >
-                <span className={`material-symbols-outlined text-2xl ${isWeekLoading ? 'animate-pulse' : ''}`}>
+                <span className={`material-symbols-outlined text-2xl ${isWeekLoading || isPending ? 'animate-pulse' : ''}`}>
                   chevron_right
                 </span>
               </button>
@@ -317,7 +364,7 @@ const WeeklyPage: React.FC = () => {
 
               {/* CTA Button */}
               <button
-                onClick={() => openAddModal(startDateStr + '#WEEKLY')}
+                onClick={() => openAddModal(startDateStr, 'week')}
                 className="mt-8 flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-white font-semibold shadow-neo-light-convex hover:bg-primary-dark transition-all touch-btn"
               >
                 <span className="material-symbols-outlined">add_circle</span>
@@ -358,7 +405,7 @@ const WeeklyPage: React.FC = () => {
                     <Link to={`/recipe/${item.recipe._id}`} state={{ from: 'weekly' }} className="flex-grow">
                       <h3 className="text-sm font-bold text-text-primary-light dark:text-text-primary-dark">{item.recipe.title}</h3>
                       <div className="flex items-center gap-2 text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                        {!item.date.includes('#WEEKLY') && (
+                        {item.scope !== 'week' && (
                           <>
                             <span className="px-2 py-0.5 rounded-full text-xs font-medium text-black dark:text-white shadow-neomorphism-pill dark:shadow-dark-neomorphism-pill bg-ingredient-2-bg">
                               {new Date(item.date).toLocaleDateString('de-DE', { weekday: 'short' })}
@@ -387,7 +434,7 @@ const WeeklyPage: React.FC = () => {
               })}
 
               <button
-                onClick={() => openAddModal(startDateStr + '#WEEKLY')}
+                onClick={() => openAddModal(startDateStr, 'week')}
                 className={`self-start text-xs font-bold text-primary px-3 py-2 hover:bg-primary/5 rounded-lg transition-colors flex items-center gap-2 ${allWeeklyMeals.length > 0 ? 'mt-1' : ''}`}
               >
                 <span className="material-symbols-outlined text-base">add_circle</span>
@@ -399,8 +446,8 @@ const WeeklyPage: React.FC = () => {
           {/* DAILY VIEW MODE (Original) - only show when there are meals */}
           {viewMode === 'daily' && allWeeklyMeals.length > 0 && weekDays.map((date) => {
             const dateStr = formatDate(date);
-            // Filter out #WEEKLY items if they accidentally land here (though map logic usually handles specific keys)
-            const meals = planByDate[dateStr] || [];
+            // Filter out week-scope items (they're shown separately in weekly view)
+            const meals = (planByDate[dateStr] || []).filter(item => item.scope !== 'week');
             const isCurrentDay = isToday(date);
 
             return (
@@ -486,15 +533,18 @@ const WeeklyPage: React.FC = () => {
       </div>
 
       {/* Add Meal Modal */}
-      {selectedDate && (
-        <AddMealModal
+      {isAddMealModalOpen && addMealModalOptions.date && (
+        <MealPlanModal
           isOpen={isAddMealModalOpen}
           onClose={closeAddMealModal}
-          date={selectedDate}
+          mode="selectRecipes"
+          date={addMealModalOptions.date}
+          scope={addMealModalOptions.scope}
+          weekStartDate={currentWeekStart}
           formattedDate={
-            viewMode === 'weekly'
+            addMealModalOptions.scope === 'week'
               ? `Woche KW ${kw}`
-              : new Date(selectedDate.replace('#WEEKLY', '')).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })
+              : new Date(addMealModalOptions.date).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })
           }
         />
       )}

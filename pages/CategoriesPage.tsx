@@ -20,7 +20,12 @@ const CategoriesPage: React.FC = () => {
   // PERFORMANCE (QW-5): Debounce auf 300ms erhöht für weniger Query-Aufrufe
   const [debouncedSearch] = useDebounce(searchQuery, 300);
   const [categoryImageCache, setCategoryImageCache] = useState<CategoryImageCache>({});
-  
+  const [isVisible, setIsVisible] = useState(false); // For fade-in animation
+
+  // Trigger fade-in animation on mount
+  React.useEffect(() => {
+    setIsVisible(true);
+  }, []);
 
 
   // PERFORMANCE (QW-2): NICHT für Kategorien verwenden!
@@ -166,7 +171,7 @@ const CategoriesPage: React.FC = () => {
   }, [stats]); // Nur von stats abhängig!
 
   return (
-    <div className="page-enter relative flex w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark font-display">
+    <div className={`page-enter relative flex w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark font-display transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
       <div className="flex flex-col flex-1">
 
         {!isEmptyState && (
@@ -317,10 +322,19 @@ const CategoriesPage: React.FC = () => {
             <>
 
 
-              {/* Loading State - zeige nur wenn am Laden und noch keine Daten */}
+              {/* Loading State - Skeleton Categories (professional loading experience) */}
               {categoriesLoading && (!stats || stats.length === 0) && (
-                <div className="flex items-center justify-center py-20">
-                  <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                <div className="grid grid-cols-1 gap-4 p-6 pb-4 pt-4">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} className="flex items-center gap-4 rounded-xl bg-card-light dark:bg-card-dark p-3 animate-pulse">
+                      <div className="h-16 w-16 flex-shrink-0 rounded-lg bg-gray-200 dark:bg-gray-700" />
+                      <div className="flex-grow space-y-2">
+                        <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded" />
+                        <div className="h-3 w-24 bg-gray-200 dark:bg-gray-700 rounded" />
+                      </div>
+                      <div className="h-6 w-6 bg-gray-200 dark:bg-gray-700 rounded-full" />
+                    </div>
+                  ))}
                 </div>
               )}
 

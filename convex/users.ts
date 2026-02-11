@@ -5,9 +5,9 @@ import { v } from "convex/values";
 // LIMITS DEFINITION
 // ============================================================
 const FREE_LIMITS = {
-  MANUAL_RECIPES: 100,    // Manuell erstellte Rezepte
-  LINK_IMPORTS: 50,       // URL/Instagram Imports
-  PHOTO_SCANS: 50,        // KI Foto-Scans
+  MANUAL_RECIPES: 100,    // ANPASSUNG HIER: Manuell erstellte Rezepte Limit
+  LINK_IMPORTS: 100,      // ANPASSUNG HIER: URL/Instagram Imports Limit
+  PHOTO_SCANS: 100,       // ANPASSUNG HIER: KI Foto-Scans Limit
 };
 
 // ============================================================
@@ -933,3 +933,43 @@ export const deleteUserFromWebhook = internalMutation({
     };
   },
 });
+
+/**
+ * ADMIN: Manuelles Setzen der Usage Stats für einen User
+ */
+export const setUsageStats = mutation({
+  args: { 
+    clerkId: v.string(),
+    manualRecipes: v.optional(v.number()),
+    linkImports: v.optional(v.number()),
+    photoScans: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    if (!user) throw new Error("User not found");
+
+    const currentStats = user.usageStats || {
+      manualRecipes: 0,
+      linkImports: 0,
+      photoScans: 0,
+      subscriptionStartDate: undefined,
+      subscriptionEndDate: undefined,
+      resetOnDowngrade: false,
+    };
+
+    await ctx.db.patch(user._id, {
+      usageStats: {
+        ...currentStats,
+        manualRecipes: args.manualRecipes ?? currentStats.manualRecipes,
+        linkImports: args.linkImports ?? currentStats.linkImports,
+        photoScans: args.photoScans ?? currentStats.photoScans,
+      },
+      updatedAt: Date.now(),
+    });
+  }
+});
+

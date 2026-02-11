@@ -1,11 +1,12 @@
-import React, { useState, useRef, useEffect, memo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, memo, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Recipe } from '../types';
 import ImageWithBlurhash from './ImageWithBlurhash';
 import { useMutation } from 'convex/react';
 import { api } from '../convex/_generated/api';
 
-import AddToPlanModal from './AddToPlanModal';
+import MealPlanModal from './MealPlanModal';
+import ImageZoomModal from './ImageZoomModal';
 
 interface RecipeHeroProps {
   recipe: Recipe;
@@ -17,20 +18,38 @@ interface RecipeHeroProps {
 // Reusable IconButton component with memo to prevent unnecessary re-renders
 interface IconButtonProps {
   icon: string;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent) => void | Promise<void>;
   className?: string;
   isFilled?: boolean;
   animateBounce?: boolean;
   title?: string;
   ariaLabel?: string;
   ariaPressed?: boolean;
+  variant?: 'default' | 'ghost';
 }
 
-const IconButton = memo(({ icon, onClick, className = '', isFilled = false, animateBounce = false, title, ariaLabel, ariaPressed }: IconButtonProps) => {
+const IconButton = memo(({ 
+  icon, 
+  onClick, 
+  className = '', 
+  isFilled = false, 
+  animateBounce = false, 
+  title, 
+  ariaLabel, 
+  ariaPressed,
+  variant = 'default' 
+}: IconButtonProps) => {
+  const baseStyles = "flex items-center justify-center size-8 rounded-full active:scale-95 transition-all";
+  
+  const variants = {
+    default: "bg-white/90 shadow-sm border border-gray-200/50 text-gray-900",
+    ghost: "bg-transparent text-gray-700 hover:bg-gray-100"
+  };
+
   return (
     <button
       onClick={onClick}
-      className={`flex items-center justify-center size-12 rounded-full bg-white/90 dark:bg-black/90 shadow-lg border border-gray-200/50 dark:border-gray-700/50 text-gray-900 dark:text-gray-100 active:scale-95 transition-transform ${className}`}
+      className={`${baseStyles} ${variants[variant]} ${className}`}
       title={title}
       aria-label={ariaLabel}
       aria-pressed={ariaPressed}
@@ -61,8 +80,41 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({ recipe, onSidebarToggle, onEdit
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isZoomOpen, setIsZoomOpen] = useState(false);
   const [heartBounce, setHeartBounce] = useState(false);
+  const [aspectRatio, setAspectRatio] = useState<number>(1.5); // Default 3:2
   const menuRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Detect natural aspect ratio of the image to prevent stretching/pixelation
+  useEffect(() => {
+    if (!recipe.image) return;
+    const img = new Image();
+    img.src = recipe.image;
+    img.onload = () => {
+      if (img.naturalWidth && img.naturalHeight) {
+        setAspectRatio(img.naturalWidth / img.naturalHeight);
+      }
+    };
+  }, [recipe.image]);
+
+
+
+  // Create a mathematically generated easing gradient for a super-soft transition
+  const easedMask = useMemo(() => {
+    const start = 90;
+    const steps = 100; // Increased to 30 for ultra-smooth sampling
+    const points = [`rgba(0,0,0,1) 0%`, `rgba(0,0,0,1) ${start}%`];
+    
+    for (let i = 1; i <= steps; i++) {
+      const progress = i / steps;
+      const pos = start + progress * (100 - start);
+      // Quadratic easing: 1 - progress^2 for a natural light falloff
+      const alpha = Math.max(0, 1 - Math.pow(progress, 1)).toFixed(30);
+      points.push(`rgba(0,0,0,${alpha}) ${pos.toFixed(2)}%`);
+    }
+    return `linear-gradient(to bottom, ${points.join(', ')})`;
+  }, []);
 
   const toggleFavorite = useMutation(api.recipes.toggleFavorite).withOptimisticUpdate((localStore, args) => {
     const { id } = args;
@@ -75,21 +127,21 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({ recipe, onSidebarToggle, onEdit
   // Memoize favorite handler to prevent re-renders of IconButton
   const handleToggleFavorite = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault();
-    e.stopPropagation();
-
-    // Trigger heart bounce animation
+    if (navigator.vibrate) {
+      navigator.vibrate(50);
+    }
     setHeartBounce(true);
-    setTimeout(() => setHeartBounce(false), 400);
-
+    setTimeout(() => setHeartBounce(false), 1000);
+    
     try {
       await toggleFavorite({ id: recipe._id });
-      if (navigator.vibrate) {
+      if (!recipe.isFavorite && navigator.vibrate) {
         navigator.vibrate(50);
       }
     } catch (error) {
       console.error('Fehler beim Umschalten der Favoriten:', error);
     }
-  }, [recipe._id, toggleFavorite]);
+  }, [recipe._id, toggleFavorite, recipe.isFavorite]);
 
   // Memoize plan modal handler
   const handleOpenPlanModal = useCallback(() => {
@@ -128,29 +180,20 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({ recipe, onSidebarToggle, onEdit
   }, []);
 
   return (
-    <div className="relative w-full h-[550px]">
-      <ImageWithBlurhash
-        className="w-full h-full object-cover"
-        alt={recipe.imageAlt}
-        src={recipe.image}
-        blurhash={recipe.imageBlurhash}
-        fetchPriority="high"
-      />
-      {/* Bottom fade only */}
-      <div className="absolute bottom-0 left-0 right-0 h-1/3 bg-gradient-to-t from-background-light dark:from-background-dark to-transparent"></div>
-
-      {/* Top Navigation Bar - Individual Icon Circles */}
-      <div className="absolute top-0 left-0 right-0 z-30 pt-[var(--safe-area-inset-top)]">
-        <div className="mx-4 mt-3 flex items-center justify-between">
+    <div className="flex flex-col w-full bg-white group/hero">
+      {/* Professional Top Navigation Bar - Safe Area & Actions */}
+      <div className="sticky top-0 z-40 w-full bg-white border-b border-gray-100 pt-[env(safe-area-inset-top)]">
+        <div className="flex items-center justify-between px-3">
           {/* Back Button */}
           <IconButton
             icon="arrow_back"
             onClick={onSidebarToggle}
             ariaLabel="Zurück"
             title="Zurück"
+            variant="ghost"
           />
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             {/* Favorite Button */}
             <IconButton
               icon="favorite"
@@ -160,6 +203,7 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({ recipe, onSidebarToggle, onEdit
               ariaLabel={recipe.isFavorite ? 'Aus Favoriten entfernen' : 'Zu Favoriten hinzufügen'}
               ariaPressed={recipe.isFavorite}
               title={recipe.isFavorite ? 'Aus Favoriten entfernen' : 'Zu Favoriten hinzufügen'}
+              variant="ghost"
             />
 
             {/* Add to Plan Button */}
@@ -168,33 +212,35 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({ recipe, onSidebarToggle, onEdit
               onClick={handleOpenPlanModal}
               ariaLabel="Zum Wochenplan hinzufügen"
               title="Zum Wochenplan hinzufügen"
+              variant="ghost"
             />
 
             {/* Menu Button */}
-            <div className="relative" ref={menuRef}>
+            <div className="relative z-20" ref={menuRef}>
               <IconButton
                 icon="more_vert"
                 onClick={handleToggleMenu}
                 ariaLabel="Mehr Optionen"
                 title="Mehr Optionen"
+                variant="ghost"
               />
 
               {isMenuOpen && (
-                <div className="absolute right-0 lg:left-auto lg:right-0 top-full mt-2 w-52 max-w-[calc(100vw-32px)] bg-white dark:bg-black rounded-2xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 overflow-hidden origin-top-right animate-in fade-in zoom-in-95 duration-200 z-50">
+                <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden origin-top-right animate-in fade-in zoom-in-95 duration-200 z-50">
                   <div className="p-1.5">
                     <button
                       onClick={handleEdit}
-                      className="w-full text-left px-3 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl flex items-center gap-3 transition-colors"
+                      className="w-full text-left px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-xl flex items-center gap-3 transition-colors"
                     >
                       <span className="material-symbols-outlined text-lg opacity-70">edit</span>
                       Rezept bearbeiten
                     </button>
 
-                    <div className="h-px bg-gray-100 dark:bg-gray-700/50 my-1 mx-2" />
+                    <div className="h-px bg-gray-100 my-1 mx-2" />
 
                     <button
                       onClick={handleDeleteClick}
-                      className="w-full text-left px-3 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl flex items-center gap-3 transition-colors"
+                      className="w-full text-left px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-3 transition-colors"
                     >
                       <span className="material-symbols-outlined text-lg opacity-70">delete</span>
                       Rezept löschen
@@ -207,12 +253,50 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({ recipe, onSidebarToggle, onEdit
         </div>
       </div>
 
-      <AddToPlanModal
+      <div 
+        ref={containerRef} 
+        className="relative w-full overflow-hidden"
+        style={{ 
+          aspectRatio: `${aspectRatio}`,
+          minHeight: '20vh',
+          maxHeight: '60vh',
+          maskImage: easedMask,
+          WebkitMaskImage: easedMask
+        }}
+      >
+        <div 
+          className="absolute inset-0 w-full h-full cursor-zoom-in active:scale-[0.99] transition-transform duration-300"
+          onClick={() => setIsZoomOpen(true)}
+        >
+          <ImageWithBlurhash
+            className="w-full h-full object-cover object-center"
+            alt={recipe.imageAlt}
+            src={recipe.image}
+            blurhash={recipe.imageBlurhash}
+            fetchPriority="high"
+          />
+          {/* Subtle hint for zoom */}
+          <div className="absolute inset-0 bg-black/0 group-hover/hero:bg-black/10 transition-colors flex items-center justify-center">
+              <span className="material-symbols-outlined text-white opacity-0 group-hover/hero:opacity-100 transition-opacity !text-4xl scale-75 group-hover/hero:scale-100 duration-300">zoom_in</span>
+          </div>
+        </div>
+      </div>
+
+      <MealPlanModal
         isOpen={isPlanModalOpen}
         onClose={() => setIsPlanModalOpen(false)}
+        mode="selectDay"
         recipeId={recipe._id}
         recipeTitle={recipe.title}
         recipeImage={recipe.image}
+        weekStartDate={undefined} // Let modal manage its own week
+      />
+
+      <ImageZoomModal
+        isOpen={isZoomOpen}
+        onClose={() => setIsZoomOpen(false)}
+        src={recipe.image}
+        alt={recipe.imageAlt}
       />
 
       {/* Delete Confirmation Modal */}
@@ -222,19 +306,19 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({ recipe, onSidebarToggle, onEdit
             className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
             onClick={() => setIsDeleteConfirmOpen(false)}
           />
-          <div className="relative w-full max-w-sm bg-white dark:bg-[#1e3031] rounded-3xl shadow-2xl p-6 overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl p-6 overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="flex flex-col items-center text-center">
-              <div className="size-16 rounded-full bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 flex items-center justify-center mb-4">
+              <div className="size-16 rounded-full bg-red-50 text-red-600 flex items-center justify-center mb-4">
                 <span className="material-symbols-outlined text-3xl">delete_forever</span>
               </div>
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Rezept löschen?</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 font-medium">
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Rezept löschen?</h3>
+              <p className="text-sm text-gray-500 mb-6 font-medium">
                 Soll das Rezept "{recipe.title}" wirklich unwiderruflich gelöscht werden?
               </p>
               <div className="flex gap-3 w-full">
                 <button
                   onClick={() => setIsDeleteConfirmOpen(false)}
-                  className="flex-1 py-3 rounded-xl font-bold bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+                  className="flex-1 py-3 rounded-xl font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
                 >
                   Abbrechen
                 </button>

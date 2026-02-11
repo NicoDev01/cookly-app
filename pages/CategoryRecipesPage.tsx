@@ -1,15 +1,23 @@
 import React from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useBackNavigation } from '../hooks/useBackNavigation';
-import { useQuery, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
+import { useCachedQuery } from '../contexts/QueryCacheContext';
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import ImageWithBlurhash from '../components/ImageWithBlurhash';
+import { IconButton } from '../components/ui/cookly/IconButton';
 import { prefetchRecipePage } from '../prefetch';
 
 
-const CategoryRecipesPage: React.FC = () => {
-  const { category } = useParams<{ category: string }>();
+interface CategoryRecipesPageProps {
+  category?: string;
+}
+
+const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: propCategory }) => {
+  const { category: paramCategory } = useParams<{ category: string }>();
+  // Nimm Prop wenn da (vom TabsLayout Cache), sonst Params (vom direkten Aufruf/DeepLink)
+  const category = propCategory ?? paramCategory;
   const handleBack = useBackNavigation();
   
   const isAll = category === 'all';
@@ -42,7 +50,13 @@ const CategoryRecipesPage: React.FC = () => {
     return { category: decodedCategory, includeIngredients: false };
   }, [isAll, decodedCategory]);
 
-  const rawRecipes = useQuery(api.recipes.list, listArgs);
+  // PERFORMANCE: Use cached query for instant navigation (eliminates spinner)
+  const cacheKey = isAll ? 'category-all-recipes' : `category-${category}`;
+  const { data: rawRecipes } = useCachedQuery(
+    api.recipes.list,
+    listArgs === "skip" ? {} : listArgs,
+    cacheKey
+  );
 
   const recipes = React.useMemo(() => {
     if (!rawRecipes) return undefined;
@@ -153,12 +167,11 @@ const CategoryRecipesPage: React.FC = () => {
         {/* Header */}
         <div className="flex items-center px-6 py-4 pt-[calc(max(1rem,var(--safe-area-inset-top))+1rem)] justify-between relative z-30 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md sticky top-0">
           <div className="flex items-center gap-4">
-            <button
+            <IconButton
+              icon="arrow_back"
               onClick={handleBack}
-              className="flex h-12 w-12 items-center justify-center rounded-2xl bg-card-light dark:bg-card-dark text-text-primary-light dark:text-text-primary-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave active:scale-95 transition-colors transition-shadow duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-            >
-              <span className="material-symbols-outlined !text-2xl">arrow_back</span>
-            </button>
+              className="bg-card-light dark:bg-card-dark text-text-primary-light dark:text-text-primary-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave !rounded-full active:scale-95 transition-all duration-150"
+            />
             <h1 className="text-text-primary-light dark:text-text-primary-dark tracking-tight text-2xl font-black leading-tight truncate max-w-[180px]">
               {isAll ? 'Alle Rezepte' : decodedCategory}
             </h1>
@@ -166,21 +179,19 @@ const CategoryRecipesPage: React.FC = () => {
 
           <div className="flex items-center gap-3">
             {selectedRecipes.size > 0 && (
-              <button
+              <IconButton
+                icon="delete"
                 onClick={() => handleDeleteSelected()}
-                className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500 text-white shadow-lg active:scale-90 transition-all"
-              >
-                <span className="material-symbols-outlined">delete</span>
-              </button>
+                className="bg-red-500 text-white shadow-lg active:scale-90 !rounded-full"
+              />
             )}
             {isAll && (
               <div className="relative">
-                <button
+                <IconButton
+                  icon="sort"
                   onClick={() => setIsSortMenuOpen(!isSortMenuOpen)}
-                  className="flex h-12 w-12 items-center justify-center rounded-2xl bg-card-light dark:bg-card-dark text-text-primary-light dark:text-text-primary-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all active:scale-90"
-                >
-                  <span className="material-symbols-outlined">sort</span>
-                </button>
+                  className="bg-card-light dark:bg-card-dark text-text-primary-light dark:text-text-primary-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave active:scale-90 !rounded-full"
+                />
 
                 {isSortMenuOpen && (
                   <>

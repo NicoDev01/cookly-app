@@ -1,6 +1,7 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { App } from '@capacitor/app';
+import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Capacitor } from '@capacitor/core';
 
 type NavState = {
@@ -20,7 +21,7 @@ type NavState = {
  * 2. RecipePage → Historisch zurück (favorites/weekly/category)
  * 3. Subscribe → Profil
  * 4. Other Tabs → Kategorien (Root)
- * 5. Root (Kategorien) → Double-Tap → EXIT
+ * 5. Root (Kategorien) → App minimieren (exitApp)
  *
  * @param isAnyModalOpen - Zustand ob ein Modal offen ist
  * @param closeModals - Function um alle Modals zu schließen
@@ -34,7 +35,11 @@ export function useBackButton({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const lastBackPress = useRef(0);
+
+  // Prüfung: Sind wir auf der Root Page?
+  const isRootPage = () => {
+    return location.pathname === '/tabs/categories' || location.pathname === '/';
+  };
 
   // Historische Back-Navigation (für RecipePage)
   const handleHistoricalBack = useCallback(() => {
@@ -74,6 +79,14 @@ export function useBackButton({
     return true;
   }, [navigate, location.pathname]);
 
+  // Haptisches Feedback bei Back Press
+  const triggerHapticFeedback = useCallback(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    Haptics.impact({ style: ImpactStyle.Light }).catch(() => {
+      // Ignore haptic errors (optional feature)
+    });
+  }, []);
+
   // Haupt-Handler für den Back Button
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) {
@@ -81,8 +94,9 @@ export function useBackButton({
     }
 
     const setupHandler = async () => {
-      const handle = await App.addListener('backButton', () => {
-        const currentPath = location.pathname;
+      const handler = await App.addListener('backButton', () => {
+        // Haptisches Feedback
+        triggerHapticFeedback();
 
         // 1. HÖCHSTE PRIORITÄT: Modal schließen
         if (isAnyModalOpen) {
@@ -91,21 +105,21 @@ export function useBackButton({
         }
 
         // 2. RecipePage → Historische Navigation
-        if (currentPath.startsWith('/recipe/')) {
+        if (location.pathname.startsWith('/recipe/')) {
           const handled = handleHistoricalBack();
           if (handled) return;
           navigate('/tabs/categories');
           return;
         }
 
-        // 3. Root (Kategorien) → Double-Tap-to-Exit
-        if (currentPath === '/tabs/categories' || currentPath === '/') {
-          const now = Date.now();
-          if (now - lastBackPress.current < 2000) {
+        // 3. ROOT PAGE → App minimieren (nicht beenden!)
+        // Wir prüfen den Pfad direkt, NICHT canGoBack (weil navigate() die Browser History nicht korrekt aktualisiert)
+        if (isRootPage()) {
+          // minimizeApp() nur auf Android verfügbar - hält die App im Speicher
+          App.minimizeApp().catch(() => {
+            // Fallback: Falls minimizeApp nicht verfügbar (iOS), exitApp verwenden
             App.exitApp();
-          } else {
-            lastBackPress.current = now;
-          }
+          });
           return;
         }
 
@@ -113,7 +127,7 @@ export function useBackButton({
         handleStandardBack();
       });
 
-      return handle;
+      return handler;
     };
 
     const handlePromise = setupHandler();
@@ -121,5 +135,5 @@ export function useBackButton({
     return () => {
       handlePromise.then((handle) => handle?.remove());
     };
-  }, [isAnyModalOpen, location.pathname, handleHistoricalBack, handleStandardBack, navigate, closeModals]);
+  }, [isAnyModalOpen, location, handleHistoricalBack, handleStandardBack, navigate, closeModals, triggerHapticFeedback]);
 }

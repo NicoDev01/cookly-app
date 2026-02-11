@@ -5,9 +5,11 @@ import { sanitizeMaterialSymbolName } from '../utils/iconUtils';
 interface InstructionsProps {
   instructions: Instruction[];
   ingredients?: Ingredient[];
+  highlightedIndex?: number | null;
+  onToggleHighlight?: (index: number) => void;
 }
 
-const Instructions: React.FC<InstructionsProps> = ({ instructions, ingredients = [] }) => {
+const Instructions: React.FC<InstructionsProps> = ({ instructions, ingredients = [], highlightedIndex, onToggleHighlight }) => {
 
   // Helper to cycle through colors defined in tailwind config (same as in Ingredients.tsx)
   const INGREDIENT_COLORS = [
@@ -28,15 +30,15 @@ const Instructions: React.FC<InstructionsProps> = ({ instructions, ingredients =
   };
 
   const renderTextWithHighlights = (text: string) => {
-    // Defensive: ensure text is a string (AI might return object)
+    // Defensive: ensure text is a string
     if (typeof text !== 'string') {
-      console.warn('Instructions: step.text is not a string:', text);
       return String(text ?? '');
     }
     if (!ingredients || ingredients.length === 0) return text;
 
-    // 1. Prepare ingredients: Extract significant keywords
-    // Wir zerlegen den Zutatennamen in einzelne Wörter und filtern Füllwörter raus.
+    // 1. Setup Lists & Dictionaries
+    
+    // Words to ignore to prevent false positives
     const stopWords = [
       'g', 'kg', 'ml', 'l', 'el', 'tl', 'msp', 'prise', 'etwas', 'ca',
       'von', 'und', 'in', 'mit', 'der', 'die', 'das', 'den', 'dem', 'des', 'ein', 'eine', 'einen', 'einer', 'eines',
@@ -46,88 +48,179 @@ const Instructions: React.FC<InstructionsProps> = ({ instructions, ingredients =
       'warm', 'kalt', 'heiß', 'lauwarm', 'zum', 'für', 'bei', 'als', 'im', 'aus', 'auf',
       'nach', 'wahl', 'belieben', 'bedarf', 'garnieren', 'servieren', 'z.b.', 'z.b', 'bsp.', 'bsp',
       'evtl.', 'evtl', 'eventuell', 'optional', 'dazu', 'darüber', 'daran', 'damit', 'davon', 'dabei',
-      'dafür', 'darauf', 'darin', 'darunter', 'darüber', 'unter', 'über', 'durch', 'vor', 'hinter', 'neben', 'zwischen'
+      'dafür', 'darauf', 'darin', 'darunter', 'darüber', 'unter', 'über', 'durch', 'vor', 'hinter', 'neben', 'zwischen',
+      'dose', 'dosen', 'glas', 'gläser', 'becher', 'packung', 'päckchen', 'bund', 'stange', 'stangen', 'zehe', 'zehen'
     ];
 
-    // Common base ingredients to extract from compounds (e.g. "Olivenöl" -> "Öl")
+    // Base ingredients to extract from compounds (Suffix Match)
+    // "Olivenöl" ends with "öl" -> match "Öl" in text
     const commonBaseIngredients = [
       'öl', 'mehl', 'zucker', 'salz', 'pfeffer', 'milch', 'sahne', 'käse', 'wurst', 'fleisch', 'fisch',
       'nudeln', 'reis', 'brot', 'ei', 'eier', 'beeren', 'nüsse', 'mandeln', 'kerne', 'samen', 'flocken',
       'saft', 'wein', 'essig', 'wasser', 'brühe', 'fond', 'sauce', 'soße', 'creme', 'quark', 'joghurt',
-      'sirup', 'pulver', 'gewürz', 'kraut', 'kräuter', 'schokolade', 'kakao', 'honig', 'senf', 'ketchup', 'mayonnaise'
+      'sirup', 'pulver', 'gewürz', 'kraut', 'kräuter', 'schokolade', 'kakao', 'honig', 'senf', 'ketchup', 'mayonnaise',
+      'zwiebel', 'knoblauch', 'tomate', 'kartoffel', 'paprika', 'möhre', 'karotte', 'gurke', 'zucchini', 'kürbis',
+      'schinken', 'speck', 'hack', 'filet', 'brust', 'keule', 'hirse', 'quinoa', 'couscous', 'bulgur', 'polenta', 'grieß', 'hafer', 'dinkel',
+      'zitrone', 'orange', 'limette', 'beere', 'apfel', 'birne', 'pfirsich', 'kirsche'
     ];
+
+    // Suffixes to strip to find the stem (Stemming Match)
+    // "Knoblauchzehen" -> strip "zehen" -> match "Knoblauch" in text
+    const compoundSuffixes = [
+      'zehe', 'zehen', 'stange', 'stangen', 'filet', 'filets', 'brust', 'keule', 'schenkel', 
+      'würfel', 'scheiben', 'streifen', 'stücke', 'röschen', 'blättchen', 'hälften', 'enden',
+      'knolle', 'knollen', 'schote', 'schoten'
+    ];
+
+    // Semantic Aliases (Concept Match)
+    // "Tagliatelle" -> also match "Nudeln" or "Pasta"
+    const categoryAliases: Record<string, string[]> = {
+      'tagliatelle': ['nudeln', 'pasta'],
+      'spaghetti': ['nudeln', 'pasta'],
+      'penne': ['nudeln', 'pasta'],
+      'fusilli': ['nudeln', 'pasta'],
+      'rigatoni': ['nudeln', 'pasta'],
+      'farfalle': ['nudeln', 'pasta'],
+      'makkaroni': ['nudeln', 'pasta'],
+      'tortellini': ['nudeln', 'pasta'],
+      'linguine': ['nudeln', 'pasta'],
+      'gnocchi': ['nudeln', 'gnocchis'],
+      'lasagneplatten': ['nodeln', 'pasta', 'lasagne'],
+      'basmatireis': ['reis'],
+      'jasminreis': ['reis'],
+      'risottoreis': ['reis'],
+      'milchreis': ['reis'],
+      'wildreis': ['reis'],
+      'kartoffeln': ['kartoffel'],
+      'champignons': ['pilze', 'champinons'],
+      'zwiebeln': ['zwiebel'],
+      'frühlingszwiebeln': ['zwiebel', 'zwiebeln'],
+      'parmesan': ['käse'],
+      'gouda': ['käse'],
+      'mozzarella': ['käse'],
+      'feta': ['käse', 'schafskäse'],
+      'cheddar': ['käse'],
+      'sahne': ['rahn'],
+      'schmand': ['sahne', 'creme'],
+      'crème fraîche': ['sahne', 'creme'],
+      'hackfleisch': ['hack', 'fleisch'],
+      'rinderhack': ['hack', 'fleisch', 'rind'],
+    };
 
     const ingredientKeywords: { keyword: string; originalIndex: number }[] = [];
 
+    // 2. Build Keyword List
     ingredients.forEach((ing, idx) => {
-      // Entferne Sonderzeichen und Zahlen
       const cleanName = ing.name.replace(/[0-9().,]/g, ' ');
       const words = cleanName.split(/\s+/);
 
       words.forEach(word => {
         const lower = word.toLowerCase().trim();
-        // Allow words with length >= 2 (e.g. "Ei", "Öl")
+        
+        // Basic Length Filter & Stop Words
         if (lower.length >= 2 && !stopWords.includes(lower)) {
-          // Wir speichern das Originalwort für das Regex, aber vergleichen lowercase
+          // A. Add original word (Default)
           ingredientKeywords.push({ keyword: word, originalIndex: idx });
 
-          // Check for common base ingredients suffix
+          // B. Check Common Base Ingredients (Suffix Match: "Olivenöl" -> "Öl")
           for (const base of commonBaseIngredients) {
             if (lower.endsWith(base) && lower !== base) {
-              // Add the base ingredient as a keyword too (capitalize first letter for display if needed, but matching is case insensitive)
-              // We use the base as keyword.
-              // Check if base is already added for this index to avoid duplicates
-              const exists = ingredientKeywords.some(k => k.keyword.toLowerCase() === base && k.originalIndex === idx);
-              if (!exists) {
-                // Capitalize for consistency, though regex is case insensitive
-                const capitalizedBase = base.charAt(0).toUpperCase() + base.slice(1);
-                ingredientKeywords.push({ keyword: capitalizedBase, originalIndex: idx });
+              const capitalizedBase = base.charAt(0).toUpperCase() + base.slice(1);
+              ingredientKeywords.push({ keyword: capitalizedBase, originalIndex: idx });
+            }
+            // Also check if the word *contains* the base (e.g. "Rinderhack" contains "hack", "Kalbsfleisch" contains "fleisch")
+            // This is safer now with expanded list
+             if (lower.includes(base) && lower !== base && base.length > 2) {
+               const capitalizedBase = base.charAt(0).toUpperCase() + base.slice(1);
+               ingredientKeywords.push({ keyword: capitalizedBase, originalIndex: idx });
+            }
+          }
+
+          // C. Check Compound Suffixes (Stemming: "Knoblauchzehen" -> "Knoblauch")
+          for (const suffix of compoundSuffixes) {
+            if (lower.endsWith(suffix) && lower.length > suffix.length) {
+              const stem = lower.substring(0, lower.length - suffix.length);
+              // Only add stem if it's substantial
+              if (stem.length > 2) {
+                 // Capitalize stem
+                 const capitalizedStem = stem.charAt(0).toUpperCase() + stem.slice(1);
+                 ingredientKeywords.push({ keyword: capitalizedStem, originalIndex: idx });
               }
             }
+          }
+
+          // D. Check Aliases (Semantic: "Tagliatelle" -> "Nudeln")
+          if (categoryAliases[lower]) {
+            categoryAliases[lower].forEach(alias => {
+               const capitalizedAlias = alias.charAt(0).toUpperCase() + alias.slice(1);
+               ingredientKeywords.push({ keyword: capitalizedAlias, originalIndex: idx });
+            });
           }
         }
       });
     });
 
-    // Sort by length desc to match longest words first
-    ingredientKeywords.sort((a, b) => b.keyword.length - a.keyword.length);
+    // 3. Deduplicate keywords per index (optimization)
+    const uniqueKeywords: { keyword: string; originalIndex: number }[] = [];
+    const seen = new Set<string>();
+    ingredientKeywords.forEach(k => {
+      const key = `${k.keyword.toLowerCase()}-${k.originalIndex}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueKeywords.push(k);
+      }
+    });
 
-    // 2. Iterative replacement
+    // 4. Sort by length desc to match longest words first (Greedy Match)
+    uniqueKeywords.sort((a, b) => b.keyword.length - a.keyword.length);
+
+    // 5. Iterative Replacement
     let parts: (string | React.ReactNode)[] = [text];
 
-    ingredientKeywords.forEach(({ keyword, originalIndex }) => {
+    uniqueKeywords.forEach(({ keyword, originalIndex }) => {
       const newParts: (string | React.ReactNode)[] = [];
 
       parts.forEach(part => {
         if (typeof part === 'string') {
           const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          // Match word boundary (start of word) using lookbehind for unicode support
-          // Matches keyword followed by any word characters (to catch plurals/compounds starting with keyword)
+          // Match word boundary or start of string
           const wordChar = '[a-zA-Z0-9_\\u00C0-\\u00FF]';
           const regex = new RegExp(`(?<!${wordChar})(${escapedKeyword}${wordChar}*)`, 'gi');
 
           const split = part.split(regex);
-
-          split.forEach((segment) => {
-            // Check if segment starts with keyword (case insensitive)
+          
+          split.forEach((segment, segIndex) => {
             if (segment.toLowerCase().startsWith(keyword.toLowerCase())) {
-              // CRITICAL FIX: Check if the matched segment is a stop word!
-              // This prevents "Ei" matching "Ein" (because "Ein" is a stop word)
+              // Safety Clean Check: Don't highlight stop words that accidentally matched
               if (stopWords.includes(segment.toLowerCase())) {
                 newParts.push(segment);
                 return;
               }
 
+              const isHighlighted = highlightedIndex === originalIndex;
+
               newParts.push(
                 <span
-                  key={`${keyword}-${originalIndex}-${Math.random()}`}
-                  className={`px-1.5 py-0.5 rounded-full text-sm font-medium ${getColorClass(originalIndex)} text-black dark:text-white mx-0.5 shadow-sm`}
+                  key={`${keyword}-${originalIndex}-${segIndex}`} // Stable key
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (onToggleHighlight) onToggleHighlight(originalIndex);
+                  }}
+                  className={`
+                    px-1.5 py-0.5 rounded-full text-sm font-medium mx-0.5 shadow-sm inline-block my-0.5 transition-all duration-200 cursor-pointer
+                    ${getColorClass(originalIndex)} 
+                    text-black dark:text-white 
+                    ${isHighlighted 
+                      ? 'ring-2 ring-offset-1 ring-black dark:ring-white scale-110 font-bold z-10 shadow-lg' 
+                      : 'hover:scale-105 active:scale-95 opacity-90 hover:opacity-100'}
+                  `}
                 >
                   {segment}
                 </span>
               );
             } else {
-              if (segment) newParts.push(segment);
+               if (segment) newParts.push(segment);
             }
           });
         } else {

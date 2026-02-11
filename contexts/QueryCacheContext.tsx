@@ -95,22 +95,23 @@ export function useCachedQuery<T>(
 
   // Gecachte Daten sofort zurückgeben
   const cachedData = getCache(cacheKey);
-  const hasData = convexResult !== undefined && convexResult.data !== undefined;
+  // Convex useQuery returns undefined while loading, or the data directly
+  const hasData = convexResult !== undefined;
 
   // Cache aktualisieren wenn neue Daten da sind
   React.useEffect(() => {
-    if (hasData && convexResult?.data) {
-      setCache(cacheKey, convexResult.data);
+    if (hasData) {
+      setCache(cacheKey, convexResult);
     }
-  }, [hasData, convexResult?.data, cacheKey, setCache]);
+  }, [hasData, convexResult, cacheKey, setCache]);
 
   return {
     // Gecachte Daten zurückgeben während loading, sonst frische Daten
-    data: convexResult?.data ?? cachedData,
+    data: convexResult ?? cachedData,
     // True wenn weder Cache noch frische Daten da sind
-    isLoading: !cachedData && (convexResult?.isLoading ?? false),
+    isLoading: !cachedData && convexResult === undefined,
     // True wenn wir Cache haben aber auf frische Daten warten
-    isRefreshing: !!cachedData && (convexResult?.isLoading ?? false),
+    isRefreshing: !!cachedData && convexResult === undefined,
   };
 }
 

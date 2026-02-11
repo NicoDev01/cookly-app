@@ -4,9 +4,7 @@
     <!-- Background color -->
     <item android:drawable="@color/splash_background"/>
     <!-- Cookly Logo centered -->
-    <item>
-        <bitmap
-            android:src="@drawable/splash"
-            android:gravity="center" />
-    </item>
+    <item
+        android:drawable="@drawable/splash"
+        android:gravity="center" />
 </layer-list>

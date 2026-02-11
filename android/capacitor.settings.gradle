@@ -19,3 +19,6 @@ project(':capacitor-splash-screen').projectDir = new File('../node_modules/@capa
 
 include ':supernotes-capacitor-send-intent'
 project(':supernotes-capacitor-send-intent').projectDir = new File('../node_modules/@supernotes/capacitor-send-intent/android')
+
+include ':capacitor-lottie-splash-screen'
+project(':capacitor-lottie-splash-screen').projectDir = new File('../node_modules/capacitor-lottie-splash-screen/android')

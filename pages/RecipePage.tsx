@@ -40,7 +40,7 @@ const RecipeSlideContent = React.memo(({
 
   if (!recipe) {
     return (
-      <div className="relative flex h-auto min-h-screen w-full flex-col bg-background-light dark:bg-background-dark">
+      <div className="relative flex h-auto min-h-screen w-full flex-col bg-white">
         <div className="flex-1 flex items-center justify-center pb-24">
           <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
@@ -49,14 +49,14 @@ const RecipeSlideContent = React.memo(({
   }
 
   return (
-    <main className="relative z-10 flex-1 min-h-full">
+    <main className="relative z-10 flex-1 min-h-full bg-white">
       <RecipeHero
         recipe={recipe}
         onSidebarToggle={onSidebarToggle}
         onEdit={() => onEdit(recipe)}
         onDelete={() => onDelete(recipe._id)}
       />
-      <div className="relative -mt-24 z-20 mb-6 mx-4 p-6 rounded-xl glassmorphism bg-white/80 dark:bg-black/60 backdrop-blur-xl shadow-neo-light-convex dark:shadow-neo-dark-convex">
+      <div className="relative z-20 mb-6 mx-4 p-6 rounded-3xl glassmorphism bg-white/60 backdrop-blur-xl shadow-neo-light-convex border border-gray-100">
         <RecipeMeta recipe={recipe} />
         <Ingredients ingredients={recipe.ingredients} />
         <Instructions instructions={recipe.instructions} ingredients={recipe.ingredients} />
@@ -258,10 +258,8 @@ const RecipePage: React.FC = () => {
   const deleteRecipe = useMutation(api.recipes.deleteRecipe);
 
   const handleDelete = useCallback(async (recipeId: Id<"recipes">) => {
-    if (window.confirm("Möchtest du dieses Rezept wirklich löschen?")) {
-      await deleteRecipe({ id: recipeId });
-      handleBack();
-    }
+    await deleteRecipe({ id: recipeId });
+    handleBack();
   }, [deleteRecipe, handleBack]);
 
   const handleEdit = useCallback((recipe: Recipe) => {
@@ -296,7 +294,7 @@ const RecipePage: React.FC = () => {
   }
 
   return (
-    <div className="relative flex h-[100dvh] w-full flex-col group/design-root overflow-hidden bg-background-light dark:bg-background-dark font-display">
+    <div className="relative flex h-[100dvh] w-full flex-col group/design-root overflow-hidden bg-white font-display">
 
       {flashMessage && (
         <div className="fixed top-4 left-4 right-4 z-50">

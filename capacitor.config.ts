@@ -4,20 +4,21 @@ const config: CapacitorConfig = {
   appId: "com.cookly.recipe",
   appName: "Cookly",
   webDir: "dist",
-  icon: "public/logo.png",
+
   plugins: {
     SplashScreen: {
-      launchShowDuration: 2000,
+      launchShowDuration: 0,
       launchAutoHide: false,
-      launchFadeOutDuration: 500,
-      backgroundColor: "#b2c8ba",
-      androidSplashResourceName: "splash",
-      androidScaleType: "CENTER_CROP",
-
-      showSpinner: false,
-      splashFullScreen: true,
-      splashImmersive: true,
-
+      backgroundColor: "#ffffff",
+    },
+    LottieSplashScreen: {
+      enabled: true,
+      animationLight: "public/lottie.json", // Light mode animation
+      animationDark: "public/lottie.json",  // Optional: same animation for dark mode (can be separate file)
+      backgroundLight: "#ffffff",          // Always white (no dark mode support)
+      backgroundDark: "#ffffff",           // Always white (no dark mode support)
+      autoHide: false,                      // We control hide manually via appLoaded()
+      loop: true,                           // Keep looping until app is fully ready (smooth transition)
     },
   },
   android: {

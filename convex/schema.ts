@@ -110,12 +110,13 @@ export default defineSchema({
   weeklyMeals: defineTable({
     clerkId: v.string(),
     recipeId: v.id("recipes"),
-    date: v.string(), // YYYY-MM-DD or YYYY-MM-DD#WEEKLY for weekly view
-    mealType: v.optional(v.string()), // "breakfast", "lunch", "dinner" - optional for future use
+    date: v.string(), // YYYY-MM-DD (clean date without suffix)
+    scope: v.optional(v.union(v.literal("day"), v.literal("week"))), // "day" = specific day, "week" = for the whole week
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-  .index("by_user_date", ["clerkId", "date"]),
+  .index("by_user_date", ["clerkId", "date"])
+  .index("by_user_scope", ["clerkId", "scope"]), // New index for scope filtering
 
   // SHOPPING LISTS - Multi-Tenant
   shoppingItems: defineTable({

@@ -1,11 +1,17 @@
-import React, { createContext, useContext, useState, ReactNode, useMemo } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useMemo, useCallback } from 'react';
+
+interface AddMealModalOptions {
+  date?: string;
+  scope?: 'day' | 'week';
+}
 
 interface ModalContextType {
   isAddModalOpen: boolean;
   openAddModal: (options?: { importUrl?: string; initialTab?: 'ai' | 'manual' }) => void;
   closeAddModal: () => void;
   isAddMealModalOpen: boolean;
-  openAddMealModal: () => void;
+  addMealModalOptions: AddMealModalOptions;
+  openAddMealModal: (options?: AddMealModalOptions) => void;
   closeAddMealModal: () => void;
   isAnyModalOpen: boolean;
   closeAllModals: () => void;
@@ -30,30 +36,41 @@ export const ModalProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [isAddMealModalOpen, setIsAddMealModalOpen] = useState(false);
   const [addModalImportUrl, setAddModalImportUrl] = useState<string | null>(null);
   const [addModalInitialTab, setAddModalInitialTab] = useState<'ai' | 'manual' | null>(null);
+  const [addMealModalOptions, setAddMealModalOptions] = useState<AddMealModalOptions>({});
 
-  const openAddModal = (options?: { importUrl?: string; initialTab?: 'ai' | 'manual' }) => {
+  const openAddModal = useCallback((options?: { importUrl?: string; initialTab?: 'ai' | 'manual' }) => {
     setAddModalImportUrl(options?.importUrl ?? null);
     setAddModalInitialTab(options?.initialTab ?? null);
     setIsAddModalOpen(true);
-  };
-  const closeAddModal = () => {
+  }, []);
+
+  const closeAddModal = useCallback(() => {
     setIsAddModalOpen(false);
     setAddModalImportUrl(null);
     setAddModalInitialTab(null);
-  };
+  }, []);
 
-  const openAddMealModal = () => setIsAddMealModalOpen(true);
-  const closeAddMealModal = () => setIsAddMealModalOpen(false);
+  const openAddMealModal = useCallback((options?: AddMealModalOptions) => {
+    if (options) {
+      setAddMealModalOptions(options);
+    }
+    setIsAddMealModalOpen(true);
+  }, []);
+
+  const closeAddMealModal = useCallback(() => {
+    setIsAddMealModalOpen(false);
+    setAddMealModalOptions({});
+  }, []);
 
   const isAnyModalOpen = useMemo(
     () => isAddModalOpen || isAddMealModalOpen,
     [isAddModalOpen, isAddMealModalOpen]
   );
 
-  const closeAllModals = () => {
+  const closeAllModals = useCallback(() => {
     if (isAddModalOpen) closeAddModal();
     if (isAddMealModalOpen) closeAddMealModal();
-  };
+  }, [isAddModalOpen, isAddMealModalOpen, closeAddModal, closeAddMealModal]);
 
   return (
     <ModalContext.Provider value={{
@@ -61,6 +78,7 @@ export const ModalProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       openAddModal,
       closeAddModal,
       isAddMealModalOpen,
+      addMealModalOptions,
       openAddMealModal,
       closeAddMealModal,
       isAnyModalOpen,

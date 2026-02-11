@@ -10,10 +10,14 @@ interface AddToPlanModalProps {
     recipeId: Id<"recipes">;
     recipeTitle: string;
     recipeImage?: string;
+    scope?: 'day' | 'week'; // Optional scope override
 }
 
-const AddToPlanModal: React.FC<AddToPlanModalProps> = ({ isOpen, onClose, recipeId, recipeTitle, recipeImage }) => {
+const AddToPlanModal: React.FC<AddToPlanModalProps> = ({ isOpen, onClose, recipeId, recipeTitle, recipeImage, scope: scopeProp }) => {
     const addMeal = useMutation(api.weekly.addMeal);
+
+    // Internal state for scope (allows switching between day/week within modal)
+    const [scope, setScope] = useState<'day' | 'week'>(scopeProp ?? 'day');
 
     // State for Week Navigation (Default to current week)
     const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
@@ -60,6 +64,7 @@ const AddToPlanModal: React.FC<AddToPlanModalProps> = ({ isOpen, onClose, recipe
         await addMeal({
             recipeId,
             date: formatDate(date),
+            scope: scope === 'week' ? 'week' : 'day',
         });
         onClose();
     };

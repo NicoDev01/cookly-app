@@ -911,3 +911,121 @@ export const generateAndStoreAiImage = action({
     return { url: pollinationsUrl };
   },
 });
+
+// ============================================================
+// IMAGE PROXY - Externe Bilder in Convex Storage speichern
+// ============================================================
+export const proxyExternalImage = action({
+  args: {
+    recipeId: v.id("recipes"),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean; imageStorageId?: Id<"storage">; imageUrl?: string }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const clerkId = identity.subject;
+
+    // Rezept laden
+    const recipe = await ctx.runQuery(api.recipes.get, { id: args.recipeId });
+    if (!recipe || recipe.clerkId !== clerkId) {
+      throw new Error("Recipe not found or access denied");
+    }
+
+    // Nur proxyen wenn sourceImageUrl existiert und noch nicht in Storage
+    if (!recipe.sourceImageUrl || recipe.imageStorageId) {
+      console.log('[proxyExternalImage] No proxy needed - recipe already has stored image or no source URL');
+      return { success: false };
+    }
+
+    // Prüfen ob es eine Instagram-URL ist
+    const isInstagram = recipe.sourceImageUrl.includes('cdninstagram.com') ||
+                       recipe.sourceImageUrl.includes('instagram.com');
+
+    if (!isInstagram) {
+      console.log('[proxyExternalImage] Not an Instagram URL, skipping proxy:', recipe.sourceImageUrl);
+      return { success: false };
+    }
+
+    try {
+      console.log('[proxyExternalImage] Fetching Instagram image:', recipe.sourceImageUrl);
+
+      // Bild server-side fetchen (ohne CORS-Beschränkungen)
+      const response = await fetch(recipe.sourceImageUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+      }
+
+      // Bild als ArrayBuffer holen
+      const imageBuffer = await response.arrayBuffer();
+      const blob = new Blob([imageBuffer]);
+
+      // In Convex Storage speichern
+      const storageId = await ctx.storage.store(blob);
+
+      // Rezept aktualisieren mit Storage ID
+      await ctx.runMutation(api.recipes.update, {
+        id: args.recipeId,
+        imageStorageId: storageId,
+        image: undefined, // image wird durch storage URL ersetzt
+      });
+
+      // Neue URL generieren
+      const imageUrl = await ctx.storage.getUrl(storageId);
+
+      console.log('[proxyExternalImage] ✅ Successfully proxied Instagram image:', {
+        recipeId: args.recipeId,
+        storageId,
+        imageUrl,
+      });
+
+      return {
+        success: true,
+        imageStorageId: storageId,
+        imageUrl: imageUrl || undefined,
+      };
+
+    } catch (error) {
+      console.error('[proxyExternalImage] ❌ Failed to proxy image:', error);
+      // Fehler ist nicht fatal - Rezept behält original URL
+      return { success: false };
+    }
+  },
+});
+
+// Batch proxy für mehrere Rezepte (z.B. beim Initialisieren der WeeklyPage)
+export const proxyExternalImages = action({
+  args: {
+    recipeIds: v.array(v.id("recipes")),
+  },
+  handler: async (ctx, args): Promise<{ proxied: number; failed: number }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    let proxied = 0;
+    let failed = 0;
+
+    for (const recipeId of args.recipeIds) {
+      try {
+        const result = await ctx.runAction(api.recipes.proxyExternalImage, { recipeId });
+        if (result.success) {
+          proxied++;
+        }
+      } catch (error) {
+        console.error(`[proxyExternalImages] Failed for recipe ${recipeId}:`, error);
+        failed++;
+      }
+    }
+
+    console.log(`[proxyExternalImages] Batch complete: ${proxied} proxied, ${failed} failed`);
+    return { proxied, failed };
+  },
+});

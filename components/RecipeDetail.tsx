@@ -15,6 +15,7 @@ const RecipeDetail: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
+  const [highlightedIngredientIndex, setHighlightedIngredientIndex] = useState<number | null>(null);
 
   // Queries & Mutations
   const recipes = useQuery(api.recipes.list, {});
@@ -37,16 +38,14 @@ const RecipeDetail: React.FC = () => {
   const handleDelete = async () => {
     if (!selectedRecipeId) return;
     
-    if (window.confirm("Möchtest du dieses Rezept wirklich löschen?")) {
-      await deleteRecipe({ id: selectedRecipeId as Id<"recipes"> });
-      
-      // Nach dem Löschen: Wähle ein anderes Rezept oder null
-      const remaining = recipes?.filter(r => r._id !== selectedRecipeId) || [];
-      if (remaining.length > 0) {
-        setSelectedRecipeId(remaining[0]._id);
-      } else {
-        setSelectedRecipeId(null);
-      }
+    await deleteRecipe({ id: selectedRecipeId as Id<"recipes"> });
+    
+    // Nach dem Löschen: Wähle ein anderes Rezept oder null
+    const remaining = recipes?.filter(r => r._id !== selectedRecipeId) || [];
+    if (remaining.length > 0) {
+      setSelectedRecipeId(remaining[0]._id);
+    } else {
+      setSelectedRecipeId(null);
     }
   };
 
@@ -141,19 +140,27 @@ const RecipeDetail: React.FC = () => {
               onDelete={handleDelete}
             />
 
-            <div className="relative -mt-16 z-20">
-              <div className="mx-4 p-6 rounded-xl glassmorphism">
-                <RecipeMeta recipe={activeRecipe} />
-                <Ingredients ingredients={activeRecipe.ingredients} />
-                <Instructions instructions={activeRecipe.instructions} ingredients={activeRecipe.ingredients} />
+              <div className="relative z-20">
+                <div className="mx-4 p-6 rounded-3xl glassmorphism">
+                  <RecipeMeta recipe={activeRecipe} />
+                  <Ingredients 
+                    ingredients={activeRecipe.ingredients} 
+                    highlightedIndex={highlightedIngredientIndex}
+                  />
+                  <Instructions 
+                    instructions={activeRecipe.instructions} 
+                    ingredients={activeRecipe.ingredients}
+                    highlightedIndex={highlightedIngredientIndex}
+                    onToggleHighlight={(index) => setHighlightedIngredientIndex(prev => prev === index ? null : index)}
+                  />
+                </div>
               </div>
+            </>
+          ) : (
+            <div className="h-96 flex items-center justify-center dark:text-white">
+              Wähle ein Rezept aus...
             </div>
-          </>
-        ) : (
-          <div className="h-96 flex items-center justify-center dark:text-white">
-            Wähle ein Rezept aus...
-          </div>
-        )}
+          )}
 
         <div className="h-10"></div>
       </main>

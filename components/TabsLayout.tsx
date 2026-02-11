@@ -1,4 +1,4 @@
-import React, { Suspense, useRef } from 'react';
+import React, { Suspense, useRef, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import AppNav from './AppNav';
 import { OfflineBanner } from './OfflineBanner';
@@ -15,17 +15,14 @@ const WeeklyPage = React.lazy(() => import('../pages/WeeklyPage'));
 const ShoppingPage = React.lazy(() => import('../pages/ShoppingPage'));
 const ProfilePage = React.lazy(() => import('../pages/ProfilePage'));
 const SubscribePage = React.lazy(() => import('../pages/SubscribePage'));
+const CategoryRecipesPage = React.lazy(() => import('../pages/CategoryRecipesPage'));
 
 const AddRecipeModal = React.lazy(() => import('./AddRecipeModal'));
 
-const PageLoader = () => (
-  <div className="min-h-screen flex items-center justify-center bg-background-light dark:bg-background-dark">
-    <div className="text-center">
-      <div className="inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
-      <p className="text-text-secondary-light dark:text-text-secondary-dark">Lädt...</p>
-    </div>
-  </div>
-);
+// Wrapper component to provide params to cached CategoryRecipesPage
+const CategoryRecipesWrapper: React.FC<{ category: string }> = ({ category }) => {
+  return <CategoryRecipesPage key={category} category={category} />;
+};
 
 /**
  * TabsLayout - Persistent container mit State Preservation für Tabs
@@ -44,6 +41,9 @@ export const TabsLayout: React.FC = () => {
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const previousTabRef = useRef<string | null>(null);
 
+  // PERFORMANCE: Tracke besuchte Kategorien für State Preservation
+  const [visitedCategories, setVisitedCategories] = useState<Set<string>>(new Set());
+
   // Prefetch all tab routes immediately on mount for instant tab switching
   React.useEffect(() => {
     Promise.all([
@@ -53,6 +53,7 @@ export const TabsLayout: React.FC = () => {
       import('../pages/ShoppingPage'),
       import('../pages/ProfilePage'),
       import('../pages/SubscribePage'),
+      import('../pages/CategoryRecipesPage'), // Prefetch für Category-Seite
     ]);
   }, []);
 
@@ -69,6 +70,22 @@ export const TabsLayout: React.FC = () => {
     void prefetchAddRecipeModal();
     openAddModal();
   };
+
+  // Track visited categories
+  React.useEffect(() => {
+    const match = location.pathname.match(/^\/category\/(.+)$/);
+    if (match && match[1]) {
+      const category = decodeURIComponent(match[1]);
+      setVisitedCategories(prev => {
+        if (!prev.has(category)) {
+          const newSet = new Set(prev);
+          newSet.add(category);
+          return newSet;
+        }
+        return prev;
+      });
+    }
+  }, [location.pathname]);
 
   // Scroll-Reset bei Tab-Wechsel (nicht für Outlet-Routen)
   React.useEffect(() => {
@@ -98,6 +115,11 @@ export const TabsLayout: React.FC = () => {
   const currentPath = location.pathname;
   const isTabRoute = tabRoutes.includes(currentPath);
 
+  // Check if current route is a category route
+  const categoryMatch = currentPath.match(/^\/category\/(.+)$/);
+  const currentCategory = categoryMatch?.[1] ? decodeURIComponent(categoryMatch[1]) : null;
+  const isCategoryRoute = !!currentCategory;
+
   return (
     <ErrorBoundary>
       <div className="antialiased h-[100dvh] w-full flex flex-col overflow-hidden bg-background-light dark:bg-background-dark">
@@ -106,29 +128,49 @@ export const TabsLayout: React.FC = () => {
         {/* Page Content Area - Expands to fill available space */}
         <div className="flex-1 relative w-full overflow-hidden">
           <Suspense fallback={null}>
-            {isTabRoute ? (
-              /* TAB-ROUTEN: Alle Tabs mounten, persistent im DOM */
-              <>
-                {tabRoutes.map((tabPath) => (
+            {/* TAB-ROUTEN: Permanent im DOM halten */}
+            <div style={{ display: isTabRoute ? 'contents' : 'none' }}>
+              {tabRoutes.map((tabPath) => (
+                <div
+                  key={tabPath}
+                  ref={(el) => { tabRefs.current[tabPath] = el; }}
+                  style={{
+                    display: currentPath === tabPath ? 'block' : 'none',
+                  }}
+                  className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden touch-pan-y page-enter"
+                >
+                  {tabPath === '/tabs/categories' && <CategoriesPage />}
+                  {tabPath === '/tabs/favorites' && <FavoritesPage />}
+                  {tabPath === '/tabs/weekly' && <WeeklyPage />}
+                  {tabPath === '/tabs/shopping' && <ShoppingPage />}
+                  {tabPath === '/tabs/profile' && <ProfilePage />}
+                  {tabPath === '/tabs/subscribe' && <SubscribePage />}
+                </div>
+              ))}
+            </div>
+
+            {/* CATEGORY-ROUTEN: Permanent im DOM halten (cached) */}
+            <div style={{ display: isCategoryRoute ? 'contents' : 'none' }}>
+              {Array.from(visitedCategories).map((category) => {
+                const categoryPath = `/category/${encodeURIComponent(category)}`;
+                const isActive = currentCategory === category;
+                
+                return (
                   <div
-                    key={tabPath}
-                    ref={(el) => { tabRefs.current[tabPath] = el; }}
+                    key={categoryPath}
                     style={{
-                      display: currentPath === tabPath ? 'block' : 'none',
+                      display: isActive ? 'block' : 'none',
                     }}
                     className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden touch-pan-y page-enter"
                   >
-                    {tabPath === '/tabs/categories' && <CategoriesPage />}
-                    {tabPath === '/tabs/favorites' && <FavoritesPage />}
-                    {tabPath === '/tabs/weekly' && <WeeklyPage />}
-                    {tabPath === '/tabs/shopping' && <ShoppingPage />}
-                    {tabPath === '/tabs/profile' && <ProfilePage />}
-                    {tabPath === '/tabs/subscribe' && <SubscribePage />}
+                    <CategoryRecipesWrapper category={category} />
                   </div>
-                ))}
-              </>
-            ) : (
-              /* OUTLET-ROUTEN: category/:category, recipe/:id, etc. */
+                );
+              })}
+            </div>
+
+            {/* OUTLET-ROUTEN: Transient (werden neu gemountet) */}
+            {!isTabRoute && !isCategoryRoute && (
               <div key={currentPath} className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden touch-pan-y page-enter">
                 <Outlet />
               </div>

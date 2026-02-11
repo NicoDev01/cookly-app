@@ -394,7 +394,7 @@
   width: 2.5rem;
   height: 2.5rem;
   padding: 0;
-  border-radius: var(--radius-md, 0.75rem);
+  border-radius: var(--radius-full, 9999px);
   background-color: transparent;
   color: var(--color-text-secondary, #6b7280);
   cursor: pointer;

@@ -1,12 +1,11 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import ReactDOM from 'react-dom/client';
-import './index.css';
-import App from './App';
+import React, { Component, ErrorInfo, ReactNode } from "react";
+import ReactDOM from "react-dom/client";
+import "./index.css";
+import App from "./App";
 import { ConvexReactClient } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
-import { ClerkProvider, useAuth } from '@clerk/clerk-react';
-import { Clerk } from '@clerk/clerk-js';
-import { HashRouter, useNavigate } from 'react-router-dom';
+import { ClerkProvider, useAuth } from "@clerk/clerk-react";
+import { HashRouter, useNavigate } from "react-router-dom";
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -34,7 +33,7 @@ interface State {
 class ErrorBoundary extends React.Component<Props, State> {
   public state: State = {
     hasError: false,
-    error: null
+    error: null,
   };
 
   public static getDerivedStateFromError(error: Error): State {
@@ -50,7 +49,9 @@ class ErrorBoundary extends React.Component<Props, State> {
       return (
         <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4 font-sans text-gray-800">
           <div className="bg-white p-8 rounded-lg shadow-xl max-w-lg w-full border-l-4 border-red-500">
-            <h1 className="text-2xl font-bold text-red-600 mb-4">Etwas ist schiefgelaufen</h1>
+            <h1 className="text-2xl font-bold text-red-600 mb-4">
+              Etwas ist schiefgelaufen
+            </h1>
             <p className="mb-4 text-gray-600">
               Die Anwendung konnte nicht geladen werden.
             </p>
@@ -76,7 +77,7 @@ class ErrorBoundary extends React.Component<Props, State> {
 
 // --- App Initialization ---
 
-const rootElement = document.getElementById('root');
+const rootElement = document.getElementById("root");
 if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
@@ -87,13 +88,16 @@ const root = ReactDOM.createRoot(rootElement);
 const convexClient = new ConvexReactClient(convexUrl);
 
 // Clerk Konfiguration für Capacitor mit Deep Link Support
-function ClerkProviderWithNavigate({ children }: { children: React.ReactNode }) {
+function ClerkProviderWithNavigate({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const navigate = useNavigate();
 
   return (
     <ClerkProvider
       publishableKey={PUBLISHABLE_KEY}
-      Clerk={Clerk}
       afterSignOutUrl="/"
       signInFallbackRedirectUrl="/tabs/categories"
       signUpFallbackRedirectUrl="/tabs/categories"
@@ -120,5 +124,5 @@ root.render(
         </ClerkProviderWithNavigate>
       </HashRouter>
     </ErrorBoundary>
-  </React.StrictMode>
+  </React.StrictMode>,
 );

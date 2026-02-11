@@ -80,14 +80,14 @@ const BottomSheet: React.FC<BottomSheetProps> = ({
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-end justify-center transition-colors duration-300 ${
+      className={`fixed inset-0 z-[9999] flex items-end justify-center transition-colors duration-300 ${
         isAnimating ? 'bg-black/50' : 'bg-transparent'
       }`}
       onClick={handleBackdropClick}
     >
       <div
         ref={sheetRef}
-        className={`relative w-full bg-background-light dark:bg-background-dark rounded-t-3xl shadow-2xl overflow-hidden transition-transform duration-300 ease-out ${
+        className={`relative w-full bg-background-light dark:bg-background-dark rounded-t-3xl shadow-2xl overflow-hidden transition-transform duration-300 ease-out pb-[max(1rem,var(--safe-area-inset-bottom))] ${
           isAnimating ? 'translate-y-0' : 'translate-y-full'
         }`}
         style={{

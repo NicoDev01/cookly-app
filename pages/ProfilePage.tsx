@@ -156,15 +156,15 @@ export const ProfilePage: React.FC = () => {
                   <UsageRow
                     label="Manuelle Rezepte"
                     current={manualLimit?.current ?? 0}
-                    limit={manualLimit?.limit ?? 100}
+                    limit={manualLimit?.limit ?? 0} // Sync with backend
                     icon={BookOpen}
                   />
                 </div>
                 <div className="bg-card-light dark:bg-card-dark rounded-xl shadow-neo-light-convex p-4">
                   <UsageRow
-                    label="Instagram & Website Importe"
+                    label="IG / FB / Website Importe"
                     current={linkLimit?.current ?? 0}
-                    limit={linkLimit?.limit ?? 50}
+                    limit={linkLimit?.limit ?? 0} // Sync with backend
                     icon={Link2}
                   />
                 </div>
@@ -172,8 +172,9 @@ export const ProfilePage: React.FC = () => {
                   <UsageRow
                     label="KI Foto-Scan"
                     current={scanLimit?.current ?? 0}
-                    limit={scanLimit?.limit ?? 50}
+                    limit={scanLimit?.limit ?? 0} // Sync with backend
                     icon={Sparkles}
+
                   />
                 </div>
 
@@ -298,8 +299,8 @@ export const ProfilePage: React.FC = () => {
 // --- Sub-components (Styled) ---
 
 const UsageRow = ({ icon: Icon, label, current, limit }: { icon: LucideIcon, label: string, current: number, limit: number }) => {
-  const percentage = Math.min((current / limit) * 100, 100);
-  const isFull = percentage >= 100;
+  const percentage = limit > 0 ? Math.min((current / limit) * 100, 100) : 0;
+  const isFull = percentage >= 100 && limit > 0;
 
   return (
     <div className="space-y-3 group">

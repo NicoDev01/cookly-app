@@ -2,6 +2,7 @@ import React from 'react';
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Link } from 'react-router-dom';
+import { IconButton } from '../components/ui/cookly/IconButton';
 
 const getColorClass = (index: number) => {
   const colorIndex = (index % 6) + 1;
@@ -44,15 +45,14 @@ const ShoppingPage: React.FC = () => {
             </h1>
           </div>
 
-          <button
+          <IconButton
+            icon="delete_sweep"
             onClick={handleClear}
             disabled={!items || items.length === 0}
-            className="touch-btn flex h-11 w-11 items-center justify-center radius-md bg-card-light dark:bg-card-dark text-text-primary-light dark:text-text-primary-dark elevation-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-card-light dark:bg-card-dark text-text-primary-light dark:text-text-primary-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave !rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
             title="Alle entfernen"
             aria-label="Einkaufsliste leeren"
-          >
-            <span className="material-symbols-outlined">delete_sweep</span>
-          </button>
+          />
         </div>
 
         {/* Content */}

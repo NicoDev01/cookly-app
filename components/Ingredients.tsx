@@ -5,9 +5,10 @@ import { Ingredient } from '../types';
 
 interface IngredientsProps {
   ingredients: Ingredient[];
+  highlightedIndex?: number | null;
 }
 
-const Ingredients: React.FC<IngredientsProps> = ({ ingredients }) => {
+const Ingredients: React.FC<IngredientsProps> = ({ ingredients, highlightedIndex }) => {
   const shoppingItems = useQuery(api.shopping.getShoppingList);
   const toggleShoppingItem = useMutation(api.shopping.toggleShoppingItemByDetails).withOptimisticUpdate((localStore, args) => {
     const { name, amount } = args;
@@ -71,17 +72,20 @@ const Ingredients: React.FC<IngredientsProps> = ({ ingredients }) => {
             : undefined;
           
           const isInShoppingList = shoppingKeySet.has(buildKey(ingName, ingAmount));
+          const isHighlighted = highlightedIndex === index;
+
           return (
             <div 
               key={`${ingName}-${index}`}
               onClick={() => toggleShoppingItem({ name: ingName, amount: ingAmount })}
               className={`
-                relative group cursor-pointer select-none transition-all duration-200 active:scale-95
+                relative group cursor-pointer select-none transition-all duration-300 ease-out active:scale-95
                 px-3 py-1.5 rounded-full text-sm font-medium 
                 ${getColorClass(index)} 
                 text-black dark:text-white 
                 shadow-neomorphism-pill dark:shadow-dark-neomorphism-pill
                 ${isInShoppingList ? 'opacity-80' : 'opacity-100'}
+                ${isHighlighted ? 'ring-2 ring-black/50 dark:ring-white/50 scale-105 z-10' : ''}
               `}
             >
               {ingAmount && <span>{ingAmount} </span>}

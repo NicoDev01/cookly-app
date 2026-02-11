@@ -13,9 +13,9 @@
  */
 
 /* Cookly Design System Imports */
-@import './styles/design-tokens.css';
-@import './styles/components.css';
-@import './styles/utilities.css';
+@import "./styles/design-tokens.css";
+@import "./styles/components.css";
+@import "./styles/utilities.css";
 
 /* Tailwind CSS */
 @tailwind base;
@@ -251,7 +251,6 @@
       transform: translateZ(0);
     }
   }
-
 }
 
 @layer base {
@@ -614,6 +613,70 @@
     .touch-card,
     .touch-scale {
       transition: none !important;
+    }
+  }
+
+  /* SPLASH SCREEN ANIMATIONS */
+  .animate-pulse-slow {
+    animation: pulseSlow 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes pulseSlow {
+    0%,
+    100% {
+      opacity: 0.2;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.15;
+      transform: scale(1.1);
+    }
+  }
+
+  .animate-in-zoom {
+    animation: zoomInEntrance 1s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  }
+
+  @keyframes zoomInEntrance {
+    0% {
+      opacity: 0;
+      transform: scale(0.8);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .animate-progress-indeterminate {
+    animation: progressIndeterminate 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    transform-origin: 0% 50%;
+  }
+
+  @keyframes progressIndeterminate {
+    0% {
+      transform: translateX(0) scaleX(0);
+    }
+    40% {
+      transform: translateX(0) scaleX(0.4);
+    }
+    100% {
+      transform: translateX(100%) scaleX(0.5);
+    }
+  }
+
+  .animate-fade-in-up {
+    animation: fadeInUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  }
+
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
     }
   }
 }

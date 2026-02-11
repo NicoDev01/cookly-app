@@ -261,8 +261,8 @@ Build- und Runtime-Konfiguration für Web und Capacitor.
 | Feature | Free | Pro |
 |---------|------|-----|
 | Manuelle Rezepte | 100 | ∞ |
-| Link Imports | 50 | ∞ |
-| Foto Scans | 50 | ∞ |
+| Link Imports | 100 | ∞ |
+| Foto Scans | 100 | ∞ |
 
 ## Architektur-Highlights
 **Dateien:**

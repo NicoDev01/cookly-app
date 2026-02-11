@@ -17,13 +17,25 @@
 
     <!-- Android 11 and below (API < 31) Splash Screen Theme -->
     <!-- Uses the compatibility library for Android 12 Splash Screen API -->
+    <!-- Android 12 Splash Screen API Theme -->
+    <!-- This theme is shown IMMEDIATELY on cold start. We use a solid color to prevent glitches/distortion 
+         before the Lottie animation takes over overlay. -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <!-- Full screen splash image -->
-        <item name="android:background">@drawable/splash</item>
-        <!-- Background color -->
+        <!-- Prevent default icon from showing as a "box in the middle" -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/transparent</item>
+        <item name="windowSplashScreenAnimationDuration">0</item> 
+        
+        <!-- Background color should be solid to match Lottie -->
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
         <item name="android:windowBackground">@color/splash_background</item>
+        <item name="android:background">@color/splash_background</item>
+
+        <!-- Status/Nav bars -->
         <item name="android:statusBarColor">@color/splash_background</item>
         <item name="android:navigationBarColor">@color/splash_background</item>
+        
+        <!-- Post-splash theme -->
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 
 </resources>

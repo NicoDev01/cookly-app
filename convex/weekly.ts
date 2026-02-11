@@ -18,29 +18,49 @@ export const getWeek = query({
   handler: async (ctx, args) => {
     const clerkId = await getAuthenticatedClerkId(ctx);
 
-    // Get all weekly meals for the user
+    // Get all weekly meals for the user within date range
     const allMeals = await ctx.db
       .query("weeklyMeals")
       .withIndex("by_user_date", (q) => q.eq("clerkId", clerkId))
       .collect();
 
-    // Filter by date range
+    // Filter by date range on backend (client-side filter for now, will be optimized with compound index)
     const filteredMeals = allMeals.filter(meal => {
-      const mealDate = meal.date.replace('#WEEKLY', '');
-      return mealDate >= args.startDate && mealDate <= args.endDate;
+      return meal.date >= args.startDate && meal.date <= args.endDate;
     });
 
-    // Fetch all recipe details
+    // Batch fetch all recipe details - Collect all recipe IDs first
+    const recipeIds = filteredMeals.map(meal => meal.recipeId);
+    const recipes = new Map();
+
+    // Fetch all recipes in parallel
+    for (const recipeId of recipeIds) {
+      const recipe = await ctx.db.get(recipeId);
+      if (recipe) {
+        recipes.set(recipeId, recipe);
+      }
+    }
+
+    // Combine results AND resolve storage URLs
     const result: any[] = [];
     for (const meal of filteredMeals) {
-      const recipe = await ctx.db.get(meal.recipeId);
+      const recipe = recipes.get(meal.recipeId);
       if (recipe) {
+        // Resolve storage URL if exists
+        let imageUrl = recipe.image;
+        if (recipe.imageStorageId) {
+          const url = await ctx.storage.getUrl(recipe.imageStorageId);
+          if (url) imageUrl = url;
+        }
+
         result.push({
-          mealId: meal._id, // Use meal ID as unique identifier
+          mealId: meal._id,
           date: meal.date,
+          scope: meal.scope, // "day" or "week"
           recipe: {
             ...recipe,
             _id: recipe._id,
+            image: imageUrl, // Use resolved storage URL
           },
         });
       }
@@ -55,10 +75,13 @@ export const addMeal = mutation({
   args: {
     recipeId: v.id("recipes"),
     date: v.string(),
+    scope: v.optional(v.union(v.literal("day"), v.literal("week"))),
   },
   handler: async (ctx, args) => {
     const clerkId = await getAuthenticatedClerkId(ctx);
 
+    // Determine scope: if date contains #WEEKLY suffix, use "week", otherwise "day"
+    const scope = args.scope ?? (args.date.includes('#WEEKLY') ? "week" : "day");
     // Clean date string (remove #WEEKLY suffix if present)
     const cleanDate = args.date.replace('#WEEKLY', '');
 
@@ -68,6 +91,7 @@ export const addMeal = mutation({
       clerkId,
       recipeId: args.recipeId,
       date: cleanDate,
+      scope,
       createdAt: now,
       updatedAt: now,
     });
@@ -103,10 +127,13 @@ export const addMeals = mutation({
   args: {
     recipeIds: v.array(v.id("recipes")),
     date: v.string(),
+    scope: v.optional(v.union(v.literal("day"), v.literal("week"))),
   },
   handler: async (ctx, args) => {
     const clerkId = await getAuthenticatedClerkId(ctx);
 
+    // Determine scope: if date contains #WEEKLY suffix, use "week", otherwise "day"
+    const scope = args.scope ?? (args.date.includes('#WEEKLY') ? "week" : "day");
     // Clean date string
     const cleanDate = args.date.replace('#WEEKLY', '');
 
@@ -118,6 +145,7 @@ export const addMeals = mutation({
         clerkId,
         recipeId,
         date: cleanDate,
+        scope,
         createdAt: now,
         updatedAt: now,
       });

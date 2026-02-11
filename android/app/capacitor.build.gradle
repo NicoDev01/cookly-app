@@ -15,6 +15,7 @@ dependencies {
     implementation project(':capacitor-haptics')
     implementation project(':capacitor-splash-screen')
     implementation project(':supernotes-capacitor-send-intent')
+    implementation project(':capacitor-lottie-splash-screen')
 
 }
 
