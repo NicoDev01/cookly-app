@@ -37,10 +37,10 @@ export const addShoppingItem = mutation({
     const normalizedAmount = args.amount?.toLowerCase().trim() || "";
     const key = `${normalizedName}|${normalizedAmount}`;
 
-    // Check if item already exists
+    // Check if item already exists (user-specific)
     const existing = await ctx.db
       .query("shoppingItems")
-      .withIndex("by_key", (q) => q.eq("key", key))
+      .withIndex("by_user_key", (q) => q.eq("clerkId", identity.subject).eq("key", key))
       .first();
 
     if (existing) {
@@ -81,10 +81,10 @@ export const toggleShoppingItemByDetails = mutation({
     const normalizedAmount = args.amount?.toLowerCase().trim() || "";
     const key = `${normalizedName}|${normalizedAmount}`;
 
-    // Check if item already exists
+    // Check if item already exists (user-specific)
     const existing = await ctx.db
       .query("shoppingItems")
-      .withIndex("by_key", (q) => q.eq("key", key))
+      .withIndex("by_user_key", (q) => q.eq("clerkId", identity.subject).eq("key", key))
       .first();
 
     if (existing) {

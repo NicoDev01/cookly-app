@@ -104,6 +104,7 @@ export default defineSchema({
   .index("by_category", ["clerkId", "category"])
   .index("by_favorite", ["clerkId", "isFavorite"])
   .index("by_sourceUrl", ["sourceUrl"])
+  .index("by_user_sourceUrl", ["clerkId", "sourceUrl"])
   .searchIndex("search_title", { searchField: "title" }),
 
   // WEEKLY MEALS - Multi-Tenant (Individual meals, not grouped in plans)
@@ -130,7 +131,7 @@ export default defineSchema({
     createdAt: v.number(),
   })
   .index("by_user", ["clerkId"])
-  .index("by_key", ["key"]),
+  .index("by_user_key", ["clerkId", "key"]),
 
   // CATEGORIES - Multi-Tenant (User Isolated)
   categories: defineTable({
@@ -153,14 +154,4 @@ export default defineSchema({
     count: v.number(),
   })
   .index("by_user_category", ["clerkId", "category"]),
-
-  // IMPORT LOCKS - Verhindert doppelte Apify-Aufrufe bei parallelen Requests
-  importLocks: defineTable({
-    url: v.string(),
-    clerkId: v.string(),
-    startedAt: v.number(),
-    status: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed")),
-  })
-  .index("by_url", ["url"])
-  .index("by_url_and_user", ["url", "clerkId"]),
 });

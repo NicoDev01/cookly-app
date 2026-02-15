@@ -14,7 +14,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({ openAddModal }) => {
       <div className="relative flex flex-col items-center">
         {/* Headline - positioned over the image */}
         <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-center z-10 mt-8">
-          Willkommen bei <span className="text-primary italic">Cookly</span>
+          Willkommen bei <br /> <span className="text-primary italic">Cookly</span>
         </h1>
 
         {/* Image */}

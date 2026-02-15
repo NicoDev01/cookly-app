@@ -111,12 +111,12 @@ const AppNav: React.FC<{
             }`}>
               <span
                 className={`material-symbols-outlined transition-all duration-200 ${isActive(path) ? 'filled text-white' : ''}`}
-                style={{ fontSize: '22px' }}
+                style={{ fontSize: '28px' }}
               >
                 {icon}
               </span>
             </div>
-            <p className={`text-[10px] font-medium leading-tight transition-colors duration-200 ${isActive(path) ? 'text-primary' : ''}`}>
+            <p className={`text-[12px] font-bold leading-tight transition-colors duration-200 ${isActive(path) ? 'text-primary' : ''}`}>
               {label}
             </p>
           </Link>

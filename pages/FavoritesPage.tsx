@@ -30,7 +30,7 @@ const FavoritesPage: React.FC = () => {
                  {/* Heart Icon with Headline */}
                  <div className="flex flex-col items-center">
                     {/* Animated Heart Icon */}
-                    <span className="material-symbols-outlined text-8xl text-red-500 animate-pulse mb-4">
+                    <span className="material-symbols-outlined text-8xl text-[#b1c8bb] animate-pulse mb-4">
                        favorite
                     </span>
 

@@ -25,6 +25,7 @@ const ProfilePage = React.lazy(() => import('./pages/ProfilePage'));
 const SubscribePage = React.lazy(() => import('./pages/SubscribePage'));
 const SignInPage = React.lazy(() => import('./pages/SignInPage'));
 const SignUpPage = React.lazy(() => import('./pages/SignUpPage'));
+const ForgotPasswordPage = React.lazy(() => import('./pages/ForgotPasswordPage'));
 const WelcomeScreen = React.lazy(() => import('./components/onboarding/WelcomeScreen'));
 const TabsLayout = React.lazy(() => import('./components/TabsLayout'));
 
@@ -184,6 +185,7 @@ const AppContent: React.FC = () => {
         <Route index element={<RootRedirect />} />
         <Route path="/sign-in" element={<SignInPage />} />
         <Route path="/sign-up" element={<SignUpPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/onboarding" element={<WelcomeScreen />} />
 
         <Route element={<ProtectedLayout />}>

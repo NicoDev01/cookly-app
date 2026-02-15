@@ -1,14 +1,6 @@
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-
-// ============================================================
-// LIMITS DEFINITION
-// ============================================================
-const FREE_LIMITS = {
-  MANUAL_RECIPES: 100,    // ANPASSUNG HIER: Manuell erstellte Rezepte Limit
-  LINK_IMPORTS: 100,      // ANPASSUNG HIER: URL/Instagram Imports Limit
-  PHOTO_SCANS: 100,       // ANPASSUNG HIER: KI Foto-Scans Limit
-};
+import { FREE_LIMITS } from "./constants";
 
 // ============================================================
 // PUBLIC QUERIES

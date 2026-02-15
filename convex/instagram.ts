@@ -72,26 +72,10 @@ export const scrapePost = action({
     // ============================================================
     // 4. Check if already exists (Cost Optimization)
     // ============================================================
-    const existingId = await ctx.runQuery(api.recipes.getBySourceUrl, { url: args.url });
+    const existingId = await ctx.runQuery(api.recipes.getBySourceUrl, { url: args.url, clerkId });
     if (existingId) {
       console.log(`Recipe already exists for ${args.url}, returning existing ID.`);
       return existingId;
-    }
-
-    // ============================================================
-    // 4b. Import Lock erwerben (Kostenschutz gegen Doppel-Requests)
-    // ============================================================
-    const lockResult = await ctx.runMutation(api.importLocks.acquireLock, {
-      url: args.url,
-      clerkId,
-    });
-
-    if (!lockResult.success) {
-      console.log(`Import already in progress for ${args.url}, blocking duplicate request.`);
-      throw new Error(JSON.stringify({
-        type: "IMPORT_IN_PROGRESS",
-        message: "Dieser Import läuft bereits. Bitte warte einen Moment.",
-      }));
     }
 
     console.log(`Starting Instagram import for: ${args.url}`);
@@ -171,9 +155,6 @@ export const scrapePost = action({
 
     } catch (apifyError) {
       console.error("Apify error:", apifyError);
-
-      // Lock auf failed setzen
-      await ctx.runMutation(api.importLocks.releaseLock, { url: args.url, status: "failed" });
 
       // Graceful Degradation: Fallback auf manuelle Eingabe
       throw new Error(JSON.stringify({
@@ -289,7 +270,7 @@ export const scrapePost = action({
     // 8. Save Recipe (sourceUrl gesetzt = link_imports Counter!)
     // ============================================================
     // Final duplicate check right before creating (race condition protection)
-    const finalExisting = await ctx.runQuery(api.recipes.getBySourceUrl, { url: args.url });
+    const finalExisting = await ctx.runQuery(api.recipes.getBySourceUrl, { url: args.url, clerkId });
     if (finalExisting) {
       console.log("Recipe already created by parallel request, returning existing");
       return finalExisting;
@@ -312,16 +293,9 @@ export const scrapePost = action({
         isFavorite: false,
       });
 
-      // Lock auf completed setzen und alte Locks aufräumen
-      await ctx.runMutation(api.importLocks.releaseLock, { url: args.url, status: "completed" });
-      await ctx.runMutation(api.importLocks.cleanupOldLocks, {});
-
       return newRecipeId;
 
     } catch (createError: unknown) {
-      // Lock auf failed setzen
-      await ctx.runMutation(api.importLocks.releaseLock, { url: args.url, status: "failed" });
-      
       // Limit reached Error weiterwerfen
       const errStr = createError instanceof Error ? createError.message : "";
       if (errStr.includes("LIMIT_REACHED")) {

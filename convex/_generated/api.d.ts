@@ -9,9 +9,9 @@
  */
 
 import type * as categories from "../categories.js";
+import type * as constants from "../constants.js";
 import type * as facebook from "../facebook.js";
 import type * as http from "../http.js";
-import type * as importLocks from "../importLocks.js";
 import type * as instagram from "../instagram.js";
 import type * as migrateUserStats from "../migrateUserStats.js";
 import type * as pollinationsHelper from "../pollinationsHelper.js";
@@ -33,9 +33,9 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   categories: typeof categories;
+  constants: typeof constants;
   facebook: typeof facebook;
   http: typeof http;
-  importLocks: typeof importLocks;
   instagram: typeof instagram;
   migrateUserStats: typeof migrateUserStats;
   pollinationsHelper: typeof pollinationsHelper;

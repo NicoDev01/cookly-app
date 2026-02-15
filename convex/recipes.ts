@@ -1,6 +1,7 @@
 import { query, mutation, action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal, api } from "./_generated/api";
+import { FREE_LIMITS } from "./constants";
 
 // Helper-Funktion: Authentifizierte Clerk ID abrufen
 async function getAuthenticatedClerkId(ctx: any) {
@@ -207,20 +208,18 @@ export const listPaginated = query({
   },
 });
 
-// Get recipe by source URL (for deduplication)
+// Get recipe by source URL (for deduplication) - User-scoped for Multi-Tenant isolation
 export const getBySourceUrl = query({
-  args: { url: v.string() },
+  args: { 
+    url: v.string(),
+    clerkId: v.string()
+  },
   handler: async (ctx, args) => {
-    // Note: This returns the FIRST recipe found with this URL globally.
-    // In a multi-tenant app, you might want to scope this, 
-    // but for deduplication avoiding double-scraping, global check is okay (or check by user).
-    // For now, let's return it regardless of user to prevent re-scraping same content?
-    // Actually, users might want to import the same thing. 
-    // Let's scope it to the user if we want strict privacy, or global if we want cache.
-    // Given the previous code, let's keep it simple: find ANY recipe with this URL.
     const recipe = await ctx.db
       .query("recipes")
-      .withIndex("by_sourceUrl", (q) => q.eq("sourceUrl", args.url))
+      .withIndex("by_user_sourceUrl", (q) => 
+        q.eq("clerkId", args.clerkId).eq("sourceUrl", args.url)
+      )
       .first();
     return recipe ? recipe._id : null;
   },
@@ -375,15 +374,15 @@ export const create = mutation({
     switch (featureType) {
       case "manual_recipes":
         currentCount = stats.manualRecipes || 0;
-        limit = 100; // FREE_LIMITS.MANUAL_RECIPES
+        limit = FREE_LIMITS.MANUAL_RECIPES;
         break;
       case "link_imports":
         currentCount = stats.linkImports || 0;
-        limit = 50; // FREE_LIMITS.LINK_IMPORTS
+        limit = FREE_LIMITS.LINK_IMPORTS;
         break;
       case "photo_scans":
         currentCount = stats.photoScans || 0;
-        limit = 50; // FREE_LIMITS.PHOTO_SCANS
+        limit = FREE_LIMITS.PHOTO_SCANS;
         break;
     }
 
@@ -1029,3 +1028,6 @@ export const proxyExternalImages = action({
     return { proxied, failed };
   },
 });
+
+
+

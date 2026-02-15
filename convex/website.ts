@@ -64,7 +64,7 @@ export const scrapeWebsite = action({
         }
 
         // Check if we already have this recipe to save costs and time
-        const existingId = await ctx.runQuery(api.recipes.getBySourceUrl, { url: args.url });
+        const existingId = await ctx.runQuery(api.recipes.getBySourceUrl, { url: args.url, clerkId });
         if (existingId) {
             console.log(`Recipe already exists for ${args.url}, returning existing ID.`);
             return existingId;

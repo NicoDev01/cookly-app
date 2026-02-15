@@ -61,6 +61,12 @@ const HowItWorksModal: React.FC<HowItWorksModalProps> = ({ isOpen, onClose, open
     setTimeout(() => openAddModal({ initialTab: 'ai' }), 100);
   };
 
+  // Handler for external links - closes modal before opening link
+  const handleExternalLink = (url: string) => {
+    onClose();
+    window.open(url, '_blank');
+  };
+
   return createPortal(
     <div className="fixed inset-0 z-[10000] flex items-end justify-center">
       {/* Backdrop */}
@@ -127,7 +133,7 @@ const HowItWorksModal: React.FC<HowItWorksModalProps> = ({ isOpen, onClose, open
                     </div>
                   </div>
                   <button
-                    onClick={() => window.open('https://www.instagram.com/reel/DUQk71qCDn9/?igsh=dHY2dDEwcWNuZzhx', '_blank')}
+                    onClick={() => handleExternalLink('https://www.instagram.com/reel/DUIdyKlDOaX/?igsh=YzAyMDM1MGJkZA==')}
                     className="mt-6 w-full py-3.5 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 active:scale-[0.97] transition-all"
                   >
                     Jetzt ausprobieren
@@ -167,7 +173,7 @@ const HowItWorksModal: React.FC<HowItWorksModalProps> = ({ isOpen, onClose, open
                     </div>
                   </div>
                   <button
-                    onClick={() => window.open('https://www.facebook.com/share/r/1AiDe5uE4M/', '_blank')}
+                    onClick={() => handleExternalLink('https://www.facebook.com/share/r/1AiDe5uE4M/')}
                     className="mt-6 w-full py-3.5 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 active:scale-[0.97] transition-all"
                   >
                     Jetzt ausprobieren
@@ -199,7 +205,7 @@ const HowItWorksModal: React.FC<HowItWorksModalProps> = ({ isOpen, onClose, open
                   <div className="space-y-4">
                     <p className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">Teile den Link einer Kochwebseite direkt mit Cookly. Unsere KI erkennt Zutaten und Schritte automatisch.</p>
                     <button
-                      onClick={() => window.open('https://biancazapatka.com/de/einfache-pilz-pasta-mit-spinat-vegan/', '_blank')}
+                      onClick={() => handleExternalLink('https://biancazapatka.com/de/einfache-pilz-pasta-mit-spinat-vegan/')}
                       className="w-full py-3.5 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 active:scale-[0.97] transition-all"
                     >
                       Jetzt ausprobieren

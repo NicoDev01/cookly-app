@@ -177,7 +177,7 @@ const CategoriesPage: React.FC = () => {
         {!isEmptyState && (
           <div className="flex items-center px-6 pt-4 pb-2" style={{ paddingTop: 'max(1rem, var(--safe-area-inset-top))' }}>
             <img
-              src="/logo.png"
+              src="/green-logo.png"
               alt="Cookly"
               className="h-10 w-auto"
             />
@@ -358,8 +358,12 @@ const CategoriesPage: React.FC = () => {
                           onTouchStart={() => { void prefetchCategoryRecipesPage(); }}
                           className="flex items-center gap-4 rounded-xl bg-card-light p-3 shadow-neo-light-convex dark:bg-card-dark dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all cursor-pointer group"
                         >
-                          <div className="h-16 w-16 flex-shrink-0 rounded-lg flex items-center justify-center bg-gradient-to-br from-primary to-primary-dark shadow-inner text-white">
-                            <span className="material-symbols-outlined text-3xl drop-shadow-sm">restaurant_menu</span>
+                          <div className="h-16 w-16 flex-shrink-0 rounded-lg overflow-hidden shadow-inner bg-gray-100 dark:bg-gray-800">
+                            <img 
+                              src="/alle-rezepte.png" 
+                              alt="Alle Rezepte" 
+                              className="h-full w-full object-cover"
+                            />
                           </div>
                           <div className="flex-grow">
                             <p className="text-body font-bold text-text-primary-light dark:text-text-primary-dark group-hover:text-primary transition-colors">Alle Rezepte</p>

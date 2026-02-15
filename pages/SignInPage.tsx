@@ -166,6 +166,15 @@ export const SignInPage: React.FC = () => {
               >
                 {loading ? 'Wird geladen...' : 'Anmelden'}
               </Button>
+
+              <div className="text-center mt-4">
+                <Link
+                  to="/forgot-password"
+                  className="text-sm text-[hsl(146,17%,74%)] hover:underline"
+                >
+                  Passwort vergessen?
+                </Link>
+              </div>
             </form>
 
             <div className="mt-6 text-center">

@@ -16,6 +16,12 @@
 # debugging stack traces.
 #-keepattributes SourceFile,LineNumberTable
 
+
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Fix for R8 missing class errors with okio/retrofit
+-dontwarn javax.annotation.Nullable
+-dontwarn javax.annotation.ParametersAreNonnullByDefault
+
