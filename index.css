@@ -260,6 +260,21 @@
     overscroll-behavior: none;
   }
 
+  /* Button Reset - ensures buttons match anchor styling */
+  button {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    color: inherit;
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
   /* Safe Area Insets for notch/dynamic island */
   :root {
     --safe-area-inset-top: env(safe-area-inset-top, 0px);

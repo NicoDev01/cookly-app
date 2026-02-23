@@ -56,20 +56,21 @@ const Instructions: React.FC<InstructionsProps> = ({ instructions, ingredients =
     // "Olivenöl" ends with "öl" -> match "Öl" in text
     const commonBaseIngredients = [
       'öl', 'mehl', 'zucker', 'salz', 'pfeffer', 'milch', 'sahne', 'käse', 'wurst', 'fleisch', 'fisch',
-      'nudeln', 'reis', 'brot', 'ei', 'eier', 'beeren', 'nüsse', 'mandeln', 'kerne', 'samen', 'flocken',
+      'nudeln', 'reis', 'brot', 'ei', 'eier', 'beeren', 'nüsse', 'mandeln', 'kerne', 'samen', 'schalen', 'flocken',
       'saft', 'wein', 'essig', 'wasser', 'brühe', 'fond', 'sauce', 'soße', 'creme', 'quark', 'joghurt',
       'sirup', 'pulver', 'gewürz', 'kraut', 'kräuter', 'schokolade', 'kakao', 'honig', 'senf', 'ketchup', 'mayonnaise',
       'zwiebel', 'knoblauch', 'tomate', 'kartoffel', 'paprika', 'möhre', 'karotte', 'gurke', 'zucchini', 'kürbis',
       'schinken', 'speck', 'hack', 'filet', 'brust', 'keule', 'hirse', 'quinoa', 'couscous', 'bulgur', 'polenta', 'grieß', 'hafer', 'dinkel',
-      'zitrone', 'orange', 'limette', 'beere', 'apfel', 'birne', 'pfirsich', 'kirsche'
+      'zitrone', 'orange', 'limette', 'beere', 'apfel', 'birne', 'pfirsich', 'kirsche',
+      'tofu', 'agar'
     ];
 
     // Suffixes to strip to find the stem (Stemming Match)
     // "Knoblauchzehen" -> strip "zehen" -> match "Knoblauch" in text
     const compoundSuffixes = [
-      'zehe', 'zehen', 'stange', 'stangen', 'filet', 'filets', 'brust', 'keule', 'schenkel', 
+      'zehe', 'zehen', 'stange', 'stangen', 'filet', 'filets', 'brust', 'keule', 'schenkel',
       'würfel', 'scheiben', 'streifen', 'stücke', 'röschen', 'blättchen', 'hälften', 'enden',
-      'knolle', 'knollen', 'schote', 'schoten'
+      'knolle', 'knollen', 'schote', 'schoten', 'kerne', 'samen', 'schalen'
     ];
 
     // Semantic Aliases (Concept Match)
@@ -105,6 +106,13 @@ const Instructions: React.FC<InstructionsProps> = ({ instructions, ingredients =
       'crème fraîche': ['sahne', 'creme'],
       'hackfleisch': ['hack', 'fleisch'],
       'rinderhack': ['hack', 'fleisch', 'rind'],
+      'seidentofu': ['tofu', 'Tofu'],
+      'cashewkerne': ['cashew', 'kerne'],
+      'flohsamenschalen': ['flohsamen', 'schalen'],
+      'apfelessig': ['essig'],
+      'olivenöl': ['öl'],
+      'agaragar': ['agar'],
+      'agar agar': ['agar'],
     };
 
     const ingredientKeywords: { keyword: string; originalIndex: number }[] = [];
@@ -113,6 +121,18 @@ const Instructions: React.FC<InstructionsProps> = ({ instructions, ingredients =
     ingredients.forEach((ing, idx) => {
       const cleanName = ing.name.replace(/[0-9().,]/g, ' ');
       const words = cleanName.split(/\s+/);
+
+      // A0. Füge den vollständigen Namen als Keyword hinzu (höchste Priorität)
+      const fullName = cleanName.trim();
+      if (fullName.length >= 2) {
+        ingredientKeywords.push({ keyword: fullName, originalIndex: idx });
+      }
+
+      // A0b. Füge das erste Wort des Namens als Keyword hinzu (für "Cashewkerne, eingeweicht" -> "Cashewkerne")
+      const firstWord = cleanName.trim().split(/\s+/)[0];
+      if (firstWord && firstWord.length >= 3 && !stopWords.includes(firstWord.toLowerCase())) {
+        ingredientKeywords.push({ keyword: firstWord, originalIndex: idx });
+      }
 
       words.forEach(word => {
         const lower = word.toLowerCase().trim();
@@ -156,6 +176,18 @@ const Instructions: React.FC<InstructionsProps> = ({ instructions, ingredients =
                ingredientKeywords.push({ keyword: capitalizedAlias, originalIndex: idx });
             });
           }
+
+          // E. Stemming: Schneide häufige Endungen ab um Grundform zu finden
+          const stemmingSuffixes = ['e', 'en', 'er', 'es', 'n', 's', 'ern', 'nen'];
+          for (const suffix of stemmingSuffixes) {
+            if (lower.endsWith(suffix) && lower.length - suffix.length >= 3) {
+              const stem = lower.substring(0, lower.length - suffix.length);
+              if (!stopWords.includes(stem)) {
+                const capitalizedStem = stem.charAt(0).toUpperCase() + stem.slice(1);
+                ingredientKeywords.push({ keyword: capitalizedStem, originalIndex: idx });
+              }
+            }
+          }
         }
       });
     });
@@ -174,7 +206,7 @@ const Instructions: React.FC<InstructionsProps> = ({ instructions, ingredients =
     // 4. Sort by length desc to match longest words first (Greedy Match)
     uniqueKeywords.sort((a, b) => b.keyword.length - a.keyword.length);
 
-    // 5. Iterative Replacement
+    // 5. Iterative Replacement (index-based to avoid split() issues with lookbehind/lookahead)
     let parts: (string | React.ReactNode)[] = [text];
 
     uniqueKeywords.forEach(({ keyword, originalIndex }) => {
@@ -183,25 +215,40 @@ const Instructions: React.FC<InstructionsProps> = ({ instructions, ingredients =
       parts.forEach(part => {
         if (typeof part === 'string') {
           const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          // Match word boundary or start of string
-          const wordChar = '[a-zA-Z0-9_\\u00C0-\\u00FF]';
-          const regex = new RegExp(`(?<!${wordChar})(${escapedKeyword}${wordChar}*)`, 'gi');
+          const regex = new RegExp(`(?<![a-zA-Z0-9_\\u00C0-\\u00FF])(${escapedKeyword}[a-zA-Z0-9_\\u00C0-\\u00FF]*)(?![a-zA-Z0-9_\\u00C0-\\u00FF])`, 'gi');
 
-          const split = part.split(regex);
-          
-          split.forEach((segment, segIndex) => {
-            if (segment.toLowerCase().startsWith(keyword.toLowerCase())) {
-              // Safety Clean Check: Don't highlight stop words that accidentally matched
-              if (stopWords.includes(segment.toLowerCase())) {
-                newParts.push(segment);
-                return;
-              }
+          const str = part;
+          let lastIndex = 0;
+          let match: RegExpExecArray | null;
+          regex.lastIndex = 0;
+          let matchCount = 0;
 
+          while ((match = regex.exec(str)) !== null) {
+            const fullMatch = match[0];
+            const capturedGroup = match[1];
+            // match[0] may include chars before captured group due to lookbehind not consuming
+            // match.index is start of full match, captured group starts at match.index + (fullMatch.length - capturedGroup.length)
+            const matchStart = match.index + (fullMatch.length - capturedGroup.length);
+            const matchedText = capturedGroup;
+
+            // Safety: avoid infinite loop on zero-length match
+            if (match.index === regex.lastIndex) {
+              regex.lastIndex++;
+            }
+
+            // Text before match
+            if (matchStart > lastIndex) {
+              newParts.push(str.substring(lastIndex, matchStart));
+            }
+
+            // Safety Clean Check: Don't highlight stop words
+            if (stopWords.includes(matchedText.toLowerCase())) {
+              newParts.push(matchedText);
+            } else {
               const isHighlighted = highlightedIndex === originalIndex;
-
               newParts.push(
                 <span
-                  key={`${keyword}-${originalIndex}-${segIndex}`} // Stable key
+                  key={`${keyword}-${originalIndex}-${matchCount++}`}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -209,20 +256,30 @@ const Instructions: React.FC<InstructionsProps> = ({ instructions, ingredients =
                   }}
                   className={`
                     px-1.5 py-0.5 rounded-full text-sm font-medium mx-0.5 shadow-sm inline-block my-0.5 transition-all duration-200 cursor-pointer
-                    ${getColorClass(originalIndex)} 
-                    text-black dark:text-white 
-                    ${isHighlighted 
-                      ? 'ring-2 ring-offset-1 ring-black dark:ring-white scale-110 font-bold z-10 shadow-lg' 
+                    ${getColorClass(originalIndex)}
+                    text-black dark:text-white
+                    ${isHighlighted
+                      ? 'ring-2 ring-offset-1 ring-black dark:ring-white scale-110 font-bold z-10 shadow-lg'
                       : 'hover:scale-105 active:scale-95 opacity-90 hover:opacity-100'}
                   `}
                 >
-                  {segment}
+                  {matchedText}
                 </span>
               );
-            } else {
-               if (segment) newParts.push(segment);
             }
-          });
+
+            lastIndex = matchStart + matchedText.length;
+          }
+
+          // Remaining text after last match
+          if (lastIndex < str.length) {
+            newParts.push(str.substring(lastIndex));
+          }
+
+          // If no matches found, keep original string
+          if (newParts.length === 0) {
+            newParts.push(str);
+          }
         } else {
           newParts.push(part);
         }

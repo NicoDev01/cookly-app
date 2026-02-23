@@ -2,14 +2,30 @@ import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import Stripe from "stripe";
+
 // ============================================================
-// PRICE IDs (€5/Monat, €50/Jahr)
-// Loaded from environment variables
+// INLINE PRICING - Keine Price-IDs aus Env-Variablen nötig!
+// Preise werden direkt beim Erstellen der Checkout Session
+// via price_data + product_data definiert.
+// Laut Stripe Docs (https://docs.stripe.com/billing/subscriptions):
+// price_data.product_data erlaubt vollständig inline Produkt-Definition.
 // ============================================================
-export const PRICE_IDS = {
-  pro_monthly: process.env.VITE_STRIPE_PRICE_MONTHLY!,
-  pro_yearly: process.env.VITE_STRIPE_PRICE_YEARLY!,
-};
+export const PLAN_PRICES = {
+  pro_monthly: {
+    unit_amount: 299, // 2,99 € in Cent
+    currency: "eur",
+    interval: "month" as const,
+    product_name: "Cookly Pro (Monatlich)",
+  },
+  pro_yearly: {
+    unit_amount: 2499, // 24,99 € in Cent
+    currency: "eur",
+    interval: "year" as const,
+    product_name: "Cookly Pro (Jährlich)",
+  },
+} as const;
+
+export type PlanId = keyof typeof PLAN_PRICES;
 
 // ============================================================
 // STRIPE INSTANCE
@@ -23,7 +39,7 @@ function getStripe(): Stripe {
       throw new Error("STRIPE_SECRET_KEY is not configured");
     }
     stripeInstance = new Stripe(apiKey, {
-      apiVersion: "2024-12-18.acacia",
+      apiVersion: "2025-12-15.clover",
     });
   }
   return stripeInstance;
@@ -35,10 +51,11 @@ function getStripe(): Stripe {
 
 /**
  * Create Checkout Session for Subscription
+ * Nutzt price_data + product_data (inline) - keine Price-IDs nötig!
  */
 export const createCheckoutSession = action({
   args: {
-    priceId: v.string(),
+    planId: v.union(v.literal("pro_monthly"), v.literal("pro_yearly")),
     successUrl: v.string(),
     cancelUrl: v.string(),
   },
@@ -50,7 +67,7 @@ export const createCheckoutSession = action({
     const clerkId = identity.subject;
 
     // User laden und Stripe Customer ID holen/erstellen
-    let user = await ctx.runQuery(internal.stripeInternal.getUserByClerkId, {
+    const user = await ctx.runQuery(internal.stripeInternal.getUserByClerkId, {
       clerkId,
     });
 
@@ -74,28 +91,38 @@ export const createCheckoutSession = action({
       });
     }
 
-    // Periode bestimmen
-    const isYearly = args.priceId === PRICE_IDS.pro_yearly;
+    const plan = PLAN_PRICES[args.planId];
 
-    // Checkout Session erstellen
+    // Checkout Session mit inline price_data erstellen
+    // Kein vorhandenes Produkt oder Price-ID im Stripe Dashboard nötig!
     const session = await getStripe().checkout.sessions.create({
       customer: stripeCustomerId,
       mode: "subscription",
-      payment_method_types: ["card"],
+      payment_method_types: ["card", "paypal"],
       line_items: [
         {
-          price: args.priceId,
+          price_data: {
+            currency: plan.currency,
+            unit_amount: plan.unit_amount,
+            product_data: {
+              name: plan.product_name,
+              metadata: { planId: args.planId },
+            },
+            recurring: {
+              interval: plan.interval,
+            },
+          },
           quantity: 1,
         },
       ],
       metadata: {
         clerkId,
-        priceId: args.priceId,
+        planId: args.planId,
       },
       subscription_data: {
         metadata: {
           clerkId,
-          priceId: args.priceId,
+          planId: args.planId,
         },
       },
       success_url: args.successUrl,
@@ -197,22 +224,46 @@ export const handleWebhookEvent = internalAction({
       case "checkout.session.completed": {
         const session = args.data as Stripe.Checkout.Session;
         const clerkId = session.metadata?.clerkId;
-        const priceId = session.metadata?.priceId;
+        const planId = session.metadata?.planId as PlanId | undefined;
 
-        if (!clerkId || !priceId) {
-          console.error("Missing metadata in checkout session");
+        if (!clerkId) {
+          console.error("[Stripe] Missing clerkId in checkout session metadata");
           return;
         }
 
-        let subscription: "pro_monthly" | "pro_yearly";
-        let periodEnd: number;
+        // Subscription-Daten direkt aus der Stripe Subscription holen
+        // (exakte Daten statt geschätzte Zeiträume)
+        let subscription: "pro_monthly" | "pro_yearly" = "pro_monthly";
+        let periodEnd: number = Date.now() + 30 * 24 * 60 * 60 * 1000;
 
-        if (priceId === PRICE_IDS.pro_yearly) {
+        if (planId === "pro_yearly") {
           subscription = "pro_yearly";
-          periodEnd = Date.now() + (365 * 24 * 60 * 60 * 1000); // +1 Jahr
-        } else {
-          subscription = "pro_monthly";
-          periodEnd = Date.now() + (30 * 24 * 60 * 60 * 1000); // +1 Monat
+        }
+
+        // Wenn Subscription-ID vorhanden, echte Daten von Stripe holen
+        if (session.subscription) {
+          try {
+            const stripeSubscription = await getStripe().subscriptions.retrieve(
+              session.subscription as string
+            );
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const subData = stripeSubscription as any;
+            if (subData.current_period_end) {
+              periodEnd = subData.current_period_end * 1000;
+            }
+
+            // Plan aus Subscription-Metadaten bestimmen (Fallback auf planId)
+            const subPlanId = subData.metadata?.planId as PlanId | undefined;
+            if (subPlanId === "pro_yearly" || planId === "pro_yearly") {
+              subscription = "pro_yearly";
+            }
+          } catch (err) {
+            console.error("[Stripe] Failed to retrieve subscription details:", err);
+            // Fallback: geschätzte Daten verwenden
+            if (planId === "pro_yearly") {
+              periodEnd = Date.now() + 365 * 24 * 60 * 60 * 1000;
+            }
+          }
         }
 
         await ctx.runMutation(internal.users.updateSubscriptionByClerkId, {
@@ -230,28 +281,35 @@ export const handleWebhookEvent = internalAction({
       }
 
       // ============================================================
-      // SUBSCRIPTION UPDATED - Statusänderung
+      // SUBSCRIPTION UPDATED - Statusänderung / Renewal
       // ============================================================
       case "customer.subscription.updated": {
-        const subscription = args.data as Stripe.Subscription;
-        const stripeCustomerId = subscription.customer as string;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const subUpdated = args.data as any;
+        const stripeCustomerId = subUpdated.customer as string;
+        const periodEnd = (subUpdated.current_period_end ?? 0) * 1000;
 
         // Wurde cancel_at_period_end gesetzt? (User hat gekündigt)
-        if (subscription.cancel_at_period_end) {
-          const periodEnd = subscription.current_period_end * 1000;
-
+        if (subUpdated.cancel_at_period_end) {
           await ctx.runMutation(internal.users.markForDowngradeByStripeCustomer, {
             stripeCustomerId,
             subscriptionEndDate: periodEnd,
           });
 
           console.log(`[Stripe] Customer ${stripeCustomerId} marked for downgrade at ${new Date(periodEnd).toISOString()}`);
+        } else if (subUpdated.status === "active") {
+          // Renewal oder Reaktivierung: Enddatum aktualisieren
+          await ctx.runMutation(internal.users.updateSubscriptionStatusByStripeCustomer, {
+            stripeCustomerId,
+            subscriptionStatus: "active",
+          });
+          console.log(`[Stripe] Customer ${stripeCustomerId} subscription renewed/reactivated`);
         }
         break;
       }
 
       // ============================================================
-      // SUBSCRIPTION DELETED - Subscription abgelaufen
+      // SUBSCRIPTION DELETED - Subscription abgelaufen/gekündigt
       // ============================================================
       case "customer.subscription.deleted": {
         const subscription = args.data as Stripe.Subscription;
@@ -263,14 +321,11 @@ export const handleWebhookEvent = internalAction({
         });
 
         if (!user) {
-          console.error(`User with stripeCustomerId ${stripeCustomerId} not found`);
+          console.error(`[Stripe] User with stripeCustomerId ${stripeCustomerId} not found`);
           return;
         }
 
-        // ============================================================
         // DOWNGRADE: Pro -> Free
-        // ============================================================
-        // 1. Subscription ändern
         await ctx.runMutation(internal.users.updateSubscriptionByStripeCustomer, {
           stripeCustomerId,
           subscription: "free",
@@ -280,7 +335,7 @@ export const handleWebhookEvent = internalAction({
           stripeSubscriptionId: undefined,
         });
 
-        // 2. Counter resetten (nur wenn markiert)
+        // Counter resetten (nur wenn markiert)
         if (user.usageStats?.resetOnDowngrade) {
           await ctx.runMutation(internal.users.resetUsageCounters, {
             clerkId: user.clerkId,
@@ -307,8 +362,26 @@ export const handleWebhookEvent = internalAction({
         break;
       }
 
+      // ============================================================
+      // INVOICE PAYMENT SUCCEEDED - Zahlung erfolgreich (Renewal)
+      // ============================================================
+      case "invoice.payment_succeeded": {
+        const invoice = args.data as Stripe.Invoice;
+        const stripeCustomerId = invoice.customer as string;
+
+        // Nur bei Renewals (billing_reason = "subscription_cycle")
+        if (invoice.billing_reason === "subscription_cycle") {
+          await ctx.runMutation(internal.users.updateSubscriptionStatusByStripeCustomer, {
+            stripeCustomerId,
+            subscriptionStatus: "active",
+          });
+          console.log(`[Stripe] Renewal payment succeeded for customer ${stripeCustomerId}`);
+        }
+        break;
+      }
+
       default:
-        console.log(`Unhandled Stripe event: ${args.eventType}`);
+        console.log(`[Stripe] Unhandled event: ${args.eventType}`);
     }
   },
 });

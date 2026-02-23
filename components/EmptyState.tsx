@@ -19,7 +19,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({ openAddModal }) => {
 
         {/* Image */}
         <img
-          src="/platzhalter.png"
+          src="/cookly-mascot.webp"
           alt="Cookly"
           className="w-100 h-100 object-contain -mt-32"
         />

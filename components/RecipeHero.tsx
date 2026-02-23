@@ -56,7 +56,7 @@ const IconButton = memo(
     const variants = {
       default: "bg-white/90 shadow-sm border border-gray-200/50 text-gray-900",
       ghost: "bg-transparent text-gray-700 hover:bg-gray-100",
-      glass: "bg-white/10 backdrop-blur-xl border border-white/10 shadow-lg shadow-black/5 text-white hover:bg-white/25 hover:scale-105",
+      glass: "bg-white/60 backdrop-blur-xl border border-white/30 shadow-lg shadow-black/5 text-gray-800 hover:bg-white/80 hover:scale-105",
     };
 
     return (
@@ -212,25 +212,14 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
 
   return (
     <div className="flex flex-col w-full bg-white group/hero">
-      {/* Safe Area Strip - nur für Notch-Verdeckung */}
-      <div className="sticky top-0 z-40 w-full bg-white pt-[env(safe-area-inset-top)]" />
-
-      {/* Hero Image Container mit absolut positionierten Navigation Buttons */}
-      <div
-        ref={containerRef}
-        className="relative w-full overflow-hidden"
-        style={{
-          marginTop: "calc(0px - env(safe-area-inset-top))",
-          aspectRatio: `${aspectRatio}`,
-          minHeight: "20vh",
-          maxHeight: "75vh",
-          maskImage: EASED_MASK_GRADIENT,
-          WebkitMaskImage: EASED_MASK_GRADIENT,
-        }}
-      >
-        {/* Navigation Buttons - transparenter Hintergrund mit milchigen Buttons */}
-        <div className="absolute top-[env(safe-area-inset-top)] left-0 right-0 z-30 px-4 mt-2">
-          <div className="flex items-center justify-between">
+      {/* Sticky Top Header (Statusbar-Schutz + Navigation) */}
+      <div className="sticky top-0 z-40 w-full">
+        {/* Weißer Notch-Schutz */}
+        <div className="w-full bg-white h-[env(safe-area-inset-top)]" />
+        
+        {/* Icons - absolut positioniert unter dem weißen Balken, aber sticky mit ihm */}
+        <div className="absolute top-full left-0 right-0 px-4 pt-2 pointer-events-none">
+          <div className="flex items-center justify-between pointer-events-auto">
             {/* Back Button */}
             <IconButton
               icon="arrow_back"
@@ -311,7 +300,20 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
             </div>
           </div>
         </div>
+      </div>
 
+      {/* Hero Image Container */}
+      <div
+        ref={containerRef}
+        className="relative w-full overflow-hidden"
+        style={{
+          aspectRatio: `${aspectRatio}`,
+          minHeight: "20vh",
+          maxHeight: "75vh",
+          maskImage: EASED_MASK_GRADIENT,
+          WebkitMaskImage: EASED_MASK_GRADIENT,
+        }}
+      >
         <div
           className="absolute inset-0 w-full h-full cursor-zoom-in active:scale-[0.99] transition-transform duration-300"
           onClick={() => setIsZoomOpen(true)}

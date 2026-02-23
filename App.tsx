@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { LottieSplashScreen } from 'capacitor-lottie-splash-screen';
 import { App as CapacitorApp } from '@capacitor/app';
+import { LocalNotifications, LocalNotificationActionPerformed } from '@capacitor/local-notifications';
 import { useNavigate, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from "@clerk/clerk-react";
 import { useConvexAuth, useQuery, useMutation } from 'convex/react';
@@ -13,6 +14,8 @@ import { useBackButton } from './hooks/useBackButton';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ModalProvider, useModal } from './contexts/ModalContext';
 import { QueryCacheProvider } from './contexts/QueryCacheContext';
+import { NotificationProvider } from './contexts/NotificationContext';
+import { createNotificationChannel } from './utils/notifications';
 
 const CategoriesPage = React.lazy(() => import('./pages/CategoriesPage'));
 const CategoryRecipesPage = React.lazy(() => import('./pages/CategoryRecipesPage'));
@@ -26,7 +29,9 @@ const SubscribePage = React.lazy(() => import('./pages/SubscribePage'));
 const SignInPage = React.lazy(() => import('./pages/SignInPage'));
 const SignUpPage = React.lazy(() => import('./pages/SignUpPage'));
 const ForgotPasswordPage = React.lazy(() => import('./pages/ForgotPasswordPage'));
+const WelcomePage = React.lazy(() => import('./pages/WelcomePage'));
 const WelcomeScreen = React.lazy(() => import('./components/onboarding/WelcomeScreen'));
+const SSOCallbackPage = React.lazy(() => import('./pages/SSOCallbackPage'));
 const TabsLayout = React.lazy(() => import('./components/TabsLayout'));
 
 
@@ -42,7 +47,7 @@ const RootRedirect: React.FC = () => {
     return <Navigate to="/tabs/categories" replace />;
   }
 
-  return <Navigate to="/sign-in" replace />;
+  return <Navigate to="/welcome" replace />;
 };
 
 const ProtectedLayout: React.FC = () => {
@@ -63,27 +68,42 @@ const ProtectedLayout: React.FC = () => {
   }, [isLoading, isAuthenticated, isSignedIn, navigate]);
 
   // Sync user if authenticated but not in Convex yet
+  // Exponential retry: 300ms → 600ms → 1200ms (max 3 retries)
   useEffect(() => {
     const checkAndSyncUser = async () => {
       // FIX: Auch bei currentUser === null (gefunden aber leer) syncen
       if (!isLoading && isAuthenticated && (currentUser === undefined || currentUser === null) && !hasTriedSync) {
-        console.log('[ProtectedLayout] User authenticated but not found in Convex, waiting for webhook...');
+        console.log('[ProtectedLayout] User authenticated but not found in Convex, starting exponential retry...');
         setHasTriedSync(true);
 
-        // Kurze Wartezeit für Webhook (500ms reicht für HTTP)
-        await new Promise(resolve => setTimeout(resolve, 500));
+        const retryDelays = [300, 600, 1200]; // Exponential backoff
+        let synced = false;
 
-        // Wenn immer noch kein User, manuell syncen
-        if (currentUser === undefined || currentUser === null) {
+        for (let attempt = 0; attempt < retryDelays.length && !synced; attempt++) {
+          const delay = retryDelays[attempt];
+          console.log(`[ProtectedLayout] Attempt ${attempt + 1}/${retryDelays.length}: waiting ${delay}ms...`);
+          
+          await new Promise(resolve => setTimeout(resolve, delay));
+
+          // Check if user appeared after wait (reactive query will update currentUser)
+          // Note: We need to check the current value, not the closure value
+          // The useEffect re-runs when currentUser changes, so if it appears, we exit
+          if (currentUser !== undefined && currentUser !== null) {
+            console.log(`[ProtectedLayout] ✅ User appeared after attempt ${attempt + 1}`);
+            synced = true;
+            break;
+          }
+        }
+
+        // If still no user after all retries, sync manually
+        if (!synced && (currentUser === undefined || currentUser === null)) {
           try {
-            console.log('[ProtectedLayout] Webhook may have failed, syncing user manually...');
+            console.log('[ProtectedLayout] All retries exhausted, syncing user manually...');
             await syncUser();
             console.log('[ProtectedLayout] ✅ User synced successfully');
           } catch (error) {
             console.error('[ProtectedLayout] ❌ Sync failed:', error);
           }
-        } else {
-          console.log('[ProtectedLayout] ✅ Webhook synced user successfully');
         }
       }
     };
@@ -124,6 +144,35 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     initDeepLinkHandler(navigate);
 
+    // Notification Channel für Android 8+ erstellen
+    if (Capacitor.isNativePlatform()) {
+      createNotificationChannel();
+    }
+
+    // Notification Action Listener - Deep Linking wenn User auf Notification klickt
+    const setupNotificationListener = async () => {
+      if (!Capacitor.isNativePlatform()) return;
+
+      try {
+        await LocalNotifications.addListener(
+          'localNotificationActionPerformed',
+          (notification: LocalNotificationActionPerformed) => {
+            console.log('[Notifications] Notification action performed:', notification);
+            
+            // Extrahiere recipeId aus den extra Daten
+            const extra = notification.notification.extra;
+            if (extra?.recipeId && extra?.type === 'recipe-import') {
+              console.log('[Notifications] Navigating to recipe:', extra.recipeId);
+              navigate(`/recipe/${extra.recipeId}`);
+            }
+          }
+        );
+        console.log('[Notifications] Action listener registered');
+      } catch (error) {
+        console.error('[Notifications] Failed to setup notification listener:', error);
+      }
+    };
+    setupNotificationListener();
 
     // Helper to check for intents
     const checkIntent = async (source: 'cold-start' | 'resume') => {
@@ -183,9 +232,11 @@ const AppContent: React.FC = () => {
     <Suspense fallback={null}>
       <Routes>
         <Route index element={<RootRedirect />} />
+        <Route path="/welcome" element={<WelcomePage />} />
         <Route path="/sign-in" element={<SignInPage />} />
         <Route path="/sign-up" element={<SignUpPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/sso-callback" element={<SSOCallbackPage />} />
         <Route path="/onboarding" element={<WelcomeScreen />} />
 
         <Route element={<ProtectedLayout />}>
@@ -288,13 +339,15 @@ const App: React.FC = () => {
     <ErrorBoundary onError={handleError}>
       <QueryCacheProvider>
         <ModalProvider>
-          <div className="antialiased text-gray-900 dark:text-gray-100 min-h-screen bg-background-light dark:bg-background-dark relative">
+          <NotificationProvider>
+            <div className="antialiased text-gray-900 dark:text-gray-100 min-h-screen bg-background-light dark:bg-background-dark relative">
 
-            {/* Main App Content - Native Lottie splash runs in background until isAppReady = true */}
-            {/* No React overlay needed - Lottie provides smooth visual continuity */}
-            <AppContent />
+              {/* Main App Content - Native Lottie splash runs in background until isAppReady = true */}
+              {/* No React overlay needed - Lottie provides smooth visual continuity */}
+              <AppContent />
 
-          </div>
+            </div>
+          </NotificationProvider>
         </ModalProvider>
       </QueryCacheProvider>
     </ErrorBoundary>

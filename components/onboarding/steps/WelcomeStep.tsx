@@ -13,7 +13,7 @@ export const WelcomeStep: React.FC<WelcomeStepProps> = ({ onNext }) => {
         className="w-32 h-32 -mt-10 object-contain relative z-10 drop-shadow-md"
       />
       <img
-        src="/platzhalter.png"
+        src="/cookly-mascot.webp"
         alt="Cookly Illustration"
         className="w-full max-w-[320px] h-auto -mt-48 mb-8 object-contain rounded-3xl relative z-0"
       />

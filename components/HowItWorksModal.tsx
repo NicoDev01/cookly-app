@@ -78,7 +78,7 @@ const HowItWorksModal: React.FC<HowItWorksModalProps> = ({ isOpen, onClose, open
       {/* Panel */}
       <div className="relative w-full h-[85vh] bg-background-light dark:bg-background-dark rounded-t-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-slide-up">
         {/* Drag Handle Area */}
-        <div className="flex justify-center pt-3 pb-2 cursor-pointer" onClick={onClose}>
+        <div className="flex justify-center pt-3 pb-2 cursor-pointer" onClick={onClose} onKeyDown={(e) => e.key === 'Enter' && onClose()} role="button" tabIndex={0} aria-label="Schließen">
           <div className="w-12 h-1.5 rounded-full bg-gray-300 dark:bg-gray-700" />
         </div>
 

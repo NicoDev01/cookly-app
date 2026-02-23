@@ -195,7 +195,7 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
 
                 {isSortMenuOpen && (
                   <>
-                    <div className="fixed inset-0 z-10" onClick={() => setIsSortMenuOpen(false)} />
+                    <div className="fixed inset-0 z-10" onClick={() => setIsSortMenuOpen(false)} onKeyDown={(e) => e.key === 'Escape' && setIsSortMenuOpen(false)} role="button" tabIndex={0} aria-label="Menü schließen" />
                     <div className="absolute right-0 top-12 z-20 w-56 rounded-xl bg-card-light dark:bg-card-dark shadow-xl border border-gray-100 dark:border-gray-800 overflow-hidden">
                       <button
                         onClick={() => { setSortOption('alphabetical'); setIsSortMenuOpen(false); }}

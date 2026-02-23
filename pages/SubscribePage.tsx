@@ -1,11 +1,8 @@
-"use client";
-
 import React, { useState } from "react";
 import { useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useBackNavigation } from "@/hooks/useBackNavigation";
-import { ArrowLeft, ArrowRight, CheckCircle2, CircleCheck, Sparkles } from "lucide-react";
-// Price IDs from Vite environment variables (auto-loaded from .env.production)
+import { ArrowLeft, ArrowRight, CheckCircle2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -16,30 +13,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-
-const PRICE_IDS = {
-  pro_monthly: import.meta.env.VITE_STRIPE_PRICE_MONTHLY,
-  pro_yearly: import.meta.env.VITE_STRIPE_PRICE_YEARLY,
-};
-
-const FREE_FEATURES = [
-  "100 Manuelle Rezepte",
-  "50 Link-Imports (Instagram/Website)",
-  "50 KI-Foto-Scans",
-  "Unbegrenzte Wochenplanung",
-  "Unbegrenzte Einkaufslisten",
-  "Unbegrenzte Favoriten",
-];
 
 const PRO_FEATURES_MONTHLY = [
   "Unlimitierte Rezepte speichern",
   "Unlimitierte KI-Scans & Foto-Uploads",
   "Unlimitierte Rezepte von URLs importieren",
-  "Vollständige Wochenplanung",
-  "Einkaufslisten-Synchronisation",
   "Jederzeit kündbar",
 ];
 
@@ -62,14 +41,13 @@ export default function SubscribePage() {
   }, []);
 
   const isPro = currentUser?.subscription !== "free";
-  const currentPlan = currentUser?.subscription || "free";
 
-  const handleSubscribe = async (priceId: string, planId: string) => {
+  const handleSubscribe = async (planId: "pro_monthly" | "pro_yearly") => {
     setLoading(planId);
     try {
       const baseUrl = window.location.origin;
       const result = await createCheckout({
-        priceId,
+        planId,
         successUrl: `${baseUrl}/#/profile?success=true`,
         cancelUrl: `${baseUrl}/#/subscribe?canceled=true`,
       });
@@ -104,10 +82,9 @@ export default function SubscribePage() {
     }
   };
 
-  const proPrice = isYearly ? "€50" : "€5";
+  const proPrice = isYearly ? "€24,99" : "€2,99";
   const proPeriod = isYearly ? "Jahr" : "Monat";
-  const proPriceId = isYearly ? PRICE_IDS.pro_yearly : PRICE_IDS.pro_monthly;
-  const proPlanId = isYearly ? "pro_yearly" : "pro_monthly";
+  const proPlanId = (isYearly ? "pro_yearly" : "pro_monthly") as "pro_monthly" | "pro_yearly";
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans pb-20">
@@ -185,7 +162,7 @@ export default function SubscribePage() {
                   <span className="text-muted-foreground text-xl">/{proPeriod}</span>
                 </div>
                 <p className="text-sm font-medium mt-2 text-primary">
-                  {isYearly ? "Jährliche Abrechnung (Gesamt €50)" : "Monatliche Abrechnung (Gesamt €60/Jahr)"}
+                  {isYearly ? "Jährliche Abrechnung (Gesamt €24,99)" : "Monatliche Abrechnung (Gesamt €35,88/Jahr)"}
                 </p>
               </div>
             </CardHeader>
@@ -220,7 +197,7 @@ export default function SubscribePage() {
                 </Button>
               ) : (
                 <Button 
-                  onClick={() => handleSubscribe(proPriceId, proPlanId)}
+                  onClick={() => handleSubscribe(proPlanId)}
                   disabled={loading === proPlanId}
                   className="w-full h-14 text-lg font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20 group/btn rounded-full"
                 >
@@ -255,6 +232,14 @@ export default function SubscribePage() {
             <div className="flex flex-col items-center gap-1 opacity-50 grayscale hover:grayscale-0 transition-all">
               <span className="material-symbols-outlined text-4xl">verified</span>
               <span className="text-[10px] font-bold uppercase tracking-widest">Garantie</span>
+            </div>
+            <div className="flex flex-col items-center gap-1 opacity-50 grayscale hover:grayscale-0 transition-all">
+              <span className="material-symbols-outlined text-4xl">account_balance_wallet</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest">PayPal</span>
+            </div>
+            <div className="flex flex-col items-center gap-1 opacity-50 grayscale hover:grayscale-0 transition-all">
+              <span className="material-symbols-outlined text-4xl">contactless</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest">Google Pay</span>
             </div>
           </div>
           <p className="text-sm text-muted-foreground">

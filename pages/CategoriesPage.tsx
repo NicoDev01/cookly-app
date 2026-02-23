@@ -177,7 +177,7 @@ const CategoriesPage: React.FC = () => {
         {!isEmptyState && (
           <div className="flex items-center px-6 pt-4 pb-2" style={{ paddingTop: 'max(1rem, var(--safe-area-inset-top))' }}>
             <img
-              src="/green-logo.png"
+              src="/green-logo.webp"
               alt="Cookly"
               className="h-10 w-auto"
             />

@@ -56,7 +56,7 @@ const RecipeSlideContent = React.memo(({
         onEdit={() => onEdit(recipe)}
         onDelete={() => onDelete(recipe._id)}
       />
-      <div className="relative z-20 -mt-6 mb-6 mx-4 p-6 rounded-3xl glassmorphism bg-white/60 backdrop-blur-xl shadow-neo-light-convex border border-gray-100">
+      <div className="relative z-20 -mt-6 mb-6 mx-2 p-6 rounded-3xl glassmorphism bg-white/60 backdrop-blur-xl shadow-neo-light-convex border border-gray-100 md:mx-auto md:max-w-2xl lg:max-w-3xl">
         <RecipeMeta recipe={recipe} />
         <Ingredients ingredients={recipe.ingredients} />
         <Instructions instructions={recipe.instructions} ingredients={recipe.ingredients} />

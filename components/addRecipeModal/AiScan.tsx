@@ -238,7 +238,7 @@ export const AiScanPanel: React.FC<AiScanPanelProps> = ({
         className="w-full max-w-sm aspect-video border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all group"
       >
         {sourceImageUrl ? (
-          <img src={sourceImageUrl} className="w-full h-full object-cover rounded-xl" />
+          <img src={sourceImageUrl} alt="Hochgeladenes Rezeptfoto" className="w-full h-full object-cover rounded-xl" />
         ) : (
           <>
             <span className="material-symbols-outlined text-4xl text-gray-400 group-hover:text-primary mb-2">

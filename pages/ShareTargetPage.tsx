@@ -5,6 +5,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import UpgradeModal from '../components/UpgradeModal';
+import { showSimpleImportNotification } from '../utils/notifications';
+import { useNotification } from '../contexts/NotificationContext';
 
 type ProcessingPhase = 'analyzing' | 'extrahieren' | 'importieren';
 
@@ -22,6 +24,9 @@ const ShareTargetPage: React.FC = () => {
     const processingRef = useRef(false);
     const shareInvocationRef = useRef(0);
     const backButtonHandlerRef = useRef<Promise<{ remove: () => void }> | null>(null);
+    
+    // Global Toast aus NotificationContext
+    const { showImportToast } = useNotification();
 
     const handleClose = useCallback(async () => {
         if (Capacitor.isNativePlatform()) {
@@ -105,6 +110,8 @@ const ShareTargetPage: React.FC = () => {
 
                     setSavedRecipeId(recipeId);
                     setStatus('success');
+                    showImportToast(recipeId); // Global Toast anzeigen
+                    showSimpleImportNotification(recipeId); // System Notification
                 } else if (facebookMatch) {
                     const postUrl = facebookMatch[0];
                     console.log(`[ShareTarget] #${shareRunId} facebookMatch`, { postUrl });
@@ -126,6 +133,8 @@ const ShareTargetPage: React.FC = () => {
 
                     setSavedRecipeId(recipeId);
                     setStatus('success');
+                    showImportToast(recipeId); // Global Toast anzeigen
+                    showSimpleImportNotification(recipeId); // System Notification
                 } else if (genericUrlMatch) {
                     const websiteUrl = genericUrlMatch[1];
                     console.log(`[ShareTarget] #${shareRunId} genericUrlMatch`, { websiteUrl });
@@ -147,6 +156,8 @@ const ShareTargetPage: React.FC = () => {
 
                     setSavedRecipeId(recipeId);
                     setStatus('success');
+                    showImportToast(recipeId); // Global Toast anzeigen
+                    showSimpleImportNotification(recipeId); // System Notification
                 } else {
                     setError("Kein gültiger Link gefunden. Bitte teile eine URL.");
                     setStatus('error');
@@ -366,8 +377,10 @@ const ShareTargetPage: React.FC = () => {
                             </button>
                         </div>
                     </div>
-                )}
+                 )}
             </div>
+
+            {/* Toast wird jetzt global über NotificationContext gerendert */}
         </div>
     );
 };
