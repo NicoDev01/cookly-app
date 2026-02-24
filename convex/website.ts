@@ -5,6 +5,7 @@ import { v } from "convex/values";
 import { GoogleGenAI } from "@google/genai";
 import { Id } from "./_generated/dataModel";
 import { checkRateLimit, getRateLimitStatus } from "./rateLimiter";
+import { RECIPE_CATEGORIES } from "./constants";
 
 const JINA_API_KEY = process.env.JINA_API_KEY;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
@@ -23,7 +24,7 @@ Inhalt (Markdown):
 Format:
 {
   "title": "Rezeptname (nutze den Seitentitel als Basis, falls sinnvoll)",
-  "category": "Eine passende Kategorie (z.B. Pasta, Salat, Fleisch, Dessert, Backen, Suppe, Vorspeise, Beilage)",
+  "category": "Eine der folgenden Kategorien (NUR eine davon wählen): Pasta, Salat, Suppe, Fleisch, Fisch, Vegetarisch, Vegan, Backen, Dessert, Frühstück, Snack, Beilage, Getränke, Sonstiges",
   "prepTimeMinutes": Zahl (geschätzt wenn nicht angegeben),
   "difficulty": "Einfach" | "Mittel" | "Schwer",
   "portions": Zahl (Standard 4 wenn nicht angegeben),
@@ -188,6 +189,9 @@ export const scrapeWebsite = action({
             // Clean JSON
             const jsonStr = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
             recipeData = JSON.parse(jsonStr);
+
+            const rawCategory = recipeData.category || "Sonstiges";
+            recipeData.category = (RECIPE_CATEGORIES as readonly string[]).includes(rawCategory) ? rawCategory : "Sonstiges";
 
         } catch (geminiError) {
             console.error("Gemini error:", geminiError);

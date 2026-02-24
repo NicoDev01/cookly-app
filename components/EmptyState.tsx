@@ -9,34 +9,29 @@ const EmptyState: React.FC<EmptyStateProps> = ({ openAddModal }) => {
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false);
 
   return (
-    <div className="flex flex-col items-center justify-center px-6 pt-4 animate-in fade-in">
-      {/* Image Container with overlapping headline */}
-      <div className="relative flex flex-col items-center">
-        {/* Headline - positioned over the image */}
-        <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-center z-10 mt-8">
-          Willkommen bei <br /> <span className="text-primary italic">Cookly</span>
-        </h1>
+    <div className="flex flex-col items-center justify-center px-6 py-8 animate-in fade-in">
+      {/* Headline - oben, groß, zentriert */}
+      <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-center mb-6">
+        Willkommen bei <br />
+        <span className="text-primary italic">Cookly</span>
+      </h1>
 
-        {/* Image */}
-        <img
-          src="/cookly-mascot.webp"
-          alt="Cookly"
-          className="w-100 h-100 object-contain -mt-32"
-        />
-      </div>
+      {/* Mascot-Bild - darunter, prominent für Willkommens-Screen */}
+      <img
+        src="/cookly-mascot.webp"
+        alt="Cookly Maskottchen"
+        className="w-64 h-64 sm:w-80 sm:h-80 object-contain mb-6"
+      />
 
-      {/* Subtext */}
-      <p className="text-body text-text-secondary-light dark:text-text-secondary-dark text-center max-w-sm -mt-16 mb-2">
+      {/* Subtext - darunter */}
+      <p className="text-body text-text-secondary-light dark:text-text-secondary-dark text-center max-w-sm mb-6">
         Dein Kochbuch ist noch leer.
       </p>
 
-      {/* So funktionierts Button */}
+      {/* Button - darunter, mobile-optimiert */}
       <button
-        onClick={() => {
-          console.log('How It Works clicked');
-          setIsHowItWorksOpen(true);
-        }}
-        className="relative z-20 px-6 py-3 rounded-xl bg-primary text-white font-semibold shadow-neo-light-convex hover:bg-primary-dark active:scale-95 transition-all touch-btn"
+        onClick={() => setIsHowItWorksOpen(true)}
+        className="min-h-[44px] px-6 py-3 rounded-xl bg-primary text-white font-semibold shadow-neo-light-convex hover:bg-primary-dark active:scale-95 transition-all touch-btn touch-manipulation"
       >
         So funktionierts
       </button>

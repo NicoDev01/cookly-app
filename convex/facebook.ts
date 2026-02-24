@@ -5,6 +5,7 @@ import { v } from "convex/values";
 import { GoogleGenAI } from "@google/genai";
 import { Id } from "./_generated/dataModel";
 import { checkRateLimit, getRateLimitStatus } from "./rateLimiter";
+import { RECIPE_CATEGORIES } from "./constants";
 
 const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
@@ -33,7 +34,7 @@ const FACEBOOK_PROMPT = `
   Format:
   {
     "title": "Name des Gerichts (aus dem Text oder erfinde einen passenden)",
-    "category": "Eine passende Kategorie (z.B. Pasta, Salat, Dessert)",
+    "category": "Eine der folgenden Kategorien (NUR eine davon wählen): Pasta, Salat, Suppe, Fleisch, Fisch, Vegetarisch, Vegan, Backen, Dessert, Frühstück, Snack, Beilage, Getränke, Sonstiges",
     "prepTimeMinutes": Zahl (geschätzt wenn nicht angegeben),
     "difficulty": "Einfach" | "Mittel" | "Schwer",
     "portions": Zahl (Standard 2 wenn nicht angegeben),
@@ -298,6 +299,9 @@ export const scrapePost = action({
 
       const jsonStr = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
       recipeData = JSON.parse(jsonStr) as RecipeData;
+
+      const rawCategory = recipeData.category || "Sonstiges";
+      recipeData.category = (RECIPE_CATEGORIES as readonly string[]).includes(rawCategory) ? rawCategory : "Sonstiges";
 
     } catch (geminiError) {
       console.error("Gemini error:", geminiError);

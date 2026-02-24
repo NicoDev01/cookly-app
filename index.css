@@ -113,6 +113,41 @@
     transform: scale(0.95);
   }
 
+  /* Samsung/Android WebView Fix: border-radius + box-shadow rendering bug.
+   * Without overflow:hidden and GPU compositing, Samsung WebView (S8+, S24)
+   * renders neomorphism shadows that visually fill rounded corners.
+   * isolation:isolate creates a new stacking context to prevent shadow bleed.
+   * NOTE: border-radius:inherit wurde entfernt – es überschrieb rounded-xl
+   * mit dem Elternwert (oft 0) beim active-State → eckige Ecken beim Drücken. */
+  .shadow-neo-light-convex,
+  .shadow-neo-dark-convex,
+  .shadow-neo-light-concave,
+  .shadow-neo-dark-concave,
+  .active\:shadow-neo-light-concave:active,
+  .active\:shadow-neo-dark-concave:active,
+  .dark .active\:shadow-neo-light-concave:active,
+  .dark .active\:shadow-neo-dark-concave:active {
+    isolation: isolate;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+  }
+
+  /* Fix: overflow:hidden muss IMMER gesetzt sein (nicht nur im active-State),
+   * damit border-radius korrekt gerendert wird. Wenn overflow erst beim
+   * active-State von visible -> hidden wechselt, verlieren Cards auf
+   * Samsung/Android WebView kurz ihre runden Ecken (Rendering-Glitch).
+   * Auch convex-Shadows brauchen overflow:hidden für konsistentes Clipping. */
+  .shadow-neo-light-convex,
+  .shadow-neo-dark-convex,
+  .shadow-neo-light-concave,
+  .shadow-neo-dark-concave,
+  .active\:shadow-neo-light-concave:active,
+  .active\:shadow-neo-dark-concave:active,
+  .dark .active\:shadow-neo-light-concave:active,
+  .dark .active\:shadow-neo-dark-concave:active {
+    overflow: hidden;
+  }
+
   /* Touch Card - for cards/list items */
   .touch-card {
     -webkit-tap-highlight-color: transparent;
@@ -273,6 +308,7 @@
     cursor: pointer;
     -webkit-appearance: none;
     appearance: none;
+    border-radius: inherit; /* inherit statt revert: verhindert dass UA-Stylesheet border-radius:0 zurückgegeben wird (Samsung WebView Bug) */
   }
 
   /* Safe Area Insets for notch/dynamic island */

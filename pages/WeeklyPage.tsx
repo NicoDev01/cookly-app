@@ -331,7 +331,7 @@ const WeeklyPage: React.FC = () => {
         </div>
 
         {/* Content Area */}
-        <div className={`flex flex-col gap-4 px-6 relative transition-opacity duration-200 ${isWeekLoading ? 'opacity-60' : 'opacity-100'}`}>
+        <div className={`flex flex-col gap-4 px-6 relative ${isWeekLoading ? 'opacity-60' : 'opacity-100'}`} style={{ transition: isWeekLoading ? 'opacity 200ms' : undefined }}>
           {/* Loading Overlay - only show when there's content */}
           {isWeekLoading && !isInitialLoad && (
             <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
@@ -343,29 +343,26 @@ const WeeklyPage: React.FC = () => {
 
           {/* EMPTY STATE - No meals planned */}
           {!isWeekLoading && allWeeklyMeals.length === 0 && (
-            <div className="flex flex-col items-center justify-center px-6 pt-12 animate-in fade-in">
-              {/* Icon with Headline */}
-              <div className="flex flex-col items-center">
-                {/* Animated Icon */}
-                <span className="material-symbols-outlined text-8xl text-primary animate-pulse mb-4">
-                  restaurant_menu
-                </span>
+            <div className="flex flex-col items-center justify-center px-6 pt-8 animate-in fade-in">
+              {/* Icon */}
+              <span className="material-symbols-outlined text-7xl sm:text-8xl text-primary mb-6">
+                restaurant_menu
+              </span>
 
-                {/* Headline */}
-                <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-center">
-                  Noch keine <span className="text-primary italic">Gerichte</span> geplant
-                </h2>
-              </div>
+              {/* Headline */}
+              <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-center mb-4">
+                Noch keine <span className="text-primary italic">Gerichte</span> geplant
+              </h2>
 
               {/* Subtext */}
-              <p className="text-body text-text-secondary-light dark:text-text-secondary-dark text-center max-w-sm mt-4">
+              <p className="text-body text-text-secondary-light dark:text-text-secondary-dark text-center max-w-sm mb-8">
                 Plane deine Woche und erstelle einen Essensplan.
               </p>
 
               {/* CTA Button */}
               <button
                 onClick={() => openAddModal(startDateStr, 'week')}
-                className="mt-8 flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-white font-semibold shadow-neo-light-convex hover:bg-primary-dark transition-all touch-btn"
+                className="w-fit flex items-center gap-2 px-6 py-3 rounded-full bg-primary text-white font-semibold shadow-neo-light-convex hover:bg-primary-dark transition-colors touch-btn"
               >
                 <span className="material-symbols-outlined">add_circle</span>
                 Erstes Gericht hinzufügen

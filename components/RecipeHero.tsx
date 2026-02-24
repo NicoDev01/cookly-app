@@ -56,7 +56,7 @@ const IconButton = memo(
     const variants = {
       default: "bg-white/90 shadow-sm border border-gray-200/50 text-gray-900",
       ghost: "bg-transparent text-gray-700 hover:bg-gray-100",
-      glass: "bg-white/60 backdrop-blur-xl border border-white/30 shadow-lg shadow-black/5 text-gray-800 hover:bg-white/80 hover:scale-105",
+      glass: "bg-white/85 backdrop-blur-xl border border-white/40 shadow-lg shadow-black/5 text-gray-800 hover:bg-white/95 hover:scale-105",
     };
 
     return (

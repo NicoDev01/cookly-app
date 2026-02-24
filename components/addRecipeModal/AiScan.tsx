@@ -1,6 +1,7 @@
 import React from "react";
 import { GoogleGenAI } from "@google/genai";
 import { sanitizeInstructionsIcons } from "../../utils/iconUtils";
+import { RECIPE_CATEGORIES } from "../../convex/constants";
 
 // Inlined: Pollinations URL builder for AI scan fallback images
 function buildAiScanImageUrl(keywords: string, seed?: number): string {
@@ -47,7 +48,7 @@ export const AI_SCAN_PROMPT_FIXED = `
   Format:
   {
     "title": "Name des Gerichts",
-    "category": "Eine passende Kategorie (z.B. Pasta, Salat, Dessert)",
+    "category": "Eine der folgenden Kategorien (NUR eine davon wählen): Pasta, Salat, Suppe, Fleisch, Fisch, Vegetarisch, Vegan, Backen, Dessert, Frühstück, Snack, Beilage, Getränke, Sonstiges",
     "prepTimeMinutes": Zahl (geschätzt oder gelesen),
     "difficulty": "Einfach" | "Mittel" | "Schwer",
     "portions": Zahl,
@@ -168,11 +169,16 @@ export const analyzeRecipePhoto = async (args: {
 
   const title = (data.title ?? "").trim() || fallback.title;
 
+  const rawCategory = (data.category ?? "").trim();
+  const validatedCategory = (RECIPE_CATEGORIES as readonly string[]).includes(rawCategory)
+    ? rawCategory
+    : fallback.category;
+
   return {
     base64,
     doc: {
       title,
-      category: (data.category ?? "").trim() || fallback.category,
+      category: validatedCategory,
       prepTimeMinutes: Number(data.prepTimeMinutes) || fallback.prepTimeMinutes,
       difficulty: data.difficulty || fallback.difficulty,
       portions: Number(data.portions) || fallback.portions,

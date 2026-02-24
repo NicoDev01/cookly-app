@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useAction } from "convex/react";
+import { useAction, useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
@@ -21,12 +21,19 @@ const ShareTargetPage: React.FC = () => {
     const [limitData, setLimitData] = useState<{ current: number, limit: number, feature: 'manual_recipes' | 'link_imports' | 'photo_scans' } | null>(null);
     const [savedRecipeId, setSavedRecipeId] = useState<string | null>(null);
     const [phase, setPhase] = useState<ProcessingPhase>('analyzing');
+    const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+    const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
     const processingRef = useRef(false);
     const shareInvocationRef = useRef(0);
     const backButtonHandlerRef = useRef<Promise<{ remove: () => void }> | null>(null);
     
     // Global Toast aus NotificationContext
     const { showImportToast } = useNotification();
+
+    // Kategorien & Update-Mutation
+    const categories = useQuery(api.categories.list);
+    const updateRecipe = useMutation(api.recipes.updateRecipe);
 
     const handleClose = useCallback(async () => {
         if (Capacitor.isNativePlatform()) {
@@ -112,6 +119,9 @@ const ShareTargetPage: React.FC = () => {
                     setStatus('success');
                     showImportToast(recipeId); // Global Toast anzeigen
                     showSimpleImportNotification(recipeId); // System Notification
+                    if (selectedCategory) {
+                        updateRecipe({ id: recipeId as never, category: selectedCategory }).catch(() => {});
+                    }
                 } else if (facebookMatch) {
                     const postUrl = facebookMatch[0];
                     console.log(`[ShareTarget] #${shareRunId} facebookMatch`, { postUrl });
@@ -135,6 +145,9 @@ const ShareTargetPage: React.FC = () => {
                     setStatus('success');
                     showImportToast(recipeId); // Global Toast anzeigen
                     showSimpleImportNotification(recipeId); // System Notification
+                    if (selectedCategory) {
+                        updateRecipe({ id: recipeId as never, category: selectedCategory }).catch(() => {});
+                    }
                 } else if (genericUrlMatch) {
                     const websiteUrl = genericUrlMatch[1];
                     console.log(`[ShareTarget] #${shareRunId} genericUrlMatch`, { websiteUrl });
@@ -158,6 +171,9 @@ const ShareTargetPage: React.FC = () => {
                     setStatus('success');
                     showImportToast(recipeId); // Global Toast anzeigen
                     showSimpleImportNotification(recipeId); // System Notification
+                    if (selectedCategory) {
+                        updateRecipe({ id: recipeId as never, category: selectedCategory }).catch(() => {});
+                    }
                 } else {
                     setError("Kein gültiger Link gefunden. Bitte teile eine URL.");
                     setStatus('error');
@@ -229,6 +245,26 @@ const ShareTargetPage: React.FC = () => {
         };
     }, [status, handleClose]);
 
+    // Click outside to close dropdown - Mobile UX best practice
+    useEffect(() => {
+        if (!isCategoryDropdownOpen) return;
+
+        const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsCategoryDropdownOpen(false);
+            }
+        };
+
+        // Add both mouse and touch events for mobile compatibility
+        document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('touchstart', handleClickOutside);
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('touchstart', handleClickOutside);
+        };
+    }, [isCategoryDropdownOpen]);
+
     return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-background-light dark:bg-background-dark p-6 relative overflow-hidden">
             
@@ -298,6 +334,71 @@ const ShareTargetPage: React.FC = () => {
                                 <span className="material-symbols-outlined">arrow_back</span>
                                 Zurück
                             </button>
+                        </div>
+
+                        {/* Optionale Kategorie-Zuweisung - UNTER den Buttons */}
+                        <div ref={dropdownRef} className="w-fit mx-auto mt-6 relative min-w-[200px] max-w-[280px]">
+                            <p className="text-sm text-text-primary-light dark:text-text-primary-dark mb-3 text-center">
+                                Direkt einer Kategorie zuweisen <span className="font-bold">(Optional)</span>
+                            </p>
+                            
+                            {/* Trigger Button */}
+                            <button
+                                onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
+                                className="w-full min-h-[48px] px-4 py-3 rounded-2xl bg-card-light dark:bg-card-dark text-text-primary-light dark:text-text-primary-dark border border-gray-200 dark:border-gray-700 elevation-1 touch-manipulation flex items-center justify-between gap-2 active:scale-[0.98] transition-transform"
+                                style={{ fontSize: '16px' }}
+                                aria-haspopup="listbox"
+                            >
+                                <span className="truncate">
+                                    {selectedCategory ?? "Automatisch zuweisen"}
+                                </span>
+                                <span className={`material-symbols-outlined text-text-secondary-light dark:text-text-secondary-dark transition-transform duration-200 ${isCategoryDropdownOpen ? 'rotate-180' : ''}`}>
+                                    expand_more
+                                </span>
+                            </button>
+                            
+                            {/* Dropdown Menu - öffnet nach OBEN */}
+                            {isCategoryDropdownOpen && (
+                                <div
+                                    className="absolute bottom-full left-0 right-0 mb-2 max-h-[280px] overflow-y-auto rounded-2xl bg-card-light dark:bg-card-dark border border-gray-200 dark:border-gray-700 elevation-2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200"
+                                    role="listbox"
+                                    style={{ WebkitOverflowScrolling: 'touch', minWidth: '100%' }}
+                                >
+                                    {/* Auto Option */}
+                                    <button
+                                        onClick={() => {
+                                            setSelectedCategory(null);
+                                            setIsCategoryDropdownOpen(false);
+                                        }}
+                                        className={`w-full min-h-[44px] px-4 py-3 text-left touch-manipulation active:bg-primary/10 transition-colors truncate ${selectedCategory === null ? 'bg-primary/5 text-primary font-medium' : 'text-text-primary-light dark:text-text-primary-dark'}`}
+                                        role="option"
+                                        aria-selected={selectedCategory === null}
+                                    >
+                                        Automatisch zuweisen
+                                    </button>
+                                    
+                                    {/* Divider */}
+                                    {categories && categories.length > 0 && (
+                                        <div className="h-px bg-gray-200 dark:bg-gray-700 mx-4" />
+                                    )}
+                                    
+                                    {/* User Categories */}
+                                    {categories?.map((cat) => (
+                                        <button
+                                            key={cat._id}
+                                            onClick={() => {
+                                                setSelectedCategory(cat.name);
+                                                setIsCategoryDropdownOpen(false);
+                                            }}
+                                            className={`w-full min-h-[44px] px-4 py-3 text-left touch-manipulation active:bg-primary/10 transition-colors truncate ${selectedCategory === cat.name ? 'bg-primary/5 text-primary font-medium' : 'text-text-primary-light dark:text-text-primary-dark'}`}
+                                            role="option"
+                                            aria-selected={selectedCategory === cat.name}
+                                        >
+                                            {cat.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
