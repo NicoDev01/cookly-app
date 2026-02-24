@@ -360,7 +360,7 @@ const CategoriesPage: React.FC = () => {
                         >
                           <div className="h-16 w-16 flex-shrink-0 rounded-lg overflow-hidden shadow-inner bg-gray-100 dark:bg-gray-800">
                             <img 
-                              src="/alle-rezepte.png" 
+                              src="/alle-rezepte1.webp" 
                               alt="Alle Rezepte" 
                               className="h-full w-full object-cover"
                             />

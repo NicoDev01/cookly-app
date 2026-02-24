@@ -2,10 +2,10 @@ import React, { Component, ErrorInfo, ReactNode } from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
 import App from "./App";
-import { ConvexReactClient } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { ClerkProvider, useAuth } from "@clerk/clerk-react";
 import { HashRouter, useNavigate } from "react-router-dom";
+import { convexClient } from "./convexClient";
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -83,9 +83,6 @@ if (!rootElement) {
 }
 
 const root = ReactDOM.createRoot(rootElement);
-
-// Erstelle Convex Client einmalig
-const convexClient = new ConvexReactClient(convexUrl);
 
 // Clerk Konfiguration für Capacitor mit Deep Link Support
 function ClerkProviderWithNavigate({

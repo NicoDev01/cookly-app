@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useAction, useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
+import type { Id } from "../convex/_generated/dataModel";
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -22,6 +23,7 @@ const ShareTargetPage: React.FC = () => {
     const [savedRecipeId, setSavedRecipeId] = useState<string | null>(null);
     const [phase, setPhase] = useState<ProcessingPhase>('analyzing');
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+    const selectedCategoryRef = useRef<string | null>(null);
     const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const processingRef = useRef(false);
@@ -119,8 +121,8 @@ const ShareTargetPage: React.FC = () => {
                     setStatus('success');
                     showImportToast(recipeId); // Global Toast anzeigen
                     showSimpleImportNotification(recipeId); // System Notification
-                    if (selectedCategory) {
-                        updateRecipe({ id: recipeId as never, category: selectedCategory }).catch(() => {});
+                    if (selectedCategoryRef.current) {
+                        updateRecipe({ id: recipeId as Id<"recipes">, category: selectedCategoryRef.current }).catch(() => {});
                     }
                 } else if (facebookMatch) {
                     const postUrl = facebookMatch[0];
@@ -145,8 +147,8 @@ const ShareTargetPage: React.FC = () => {
                     setStatus('success');
                     showImportToast(recipeId); // Global Toast anzeigen
                     showSimpleImportNotification(recipeId); // System Notification
-                    if (selectedCategory) {
-                        updateRecipe({ id: recipeId as never, category: selectedCategory }).catch(() => {});
+                    if (selectedCategoryRef.current) {
+                        updateRecipe({ id: recipeId as Id<"recipes">, category: selectedCategoryRef.current }).catch(() => {});
                     }
                 } else if (genericUrlMatch) {
                     const websiteUrl = genericUrlMatch[1];
@@ -171,8 +173,8 @@ const ShareTargetPage: React.FC = () => {
                     setStatus('success');
                     showImportToast(recipeId); // Global Toast anzeigen
                     showSimpleImportNotification(recipeId); // System Notification
-                    if (selectedCategory) {
-                        updateRecipe({ id: recipeId as never, category: selectedCategory }).catch(() => {});
+                    if (selectedCategoryRef.current) {
+                        updateRecipe({ id: recipeId as Id<"recipes">, category: selectedCategoryRef.current }).catch(() => {});
                     }
                 } else {
                     setError("Kein gültiger Link gefunden. Bitte teile eine URL.");
@@ -364,39 +366,49 @@ const ShareTargetPage: React.FC = () => {
                                     role="listbox"
                                     style={{ WebkitOverflowScrolling: 'touch', minWidth: '100%' }}
                                 >
-                                    {/* Auto Option */}
-                                    <button
-                                        onClick={() => {
-                                            setSelectedCategory(null);
-                                            setIsCategoryDropdownOpen(false);
-                                        }}
-                                        className={`w-full min-h-[44px] px-4 py-3 text-left touch-manipulation active:bg-primary/10 transition-colors truncate ${selectedCategory === null ? 'bg-primary/5 text-primary font-medium' : 'text-text-primary-light dark:text-text-primary-dark'}`}
-                                        role="option"
-                                        aria-selected={selectedCategory === null}
-                                    >
-                                        Automatisch zuweisen
-                                    </button>
-                                    
-                                    {/* Divider */}
-                                    {categories && categories.length > 0 && (
-                                        <div className="h-px bg-gray-200 dark:bg-gray-700 mx-4" />
+                                    {categories === undefined ? (
+                                        <div className="flex items-center justify-center py-4">
+                                            <div className="size-5 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {/* Auto Option */}
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedCategory(null);
+                                                    selectedCategoryRef.current = null;
+                                                    setIsCategoryDropdownOpen(false);
+                                                }}
+                                                className={`w-full min-h-[44px] px-4 py-3 text-left touch-manipulation active:bg-primary/10 transition-colors truncate ${selectedCategory === null ? 'bg-primary/5 text-primary font-medium' : 'text-text-primary-light dark:text-text-primary-dark'}`}
+                                                role="option"
+                                                aria-selected={selectedCategory === null}
+                                            >
+                                                Automatisch zuweisen
+                                            </button>
+                                            
+                                            {/* Divider */}
+                                            {categories.length > 0 && (
+                                                <div className="h-px bg-gray-200 dark:bg-gray-700 mx-4" />
+                                            )}
+                                            
+                                            {/* User Categories */}
+                                            {categories.map((cat) => (
+                                                <button
+                                                    key={cat._id}
+                                                    onClick={() => {
+                                                        setSelectedCategory(cat.name);
+                                                        selectedCategoryRef.current = cat.name;
+                                                        setIsCategoryDropdownOpen(false);
+                                                    }}
+                                                    className={`w-full min-h-[44px] px-4 py-3 text-left touch-manipulation active:bg-primary/10 transition-colors truncate ${selectedCategory === cat.name ? 'bg-primary/5 text-primary font-medium' : 'text-text-primary-light dark:text-text-primary-dark'}`}
+                                                    role="option"
+                                                    aria-selected={selectedCategory === cat.name}
+                                                >
+                                                    {cat.name}
+                                                </button>
+                                            ))}
+                                        </>
                                     )}
-                                    
-                                    {/* User Categories */}
-                                    {categories?.map((cat) => (
-                                        <button
-                                            key={cat._id}
-                                            onClick={() => {
-                                                setSelectedCategory(cat.name);
-                                                setIsCategoryDropdownOpen(false);
-                                            }}
-                                            className={`w-full min-h-[44px] px-4 py-3 text-left touch-manipulation active:bg-primary/10 transition-colors truncate ${selectedCategory === cat.name ? 'bg-primary/5 text-primary font-medium' : 'text-text-primary-light dark:text-text-primary-dark'}`}
-                                            role="option"
-                                            aria-selected={selectedCategory === cat.name}
-                                        >
-                                            {cat.name}
-                                        </button>
-                                    ))}
                                 </div>
                             )}
                         </div>

@@ -281,6 +281,8 @@ const App: React.FC = () => {
   // This eliminates the "spinner gap" after splash ends
   const shouldFetchCategories = isSignedIn && isAuthenticated;
   useQuery(api.categories.getCategoriesWithStats, shouldFetchCategories ? {} : "skip");
+  // PREFETCH: api.categories.list für ShareTargetPage – sofort aus Cache verfügbar
+  useQuery(api.categories.list, shouldFetchCategories ? {} : "skip");
 
   // Track if splash has been hidden to prevent duplicate calls
   const splashHiddenRef = useRef(false);
