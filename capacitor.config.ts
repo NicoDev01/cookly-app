@@ -5,6 +5,10 @@ const config: CapacitorConfig = {
   appName: "Cookly",
   webDir: "dist",
 
+  server: {
+    androidScheme: 'https'
+  },
+
   plugins: {
     SplashScreen: {
       launchShowDuration: 0,
