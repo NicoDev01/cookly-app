@@ -23,16 +23,32 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep Link for OAuth Callback -->
-            <intent-filter android:autoVerify="true">
+            <!-- Deep Link for OAuth Callback - cooklyrecipe://oauth-callback -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="cooklyrecipe" android:host="oauth-callback" />
+            </intent-filter>
+
+            <!-- Legacy OAuth Callback - cooklyrecipe://auth -->
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="cooklyrecipe" android:host="auth" />
             </intent-filter>
 
-            <!-- HTTPS Deep Link -->
-            <intent-filter android:autoVerify="true">
+            <!-- OAuth Callback - com.cookly.recipe://sso-callback -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.cookly.recipe" android:host="sso-callback" />
+            </intent-filter>
+
+            <!-- HTTPS Deep Link (without autoVerify - requires proper assetlinks.json) -->
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />

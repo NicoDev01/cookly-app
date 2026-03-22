@@ -151,24 +151,35 @@ const CategoriesPage: React.FC = () => {
     setSelectedIngredients(selectedIngredients.filter(i => i !== ing));
   };
 
-  // CRITICAL: Initialisiere Cache mit DB-Bildern wenn stats sich ändert
-  // Dieser Effect hängt nur von stats ab, nicht vom Cache selbst!
+  // Sync Cache mit DB-Bildern wenn stats sich ändert.
+  // Überschreibt gecachete URLs wenn die DB ein neues Bild liefert,
+  // damit gelöschte/umbenannte Kategorien keine alten Bilder zeigen.
   React.useEffect(() => {
     if (stats && Array.isArray(stats)) {
       setCategoryImageCache(prev => {
         const updated = { ...prev };
-        stats.forEach(category => {
-          // Nur aktualisieren wenn:
-          // 1. DB hat ein Bild UND
-          // 2. Cache ist noch leer ODER hat den Wert "false" (fehlerhaft)
-          if (category.image && (prev[category.name] === undefined || prev[category.name] === false)) {
-            updated[category.name] = category.image;
+        const activeCategories = new Set(stats.map(c => c.name));
+
+        // Veraltete Cache-Einträge für nicht mehr existierende Kategorien entfernen
+        Object.keys(updated).forEach(name => {
+          if (!activeCategories.has(name)) {
+            delete updated[name];
           }
         });
+
+        stats.forEach(category => {
+          if (category.image) {
+            // Immer aktualisieren wenn DB ein Bild hat (außer wenn gerade lädt = null)
+            if (prev[category.name] !== null) {
+              updated[category.name] = category.image;
+            }
+          }
+        });
+
         return updated;
       });
     }
-  }, [stats]); // Nur von stats abhängig!
+  }, [stats]);
 
   return (
     <div className={`page-enter relative flex w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark font-display transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>

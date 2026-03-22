@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { Input, IconButton } from '../components/ui/cookly';
+import { Capacitor } from '@capacitor/core';
 
 export const SignInPage: React.FC = () => {
   const { isLoaded: signInLoaded, signIn, setActive } = useSignIn();
@@ -32,15 +33,17 @@ export const SignInPage: React.FC = () => {
     setGoogleLoading(true);
 
     try {
-      // WICHTIG: Bei HashRouter muss die redirectUrl mit # beginnen
-      // Clerk leitet dann zu http://localhost:3000/#/sso-callback weiter
-      // redirectUrlComplete wird NICHT gesetzt, damit SSOCallbackPage die
-      // Weiterleitung basierend auf dem User-Status übernimmt
+      const redirectUrl = Capacitor.isNativePlatform()
+        ? 'com.cookly.recipe://sso-callback'
+        : `${window.location.origin}/sso-callback`;
+
+      console.log('[SignInPage] Google OAuth redirectUrl:', redirectUrl);
+
       await signIn.authenticateWithRedirect({
-        strategy: 'oauth_google',
-        redirectUrl: window.location.origin + '/#/sso-callback',
-        redirectUrlComplete: window.location.origin + '/#/sso-callback',
+        strategy: "oauth_google",
+        redirectUrl,
       });
+
     } catch (error) {
       console.error('Google OAuth Error:', error);
       setGoogleLoading(false);

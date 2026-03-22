@@ -177,4 +177,4 @@ npx convex env set STRIPE_WEBHOOK_SECRET your_webhook_secret_here --prod
 
 ## Support
 
-For support, email support@cookly.app or open an issue on GitHub.
+For support, email support@cookly-app.com or open an issue on GitHub.

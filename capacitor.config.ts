@@ -1,12 +1,12 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "com.cookly.recipe",
-  appName: "Cookly",
-  webDir: "dist",
-
+  appId: 'com.cookly.recipe',
+  appName: 'Cookly',
+  webDir: 'dist',
   server: {
-    androidScheme: 'https'
+    androidScheme: 'https', // Oder 'cookly'
+    hostname: 'cookly.recipe', // Wichtig für HTTPS Deep Links (cookly.recipe/auth/...)
   },
 
   plugins: {

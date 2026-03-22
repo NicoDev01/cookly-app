@@ -1,8 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSignIn, useAuth } from '@clerk/clerk-react';
+import { Capacitor } from '@capacitor/core';
+import { App as CapacitorApp } from '@capacitor/app';
 import { Button } from '../components/ui/cookly';
 import BottomSheet from '../components/BottomSheet';
+
+/**
+ * Gibt die korrekte OAuth-Redirect-URL für Capacitor und Web zurück.
+ *
+ * Native Apps (Capacitor): Verwenden Custom URL Scheme
+ * Web: Verwendet aktuelle URL
+ *
+ * Das Custom URL Scheme 'cooklyrecipe://oauth-callback' muss in
+ * Clerk Dashboard unter "Native Apps" als Redirect URL eingetragen werden.
+ */
+function getOAuthRedirectUrl(): string {
+  if (Capacitor.isNativePlatform()) {
+    // Native Apps verwenden das Custom URL Scheme 'cooklyrecipe'
+    return 'cooklyrecipe://oauth-callback';
+  }
+  // Web verwendet aktuelle URL
+  return window.location.origin;
+}
 
 /**
  * WelcomePage - Minimalistische Landing-Page für unangemeldete User
@@ -24,23 +44,40 @@ export const WelcomePage: React.FC = () => {
     }
   }, [isSignedIn, navigate]);
 
+  // Set up deep link listener for OAuth callback (native apps)
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const setupListener = async () => {
+      try {
+        await CapacitorApp.addListener('appUrlOpen', (event) => {
+          console.log('[WelcomePage] Deep link received:', event.url);
+          // The appUrlOpen event is handled by initDeepLinkHandler in App.tsx
+        });
+      } catch (error) {
+        console.log('[WelcomePage] Could not add deep link listener:', error);
+      }
+    };
+
+    setupListener();
+  }, []);
+
   const handleGoogleSignIn = async () => {
     if (!signIn) return;
 
     setIsGoogleLoading(true);
 
     try {
-      // WICHTIG: Bei HashRouter muss die redirectUrl mit # beginnen
-      // Clerk leitet dann zu http://localhost:3000/#/sso-callback weiter
-      // redirectUrlComplete wird NICHT gesetzt, damit SSOCallbackPage die
-      // Weiterleitung basierend auf dem User-Status übernimmt
+      const redirectUrl = getOAuthRedirectUrl();
+      console.log('[WelcomePage] Google OAuth redirectUrl:', redirectUrl);
+
       await signIn.authenticateWithRedirect({
         strategy: 'oauth_google',
-        redirectUrl: window.location.origin + '/#/sso-callback',
-        redirectUrlComplete: window.location.origin + '/#/sso-callback',
+        redirectUrl,
+        redirectUrlComplete: redirectUrl,
       });
     } catch (error) {
-      console.error('Google OAuth Error:', error);
+      console.error('[WelcomePage] Google OAuth Error:', error);
       setIsGoogleLoading(false);
     }
   };

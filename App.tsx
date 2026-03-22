@@ -32,6 +32,7 @@ const ForgotPasswordPage = React.lazy(() => import('./pages/ForgotPasswordPage')
 const WelcomePage = React.lazy(() => import('./pages/WelcomePage'));
 const WelcomeScreen = React.lazy(() => import('./components/onboarding/WelcomeScreen'));
 const SSOCallbackPage = React.lazy(() => import('./pages/SSOCallbackPage'));
+const SSOBouncerPage = React.lazy(() => import('./pages/SSOBouncerPage'));
 const TabsLayout = React.lazy(() => import('./components/TabsLayout'));
 
 
@@ -40,11 +41,21 @@ const RootRedirect: React.FC = () => {
   const { isLoaded, isSignedIn } = useAuth();
 
   if (!isLoaded) {
-    return null; // Native Lottie splash is visible in background
+    return null;
   }
 
   if (isSignedIn) {
     return <Navigate to="/tabs/categories" replace />;
+  }
+
+  // OAuth-Callback erkennen und direkt zu /sso-callback leiten
+  // Damit wird verhindert, dass RootRedirect zu /welcome weiterleitet bevor der Token verarbeitet wird
+  const currentUrl = window.location.href;
+  if (currentUrl.includes('__clerk_handshake') || currentUrl.includes('__clerk_db_jwt')) {
+    const url = new URL(currentUrl);
+    const params = url.searchParams.toString();
+    console.log('[RootRedirect] OAuth token detected, routing to /sso-callback');
+    return <Navigate to={`/sso-callback?${params}`} replace />;
   }
 
   return <Navigate to="/welcome" replace />;
@@ -174,7 +185,7 @@ const AppContent: React.FC = () => {
     };
     setupNotificationListener();
 
-    // Helper to check for intents
+    // Helper to check for intents (Share Target)
     const checkIntent = async (source: 'cold-start' | 'resume') => {
         if (!Capacitor.isNativePlatform()) return;
         
@@ -236,6 +247,9 @@ const AppContent: React.FC = () => {
         <Route path="/sign-in" element={<SignInPage />} />
         <Route path="/sign-up" element={<SignUpPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        {/* Bouncer-Seite für OAuth - leitet von HTTPS zur nativen App weiter */}
+        <Route path="/sso-bouncer" element={<SSOBouncerPage />} />
+        {/* Interne OAuth-Callback-Seite - wird von der nativen App verwendet */}
         <Route path="/sso-callback" element={<SSOCallbackPage />} />
         <Route path="/onboarding" element={<WelcomeScreen />} />
 

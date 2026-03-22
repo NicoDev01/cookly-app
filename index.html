@@ -47,47 +47,8 @@
   <link rel="dns-prefetch" href="https://image.pollinations.ai">
   <link rel="preconnect" href="https://image.pollinations.ai" crossorigin>
 
-  <!-- PERFORMANCE (AC-7): Critical CSS Inlined - verhindert FOUC -->
-  <style>
-    /* Base Reset & Typography */
-    *,*::before,*::after{box-sizing:border-box}
-    html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
-    body{min-height:100dvh;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;margin:0;font-family:Outfit,sans-serif}
-
-    /* Safe Area Insets for notch/dynamic island */
-    :root{--safe-area-inset-top:env(safe-area-inset-top,0px);--safe-area-inset-bottom:env(safe-area-inset-bottom,0px);--safe-area-inset-left:env(safe-area-inset-left,0px);--safe-area-inset-right:env(safe-area-inset-right,0px);--nav-height:80px;--nav-height-with-fab:136px;--fab-size:56px}
-
-    /* Color Scheme - Light Mode Default */
-    :root{--background:0 0% 100%;--foreground:222.2 84% 4.9%;--card:0 0% 100%;--card-foreground:222.2 84% 4.9%;--primary:146 17% 74%;--primary-foreground:210 40% 98%;--muted:210 40% 96.1%;--muted-foreground:215.4 16.3% 46.9%;--border:214.3 31.8% 91.4%}
-
-    /* Dark Mode Colors */
-    .dark{--background:222.2 84% 4.9%;--foreground:210 40% 98%;--card:222.2 84% 4.9%;--card-foreground:210 40% 98%;--primary:146 17% 74%;--primary-foreground:222.2 47.4% 11.2%;--muted:217.2 32.6% 17.5%;--muted-foreground:215 20.2% 65.1%;--border:217.2 32.6% 17.5%}
-
-    /* Material Symbols Font */
-    .material-symbols-outlined{font-family:"Material Symbols Outlined";font-weight:normal;font-style:normal;font-size:24px;line-height:1;letter-spacing:normal;text-transform:none;display:inline-block;white-space:nowrap;word-wrap:normal;direction:ltr;-webkit-font-feature-settings:"liga";-webkit-font-smoothing:antialiased;font-variation-settings:"FILL" 0,"wght" 300,"GRAD" 0,"opsz" 20!important}
-    .material-symbols-outlined.filled{font-variation-settings:"FILL" 1,"wght" 300,"GRAD" 0,"opsz" 20!important}
-
-    /* Touch Feedback - Critical for Mobile */
-    .touch-btn,.touch-card{-webkit-tap-highlight-color:transparent;user-select:none;touch-action:manipulation}
-    .touch-btn{transition:transform .1s ease-out,box-shadow .15s ease-out}
-    .touch-btn:active{transform:scale(.95)}
-    .touch-card{transition:transform .15s ease-out,box-shadow .15s ease-out}
-    .touch-card:active{transform:scale(.98)}
-
-    /* Bottom Navigation Padding */
-    .pb-nav{padding-bottom:calc(var(--nav-height) + var(--safe-area-inset-bottom,0px))}
-
-    /* Root Container */
-    #root{min-height:100vh}
-
-    /* Loading Spinner */
-    @keyframes spin{to{transform:rotate(360deg)}}
-    .animate-spin{animation:spin 1s linear infinite}
-  </style>
-
-  <!-- Full CSS preload - async loaded -->
-  <link rel="preload" href="/index.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
-  <noscript><link rel="stylesheet" href="/index.css"></noscript>
+  <!-- Full CSS - load directly -->
+  <link rel="stylesheet" href="/index.css">
 
   <title>Cookly - Rezepte einfach verwalten</title>
 </head>
