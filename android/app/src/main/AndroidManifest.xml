@@ -47,6 +47,14 @@
                 <data android:scheme="com.cookly.recipe" android:host="sso-callback" />
             </intent-filter>
 
+            <!-- HTTPS Deep Link for OAuth (cookly.recipe/sso-callback) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="cookly.recipe" android:pathPrefix="/sso-callback" />
+            </intent-filter>
+
             <!-- HTTPS Deep Link (without autoVerify - requires proper assetlinks.json) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

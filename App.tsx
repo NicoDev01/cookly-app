@@ -49,9 +49,14 @@ const RootRedirect: React.FC = () => {
   }
 
   // OAuth-Callback erkennen und direkt zu /sso-callback leiten
-  // Damit wird verhindert, dass RootRedirect zu /welcome weiterleitet bevor der Token verarbeitet wird
+  // Clerk verwendet verschiedene Parameter: __clerk_handshake, __clerk_db_jwt, state, code
   const currentUrl = window.location.href;
-  if (currentUrl.includes('__clerk_handshake') || currentUrl.includes('__clerk_db_jwt')) {
+  const isOAuthCallback = 
+    currentUrl.includes('__clerk_handshake') || 
+    currentUrl.includes('__clerk_db_jwt') ||
+    currentUrl.includes('/sso-callback');
+  
+  if (isOAuthCallback) {
     const url = new URL(currentUrl);
     const params = url.searchParams.toString();
     console.log('[RootRedirect] OAuth token detected, routing to /sso-callback');

@@ -68,13 +68,29 @@ export const WelcomePage: React.FC = () => {
     setIsGoogleLoading(true);
 
     try {
-      const redirectUrl = getOAuthRedirectUrl();
-      console.log('[WelcomePage] Google OAuth redirectUrl:', redirectUrl);
+      let redirectUrl: string;
+      let redirectUrlComplete: string;
+
+      if (Capacitor.isNativePlatform()) {
+        // Native Apps: IMMER das Custom URL Schema verwenden
+        // Clerk Allowlist: com.cookly.recipe://sso-callback
+        redirectUrl = 'com.cookly.recipe://sso-callback';
+        redirectUrlComplete = 'com.cookly.recipe://sso-callback';
+        console.log('[WelcomePage] Native platform - using custom URL scheme');
+      } else {
+        // Web: Use origin
+        redirectUrl = window.location.origin + '/sso-callback';
+        redirectUrlComplete = window.location.origin + '/tabs/categories';
+        console.log('[WelcomePage] Web platform detected, using origin:', window.location.origin);
+      }
+
+      console.log('[WelcomePage] OAuth redirectUrl:', redirectUrl);
+      console.log('[WelcomePage] OAuth redirectUrlComplete:', redirectUrlComplete);
 
       await signIn.authenticateWithRedirect({
         strategy: 'oauth_google',
         redirectUrl,
-        redirectUrlComplete: redirectUrl,
+        redirectUrlComplete,
       });
     } catch (error) {
       console.error('[WelcomePage] Google OAuth Error:', error);

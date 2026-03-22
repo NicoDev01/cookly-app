@@ -33,15 +33,28 @@ export const SignInPage: React.FC = () => {
     setGoogleLoading(true);
 
     try {
-      const redirectUrl = Capacitor.isNativePlatform()
-        ? 'com.cookly.recipe://sso-callback'
-        : `${window.location.origin}/sso-callback`;
+      let redirectUrl: string;
+      let redirectUrlComplete: string;
 
-      console.log('[SignInPage] Google OAuth redirectUrl:', redirectUrl);
+      if (Capacitor.isNativePlatform()) {
+        // Native Apps: IMMER das Custom URL Schema verwenden
+        // Clerk Allowlist: com.cookly.recipe://sso-callback
+        redirectUrl = 'com.cookly.recipe://sso-callback';
+        redirectUrlComplete = 'com.cookly.recipe://sso-callback';
+        console.log('[SignInPage] Native platform - using custom URL scheme');
+      } else {
+        const origin = window.location.origin;
+        redirectUrl = `${origin}/sso-callback`;
+        redirectUrlComplete = `${origin}/tabs/categories`;
+        console.log('[SignInPage] Web platform, using origin:', origin);
+      }
+
+      console.log('[SignInPage] OAuth redirectUrl:', redirectUrl);
 
       await signIn.authenticateWithRedirect({
         strategy: "oauth_google",
         redirectUrl,
+        redirectUrlComplete,
       });
 
     } catch (error) {

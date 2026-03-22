@@ -5,8 +5,9 @@ import { Capacitor } from '@capacitor/core';
  * Deep Link Handler für Capacitor-Apps
  *
  * Verarbeitet OAuth-Callbacks von Clerk.
- * Bei sso-callback wird window.location.href verwendet, damit die URL-Parameter
- * an die SSOCallbackPage weitergegeben werden.
+ * Unterstützte Schemas:
+ * - cooklyrecipe://oauth-callback
+ * - com.cookly.recipe://sso-callback
  */
 
 type NavigateFunction = (path: string) => void;
@@ -23,15 +24,35 @@ export function initDeepLinkHandler(navigate: NavigateFunction) {
     try {
       const url = new URL(event.url);
 
-      // OAuth-Callback - alle sso-callback Varianten
-      if (url.host === 'sso-callback') {
-        console.log('[DeepLink] OAuth callback detected:', event.url);
+      // OAuth-Callback mit cooklyrecipe:// Schema
+      if (url.protocol === 'cooklyrecipe:') {
+        console.log('[DeepLink] OAuth callback (cooklyrecipe scheme) detected:', event.url);
 
-        // Query-Parameter aus dem Deep Link extrahieren
         const searchParams = url.search || '';
         console.log('[DeepLink] Redirecting to /sso-callback' + searchParams);
 
-        // window.location.href statt navigate() damit URL-Parameter erhalten bleiben
+        window.location.href = '/sso-callback' + searchParams;
+        return;
+      }
+
+      // OAuth-Callback mit com.cookly.recipe:// Schema
+      if (url.protocol === 'com.cookly.recipe:') {
+        console.log('[DeepLink] OAuth callback (com.cookly.recipe scheme) detected:', event.url);
+
+        const searchParams = url.search || '';
+        console.log('[DeepLink] Redirecting to /sso-callback' + searchParams);
+
+        window.location.href = '/sso-callback' + searchParams;
+        return;
+      }
+
+      // OAuth-Callback - sso-callback host (HTTPS)
+      if (url.host === 'sso-callback') {
+        console.log('[DeepLink] OAuth callback (sso-callback host) detected:', event.url);
+
+        const searchParams = url.search || '';
+        console.log('[DeepLink] Redirecting to /sso-callback' + searchParams);
+
         window.location.href = '/sso-callback' + searchParams;
         return;
       }
