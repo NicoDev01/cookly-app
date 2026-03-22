@@ -40,4 +40,7 @@ err.txt
 stripe_backup_code.txt
 
 .kilocode
-.claude
+.claude-e 
+# Environment files
+*.env
+*.env.*
