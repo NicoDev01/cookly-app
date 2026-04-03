@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useAuth, useUser } from '@clerk/clerk-react';
-import { useQuery, useAction } from 'convex/react';
+import { useAuthActions } from '@convex-dev/auth/react';
+import { useQuery, useAction, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import {
   AlertTriangle,
@@ -17,12 +17,12 @@ import { useNavigate } from 'react-router-dom';
 import { cn } from "@/lib/utils";
 
 export const ProfilePage: React.FC = () => {
-  const { user, isLoaded: userLoaded } = useUser();
-  const { signOut } = useAuth();
+  const { signOut } = useAuthActions();
   const navigate = useNavigate();
 
   const currentUser = useQuery(api.users.getCurrentUser);
   const cancelSubscription = useAction(api.stripe.cancelSubscription);
+  const deleteCurrentUser = useMutation(api.users.deleteCurrentUser);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -36,15 +36,17 @@ export const ProfilePage: React.FC = () => {
   const scanLimit = useQuery(api.users.canScanPhoto);
 
   const handleSignOut = async () => {
-    await signOut({ redirectUrl: '/sign-in' });
+    await signOut();
+    navigate('/sign-in', { replace: true });
   };
 
   const handleDeleteAccount = async () => {
     if (deleteConfirmText !== 'LÖSCHEN') return;
     setIsDeleting(true);
     try {
-      await user?.delete();
-      window.location.hash = '#/sign-in';
+      await deleteCurrentUser();
+      await signOut();
+      navigate('/sign-in', { replace: true });
     } catch (error: unknown) {
       console.error('Error deleting account:', error);
       alert(`Fehler beim Löschen: ${error instanceof Error ? error.message : 'Unbekannter Fehler'}`);
@@ -68,7 +70,7 @@ export const ProfilePage: React.FC = () => {
     }
   };
 
-  if (!userLoaded || !user) {
+  if (!currentUser) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />

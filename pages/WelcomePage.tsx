@@ -1,97 +1,49 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSignIn, useAuth } from '@clerk/clerk-react';
+import { useAuthActions } from '@convex-dev/auth/react';
+import { useConvexAuth } from 'convex/react';
 import { Capacitor } from '@capacitor/core';
-import { App as CapacitorApp } from '@capacitor/app';
 import { Button } from '../components/ui/cookly';
 import BottomSheet from '../components/BottomSheet';
 
 /**
- * Gibt die korrekte OAuth-Redirect-URL für Capacitor und Web zurück.
- *
- * Native Apps (Capacitor): Verwenden Custom URL Scheme
- * Web: Verwendet aktuelle URL
- *
- * Das Custom URL Scheme 'cooklyrecipe://oauth-callback' muss in
- * Clerk Dashboard unter "Native Apps" als Redirect URL eingetragen werden.
- */
-function getOAuthRedirectUrl(): string {
-  if (Capacitor.isNativePlatform()) {
-    // Native Apps verwenden das Custom URL Scheme 'cooklyrecipe'
-    return 'cooklyrecipe://oauth-callback';
-  }
-  // Web verwendet aktuelle URL
-  return window.location.origin;
-}
-
-/**
  * WelcomePage - Minimalistische Landing-Page für unangemeldete User
- * 
+ *
  * Zeigt ein animiertes Logo-Video mit Call-to-Action Buttons.
  * Vollständig öffentlich - kein Auth-Check erforderlich.
  */
 export const WelcomePage: React.FC = () => {
   const navigate = useNavigate();
-  const { signIn } = useSignIn();
-  const { isSignedIn } = useAuth();
+  const { signIn } = useAuthActions();
+  const { isAuthenticated } = useConvexAuth();
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
-  // Redirect if already signed in
   React.useEffect(() => {
-    if (isSignedIn) {
+    if (isAuthenticated) {
       navigate('/tabs/categories', { replace: true });
     }
-  }, [isSignedIn, navigate]);
-
-  // Set up deep link listener for OAuth callback (native apps)
-  useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-
-    const setupListener = async () => {
-      try {
-        await CapacitorApp.addListener('appUrlOpen', (event) => {
-          console.log('[WelcomePage] Deep link received:', event.url);
-          // The appUrlOpen event is handled by initDeepLinkHandler in App.tsx
-        });
-      } catch (error) {
-        console.log('[WelcomePage] Could not add deep link listener:', error);
-      }
-    };
-
-    setupListener();
-  }, []);
+  }, [isAuthenticated, navigate]);
 
   const handleGoogleSignIn = async () => {
-    if (!signIn) return;
-
     setIsGoogleLoading(true);
-
     try {
-      let redirectUrl: string;
-      let redirectUrlComplete: string;
-
       if (Capacitor.isNativePlatform()) {
-        // Native Apps: IMMER das Custom URL Schema verwenden
-        // Clerk Allowlist: com.cookly.recipe://sso-callback
-        redirectUrl = 'com.cookly.recipe://sso-callback';
-        redirectUrlComplete = 'com.cookly.recipe://sso-callback';
-        console.log('[WelcomePage] Native platform - using custom URL scheme');
+        // Native Android: signIn('google') gibt ein FormData-Objekt zurück mit einer redirect URL.
+        // Diese URL muss im externen Browser geöffnet werden (Google blockiert WebViews).
+        // Nach dem Login: Google → Convex Auth → com.cookly.recipe://auth-callback → App.
+        const result = await signIn('google', { redirectTo: 'com.cookly.recipe://auth-callback' });
+        if (result instanceof Response) {
+          const redirectUrl = result.headers.get('Location') || result.url;
+          if (redirectUrl) {
+            await Browser.open({ url: redirectUrl });
+            return; // Browser übernimmt, Loading-State bleibt bis Deep Link zurückkommt
+          }
+        }
+        setIsGoogleLoading(false);
       } else {
-        // Web: Use origin
-        redirectUrl = window.location.origin + '/sso-callback';
-        redirectUrlComplete = window.location.origin + '/tabs/categories';
-        console.log('[WelcomePage] Web platform detected, using origin:', window.location.origin);
+        await signIn('google');
       }
-
-      console.log('[WelcomePage] OAuth redirectUrl:', redirectUrl);
-      console.log('[WelcomePage] OAuth redirectUrlComplete:', redirectUrlComplete);
-
-      await signIn.authenticateWithRedirect({
-        strategy: 'oauth_google',
-        redirectUrl,
-        redirectUrlComplete,
-      });
     } catch (error) {
       console.error('[WelcomePage] Google OAuth Error:', error);
       setIsGoogleLoading(false);

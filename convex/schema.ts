@@ -1,66 +1,68 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { authTables } from "@convex-dev/auth/server";
 
 export default defineSchema({
-  // USERS - Clerk Sync + Subscription Data
+  ...authTables,
+
+  // USERS - Convex Auth + Subscription Data
   users: defineTable({
-    // Clerk Authentication
-    clerkId: v.string(),
+    // Convex Auth identity link
+    authUserId: v.optional(v.string()),
+    clerkId: v.optional(v.string()), // LEGACY
+    // Felder die Convex Auth beim OAuth direkt in users schreibt:
     email: v.optional(v.string()),
+    emailVerificationTime: v.optional(v.number()),
+    image: v.optional(v.string()),
     name: v.optional(v.string()),
     avatar: v.optional(v.string()),
     
-    // Subscription Details (kein lifetime mehr)
-    subscription: v.union(
+    // Subscription Details — optional, werden von createOrSyncUser gesetzt
+    subscription: v.optional(v.union(
       v.literal("free"),
       v.literal("pro_monthly"),
       v.literal("pro_yearly")
-    ),
-    subscriptionStatus: v.union(
+    )),
+    subscriptionStatus: v.optional(v.union(
       v.literal("active"),
       v.literal("canceled"),
       v.literal("past_due")
-    ),
-    subscriptionEnd: v.optional(v.number()), // Timestamp wenn gekündigt (DEPRECATED: nutze usageStats.subscriptionEndDate)
+    )),
+    subscriptionEnd: v.optional(v.number()),
     stripeCustomerId: v.optional(v.string()),
     stripeSubscriptionId: v.optional(v.string()),
 
-    // Onboarding & Preferences
-    onboardingCompleted: v.boolean(), // false = zeige onboarding
-    cookingFrequency: v.optional(v.string()), // "rare", "regular", "daily"
-    preferredCuisines: v.optional(v.array(v.string())), // ["vegan", "pasta"]
-    notificationsEnabled: v.boolean(),
+    // Onboarding & Preferences — optional, werden von createOrSyncUser gesetzt
+    onboardingCompleted: v.optional(v.boolean()),
+    cookingFrequency: v.optional(v.string()),
+    preferredCuisines: v.optional(v.array(v.string())),
+    notificationsEnabled: v.optional(v.boolean()),
 
-    // Usage Stats - Separate Counter für jeden Feature-Typ
-    usageStats: v.object({
-      // NEW: Separate Counter (Lifetime, kein Reset für Free Tier)
-      manualRecipes: v.optional(v.number()),      // Manuell erstellte Rezepte (Limit: 100)
-      linkImports: v.optional(v.number()),        // URL/Instagram Imports (Limit: 50)
-      photoScans: v.optional(v.number()),         // KI Foto-Scans (Limit: 50)
-
-      // NEW: Subscription Zeiträume (für Pro Tier)
-      subscriptionStartDate: v.optional(v.number()),  // Start der Subscription
-      subscriptionEndDate: v.optional(v.number()),    // Ende der Subscription
-
-      // NEW: Reset flag für Downgrade
+    // Usage Stats
+    usageStats: v.optional(v.object({
+      manualRecipes: v.optional(v.number()),
+      linkImports: v.optional(v.number()),
+      photoScans: v.optional(v.number()),
+      subscriptionStartDate: v.optional(v.number()),
+      subscriptionEndDate: v.optional(v.number()),
       resetOnDowngrade: v.optional(v.boolean()),
+      importedRecipes: v.optional(v.number()),
+      importsLastReset: v.optional(v.number()),
+      weeklyPlansActive: v.optional(v.number()),
+    })),
 
-      // OLD: Deprecated fields (for migration compatibility)
-      importedRecipes: v.optional(v.number()),     // OLD: Einheitlicher Counter
-      importsLastReset: v.optional(v.number()),    // OLD: Wird nicht mehr verwendet
-      weeklyPlansActive: v.optional(v.number()),   // OLD: Wird nicht mehr verwendet
-    }),
-    
     // Metadata
-    createdAt: v.number(),
-    updatedAt: v.number(),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
   })
-  .index("by_clerkId", ["clerkId"])
-  .index("by_stripeCustomer", ["stripeCustomerId"]),
+  .index("by_authUserId", ["authUserId"])
+  .index("by_stripeCustomer", ["stripeCustomerId"])
+  .index("email", ["email"]),
 
   // RECIPES - Multi-Tenant (User Isolated)
   recipes: defineTable({
-    clerkId: v.string(), // Owner
+    userId: v.optional(v.id("users")), // Owner
+    clerkId: v.optional(v.string()), // LEGACY: kept for schema compatibility
     
     // Basic Info
     title: v.string(),
@@ -100,28 +102,30 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-  .index("by_user", ["clerkId"])
-  .index("by_category", ["clerkId", "category"])
-  .index("by_favorite", ["clerkId", "isFavorite"])
+  .index("by_user", ["userId"])
+  .index("by_category", ["userId", "category"])
+  .index("by_favorite", ["userId", "isFavorite"])
   .index("by_sourceUrl", ["sourceUrl"])
-  .index("by_user_sourceUrl", ["clerkId", "sourceUrl"])
+  .index("by_user_sourceUrl", ["userId", "sourceUrl"])
   .searchIndex("search_title", { searchField: "title" }),
 
   // WEEKLY MEALS - Multi-Tenant (Individual meals, not grouped in plans)
   weeklyMeals: defineTable({
-    clerkId: v.string(),
+    userId: v.optional(v.id("users")),
+    clerkId: v.optional(v.string()), // LEGACY
     recipeId: v.id("recipes"),
     date: v.string(), // YYYY-MM-DD (clean date without suffix)
     scope: v.optional(v.union(v.literal("day"), v.literal("week"))), // "day" = specific day, "week" = for the whole week
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-  .index("by_user_date", ["clerkId", "date"])
-  .index("by_user_scope", ["clerkId", "scope"]), // New index for scope filtering
+  .index("by_user_date", ["userId", "date"])
+  .index("by_user_scope", ["userId", "scope"]),
 
   // SHOPPING LISTS - Multi-Tenant
   shoppingItems: defineTable({
-    clerkId: v.string(),
+    userId: v.optional(v.id("users")),
+    clerkId: v.optional(v.string()), // LEGACY
     name: v.string(),
     amount: v.optional(v.string()),
     normalizedName: v.string(),
@@ -130,12 +134,13 @@ export default defineSchema({
     recipeId: v.optional(v.id("recipes")), // Link to recipe
     createdAt: v.number(),
   })
-  .index("by_user", ["clerkId"])
-  .index("by_user_key", ["clerkId", "key"]),
+  .index("by_user", ["userId"])
+  .index("by_user_key", ["userId", "key"]),
 
   // CATEGORIES - Multi-Tenant (User Isolated)
   categories: defineTable({
-    clerkId: v.string(), // Owner
+    userId: v.optional(v.id("users")), // Owner
+    clerkId: v.optional(v.string()), // LEGACY
     name: v.string(),
     icon: v.string(), // emoji or icon name
     color: v.string(), // hex color
@@ -144,14 +149,15 @@ export default defineSchema({
     order: v.number(), // Sort order per user
     isActive: v.boolean(),
   })
-  .index("by_user", ["clerkId"])
-  .index("by_user_name", ["clerkId", "name"]),
+  .index("by_user", ["userId"])
+  .index("by_user_name", ["userId", "name"]),
 
   // CATEGORY STATS - User-Specific counts
   categoryStats: defineTable({
-    clerkId: v.string(),
+    userId: v.optional(v.id("users")),
+    clerkId: v.optional(v.string()), // LEGACY
     category: v.string(),
     count: v.number(),
   })
-  .index("by_user_category", ["clerkId", "category"]),
+  .index("by_user_category", ["userId", "category"]),
 });

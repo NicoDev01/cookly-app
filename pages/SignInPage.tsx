@@ -1,16 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { useSignIn, useAuth } from '@clerk/clerk-react';
+import React, { useState } from 'react';
+import { useAuthActions } from '@convex-dev/auth/react';
+import { useConvexAuth } from 'convex/react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useQuery } from 'convex/react';
-import { api } from '../convex/_generated/api';
 import { Input, IconButton } from '../components/ui/cookly';
 import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 
 export const SignInPage: React.FC = () => {
-  const { isLoaded: signInLoaded, signIn, setActive } = useSignIn();
-  const { isSignedIn, isLoaded: authLoaded } = useAuth();
+  const { signIn } = useAuthActions();
+  const { isAuthenticated } = useConvexAuth();
   const navigate = useNavigate();
-  const currentUser = useQuery(api.users.getCurrentUser);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,109 +18,52 @@ export const SignInPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  useEffect(() => {
-    if (authLoaded && isSignedIn) {
-      if (currentUser) {
-        navigate('/tabs/categories');
-      }
+  React.useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/tabs/categories', { replace: true });
     }
-  }, [authLoaded, isSignedIn, currentUser, navigate]);
+  }, [isAuthenticated, navigate]);
 
   const handleGoogleSignIn = async () => {
-    if (!signIn) return;
-
     setGoogleLoading(true);
-
     try {
-      let redirectUrl: string;
-      let redirectUrlComplete: string;
-
       if (Capacitor.isNativePlatform()) {
-        // Native Apps: IMMER das Custom URL Schema verwenden
-        // Clerk Allowlist: com.cookly.recipe://sso-callback
-        redirectUrl = 'com.cookly.recipe://sso-callback';
-        redirectUrlComplete = 'com.cookly.recipe://sso-callback';
-        console.log('[SignInPage] Native platform - using custom URL scheme');
+        // Native Android: signIn('google') gibt ein FormData-Objekt zurück mit einer redirect URL.
+        // Diese URL muss im externen Browser geöffnet werden (Google blockiert WebViews).
+        // Nach dem Login: Google → Convex Auth → com.cookly.recipe://auth-callback → App.
+        const result = await signIn('google', { redirectTo: 'com.cookly.recipe://auth-callback' });
+        // result ist ein FormData-Response mit einer redirect URL
+        if (result instanceof Response) {
+          const redirectUrl = result.headers.get('Location') || result.url;
+          if (redirectUrl) {
+            await Browser.open({ url: redirectUrl });
+            return; // Browser übernimmt, Loading-State bleibt bis Deep Link zurückkommt
+          }
+        }
+        setGoogleLoading(false);
       } else {
-        const origin = window.location.origin;
-        redirectUrl = `${origin}/sso-callback`;
-        redirectUrlComplete = `${origin}/tabs/categories`;
-        console.log('[SignInPage] Web platform, using origin:', origin);
+        await signIn('google');
       }
-
-      console.log('[SignInPage] OAuth redirectUrl:', redirectUrl);
-
-      await signIn.authenticateWithRedirect({
-        strategy: "oauth_google",
-        redirectUrl,
-        redirectUrlComplete,
-      });
-
     } catch (error) {
-      console.error('Google OAuth Error:', error);
+      console.error('[SignInPage] Google OAuth Error:', error);
       setGoogleLoading(false);
     }
   };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!signInLoaded || !signIn) return;
-
     setLoading(true);
     setError('');
 
-    if (isSignedIn) {
-      navigate('/tabs/categories');
-      return;
-    }
-
     try {
-      const result = await signIn.create({
-        identifier: email,
-        password,
-      });
-
-      if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
-        navigate('/tabs/categories');
-      } else if (result.status === 'needs_first_factor') {
-        setError('Bitte bestätige deine E-Mail');
-      }
+      await signIn('password', { email, password, flow: 'signIn' });
+      navigate('/tabs/categories', { replace: true });
     } catch (err: unknown) {
       console.error('SignIn Error:', err);
-
       let errorMessage = 'Anmeldung fehlgeschlagen. Bitte versuche es erneut.';
-
-      if (err && typeof err === 'object') {
-        if ('errors' in err && Array.isArray(err.errors)) {
-          const clerkError = err as { errors: Array<{ code?: string; message?: string; longMessage?: string }> };
-
-          const alreadySignedIn = clerkError.errors.some(e => e.code === 'session_exists');
-          if (alreadySignedIn) {
-            navigate('/tabs/categories');
-            return;
-          }
-
-          const invalidStrategy = clerkError.errors.some(e => 
-            e.message?.includes('verification strategy') || 
-            e.code === 'strategy_for_user_invalid'
-          );
-          if (invalidStrategy) {
-            errorMessage = 'Sitzungsfehler. Bitte lade die Seite neu.';
-            setTimeout(() => window.location.reload(), 1500);
-          } else {
-            const allMessages = clerkError.errors
-              .map(e => e.longMessage || e.message)
-              .filter(Boolean);
-            if (allMessages.length > 0) {
-              errorMessage = allMessages.join('\n');
-            }
-          }
-        } else if ('message' in err && typeof err.message === 'string') {
-          errorMessage = err.message;
-        }
+      if (err instanceof Error) {
+        errorMessage = err.message;
       }
-
       setError(errorMessage);
     } finally {
       setLoading(false);

@@ -1,18 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { useSignIn, useAuth } from '@clerk/clerk-react';
+import React, { useState } from 'react';
+import { useAuthActions } from '@convex-dev/auth/react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Input, Button, IconButton, Card, CardContent } from '../components/ui/cookly';
 
 type Phase = 'email' | 'reset';
 
 export const ForgotPasswordPage: React.FC = () => {
-  const { isLoaded: signInLoaded, signIn, setActive } = useSignIn();
-  const { isSignedIn, isLoaded: authLoaded } = useAuth();
+  const { signIn } = useAuthActions();
   const navigate = useNavigate();
 
   // Phase 1: Email input
   const [email, setEmail] = useState('');
-  
+
   // Phase 2: Code and password input
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
@@ -26,49 +25,23 @@ export const ForgotPasswordPage: React.FC = () => {
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Redirect if already signed in
-  useEffect(() => {
-    if (authLoaded && isSignedIn) {
-      navigate('/tabs/categories');
-    }
-  }, [authLoaded, isSignedIn, navigate]);
-
   // Phase 1: Send reset code
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!signInLoaded || !signIn) return;
-
     setLoading(true);
     setError('');
     setSuccess('');
 
     try {
-      await signIn.create({
-        strategy: 'reset_password_email_code',
-        identifier: email,
-      });
-
+      await signIn('password', { email, flow: 'reset' });
       setSuccess('Ein Reset-Code wurde an deine E-Mail gesendet.');
       setPhase('reset');
     } catch (err: unknown) {
       console.error('Send Reset Code Error:', err);
-
       let errorMessage = 'Fehler beim Senden des Reset-Codes. Bitte versuche es erneut.';
-
-      if (err && typeof err === 'object') {
-        if ('errors' in err && Array.isArray(err.errors)) {
-          const clerkError = err as { errors: Array<{ code?: string; message?: string; longMessage?: string }> };
-          const allMessages = clerkError.errors
-            .map(e => e.longMessage || e.message)
-            .filter(Boolean);
-          if (allMessages.length > 0) {
-            errorMessage = allMessages.join('\n');
-          }
-        } else if ('message' in err && typeof err.message === 'string') {
-          errorMessage = err.message;
-        }
+      if (err instanceof Error) {
+        errorMessage = err.message;
       }
-
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -78,15 +51,12 @@ export const ForgotPasswordPage: React.FC = () => {
   // Phase 2: Reset password with code
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!signInLoaded || !signIn) return;
 
-    // Validate passwords match
     if (password !== confirmPassword) {
       setError('Die Passwörter stimmen nicht überein.');
       return;
     }
 
-    // Validate password strength (minimum 8 characters)
     if (password.length < 8) {
       setError('Das Passwort muss mindestens 8 Zeichen lang sein.');
       return;
@@ -96,37 +66,14 @@ export const ForgotPasswordPage: React.FC = () => {
     setError('');
 
     try {
-      const result = await signIn.attemptFirstFactor({
-        strategy: 'reset_password_email_code',
-        code,
-        password,
-      });
-
-      if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
-        navigate('/tabs/categories');
-      } else {
-        setError('Unerwarteter Status. Bitte versuche es erneut.');
-      }
+      await signIn('password', { email, code, newPassword: password, flow: 'reset-verification' });
+      navigate('/tabs/categories', { replace: true });
     } catch (err: unknown) {
       console.error('Reset Password Error:', err);
-
       let errorMessage = 'Fehler beim Zurücksetzen des Passworts. Bitte versuche es erneut.';
-
-      if (err && typeof err === 'object') {
-        if ('errors' in err && Array.isArray(err.errors)) {
-          const clerkError = err as { errors: Array<{ code?: string; message?: string; longMessage?: string }> };
-          const allMessages = clerkError.errors
-            .map(e => e.longMessage || e.message)
-            .filter(Boolean);
-          if (allMessages.length > 0) {
-            errorMessage = allMessages.join('\n');
-          }
-        } else if ('message' in err && typeof err.message === 'string') {
-          errorMessage = err.message;
-        }
+      if (err instanceof Error) {
+        errorMessage = err.message;
       }
-
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -151,7 +98,7 @@ export const ForgotPasswordPage: React.FC = () => {
               {phase === 'email' ? 'Passwort vergessen?' : 'Passwort zurücksetzen'}
             </h2>
             <p className="cookly-text-caption mb-6">
-              {phase === 'email' 
+              {phase === 'email'
                 ? 'Gib deine E-Mail-Adresse ein, um einen Reset-Code zu erhalten.'
                 : 'Gib den Code aus der E-Mail und dein neues Passwort ein.'}
             </p>

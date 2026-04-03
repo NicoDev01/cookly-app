@@ -1,11 +1,12 @@
 "use node";
 import { action } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { v } from "convex/values";
 import { GoogleGenAI } from "@google/genai";
 import { Id } from "./_generated/dataModel";
 import { checkRateLimit, getRateLimitStatus } from "./rateLimiter";
 import { RECIPE_CATEGORIES } from "./constants";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
@@ -53,7 +54,7 @@ const extractCaptionFromPost = (post: Record<string, unknown>): string => {
   if (message && typeof message.text === "string" && message.text.trim().length > 0) {
     return message.text;
   }
-  
+
   // Fallback für normale Posts: text oder message als String
   if (typeof post.text === "string" && post.text.trim().length > 0) {
     return post.text;
@@ -67,7 +68,7 @@ const extractCaptionFromPost = (post: Record<string, unknown>): string => {
   if (typeof post.story === "string" && post.story.trim().length > 0) {
     return post.story;
   }
-  
+
   return "";
 };
 
@@ -83,7 +84,7 @@ const extractImageFromPost = (post: Record<string, unknown>): string => {
       return media.thumbnail;
     }
   }
-  
+
   // 2. Versuche short_form_video_context für Reels
   const videoContext = post.short_form_video_context as Record<string, unknown> | undefined;
   if (videoContext) {
@@ -103,7 +104,7 @@ const extractImageFromPost = (post: Record<string, unknown>): string => {
       return video.first_frame_thumbnail;
     }
   }
-  
+
   return "";
 };
 
@@ -116,17 +117,17 @@ export const scrapePost = action({
     // ============================================================
     // 1. Authentifizierung
     // ============================================================
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const authUserId = await getAuthUserId(ctx);
+    if (!authUserId) {
       throw new Error("NOT_AUTHENTICATED");
     }
-    const clerkId = identity.subject;
+    const userIdStr = authUserId.toString();
 
     // ============================================================
     // 2. Rate Limiting prüfen (10 Requests/Minute)
     // ============================================================
-    if (!checkRateLimit(clerkId)) {
-      const status = getRateLimitStatus(clerkId);
+    if (!checkRateLimit(userIdStr)) {
+      const status = getRateLimitStatus(userIdStr);
       throw new Error(JSON.stringify({
         type: "RATE_LIMIT_EXCEEDED",
         resetAt: status.resetAt,
@@ -144,14 +145,16 @@ export const scrapePost = action({
     // ============================================================
     // 4. Check if already exists (Cost Optimization)
     // ============================================================
-    const existingId = await ctx.runQuery(api.recipes.getBySourceUrl, { url: args.url, clerkId });
+    const user = await ctx.runQuery(internal.stripeInternal.getUserByAuthUserId, { authUserId: userIdStr });
+    if (!user) throw new Error("NOT_AUTHENTICATED");
+    const existingId = await ctx.runQuery(api.recipes.getBySourceUrl, { url: args.url, userId: user._id });
     if (existingId) {
       console.log(`Recipe already exists for ${args.url}, returning existing ID.`);
       return existingId;
     }
 
     console.log(`Starting Facebook import for: ${args.url}`);
-    
+
     // DEBUG: URL-Analyse für Diagnose
     const isShareUrl = args.url.includes("/share/r/") || args.url.includes("/share/v/");
     const shareIdMatch = args.url.match(/\/share\/[rv]\/([A-Za-z0-9]+)/);
@@ -230,14 +233,14 @@ export const scrapePost = action({
       }
 
       const post = items[0] as Record<string, unknown>;
-      
+
       // ===== DEBUG: Komplettes Post-Objekt loggen =====
       console.log("=== COMPLETE POST OBJECT ===");
       console.log(JSON.stringify(post, null, 2));
       console.log("=== POST OBJECT KEYS ===");
       console.log("Top-level keys:", Object.keys(post));
       // ================================================
-      
+
       // ===== DEBUG: URL-VALIDIERUNG - Prüfe ob richtiges Video =====
       const returnedUrl = post.url || post.postUrl || post.inputUrl;
       const pageName = post.pageName;
@@ -252,7 +255,7 @@ export const scrapePost = action({
         isLikelyWrongVideo: pageName === "reel" && requestedShareId !== null,
       });
       // ==============================================================
-      
+
       console.log("Facebook post debug", {
         hasMessage: !!post.message,
         messageType: typeof post.message,
@@ -375,7 +378,7 @@ export const scrapePost = action({
     // 8. Save Recipe (sourceUrl gesetzt = link_imports Counter!)
     // ============================================================
     // Final duplicate check right before creating (race condition protection)
-    const finalExisting = await ctx.runQuery(api.recipes.getBySourceUrl, { url: args.url, clerkId });
+    const finalExisting = await ctx.runQuery(api.recipes.getBySourceUrl, { url: args.url, userId: user._id });
     if (finalExisting) {
       console.log("Recipe already created by parallel request, returning existing");
       return finalExisting;

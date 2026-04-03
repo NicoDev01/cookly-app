@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { App } from '@capacitor/app';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -16,15 +16,16 @@ type NavState = {
 /**
  * Native Android Back Button Handler für Cookly
  *
+ * FIX: Listener wird EINMALIG registriert (mount-only).
+ * Aktuelle Werte (location, isAnyModalOpen) werden über Refs gelesen.
+ * Das verhindert die Endlosschleife von Listener-Remove/Add bei jeder Navigation.
+ *
  * Navigation Hierarchy (Priority Order):
  * 1. MODAL OPEN → Close Modal (HIGHEST PRIORITY)
  * 2. RecipePage → Historisch zurück (favorites/weekly/category)
  * 3. Subscribe → Profil
  * 4. Other Tabs → Kategorien (Root)
  * 5. Root (Kategorien) → App minimieren (exitApp)
- *
- * @param isAnyModalOpen - Zustand ob ein Modal offen ist
- * @param closeModals - Function um alle Modals zu schließen
  */
 export function useBackButton({
   isAnyModalOpen,
@@ -36,104 +37,87 @@ export function useBackButton({
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Prüfung: Sind wir auf der Root Page?
-  const isRootPage = () => {
-    return location.pathname === '/tabs/categories' || location.pathname === '/';
-  };
+  // Refs für aktuelle Werte — werden im Listener-Callback gelesen
+  const locationRef = useRef(location);
+  const isAnyModalOpenRef = useRef(isAnyModalOpen);
+  const closeModalsRef = useRef(closeModals);
+  const navigateRef = useRef(navigate);
 
-  // Historische Back-Navigation (für RecipePage)
-  const handleHistoricalBack = useCallback(() => {
-    const state = location.state as NavState;
+  // Refs bei jedem Render aktualisieren
+  locationRef.current = location;
+  isAnyModalOpenRef.current = isAnyModalOpen;
+  closeModalsRef.current = closeModals;
+  navigateRef.current = navigate;
 
-    // Von Favorites/Weekly gekommen? → Dorthin zurück
-    if (state?.from === 'favorites') {
-      navigate('/tabs/favorites');
-      return true;
-    }
-    if (state?.from === 'weekly') {
-      navigate('/tabs/weekly');
-      return true;
-    }
-
-    // Von Kategorie gekommen? → Dorthin zurück
-    if (state?.fromCategory) {
-      navigate(`/category/${encodeURIComponent(state.fromCategory)}`);
-      return true;
-    }
-
-    return false; // Kein historischer Context
-  }, [navigate, location.state]);
-
-  // Standard Back-Navigation (alle andere Pages)
-  const handleStandardBack = useCallback(() => {
-    const currentPath = location.pathname;
-
-    // SUBSCRIBE → Profil
-    if (currentPath.startsWith('/tabs/subscribe')) {
-      navigate('/tabs/profile');
-      return true;
-    }
-
-    // ALLE ANDEREN TABS/ROUTES → Kategorien (Root)
-    navigate('/tabs/categories');
-    return true;
-  }, [navigate, location.pathname]);
-
-  // Haptisches Feedback bei Back Press
-  const triggerHapticFeedback = useCallback(() => {
-    if (!Capacitor.isNativePlatform()) return;
-    Haptics.impact({ style: ImpactStyle.Light }).catch(() => {
-      // Ignore haptic errors (optional feature)
-    });
-  }, []);
-
-  // Haupt-Handler für den Back Button
+  // Listener EINMALIG registrieren (mount-only)
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) {
       return;
     }
 
-    const setupHandler = async () => {
-      const handler = await App.addListener('backButton', () => {
-        // Haptisches Feedback
-        triggerHapticFeedback();
+    let handler: { remove: () => void } | null = null;
 
-        // 1. HÖCHSTE PRIORITÄT: Modal schließen
-        if (isAnyModalOpen) {
-          closeModals();
+    App.addListener('backButton', () => {
+      // Haptisches Feedback
+      Haptics.impact({ style: ImpactStyle.Light }).catch(() => {});
+
+      const loc = locationRef.current;
+      const nav = navigateRef.current;
+      const modalOpen = isAnyModalOpenRef.current;
+      const closeModalsFn = closeModalsRef.current;
+
+      // 1. HÖCHSTE PRIORITÄT: Modal schließen
+      if (modalOpen) {
+        closeModalsFn();
+        return;
+      }
+
+      // 2. RecipePage → Historische Navigation
+      if (loc.pathname.startsWith('/recipe/')) {
+        const state = loc.state as NavState;
+
+        if (state?.from === 'favorites') {
+          nav('/tabs/favorites');
+          return;
+        }
+        if (state?.from === 'weekly') {
+          nav('/tabs/weekly');
+          return;
+        }
+        if (state?.fromCategory) {
+          nav(`/category/${encodeURIComponent(state.fromCategory)}`);
           return;
         }
 
-        // 2. RecipePage → Historische Navigation
-        if (location.pathname.startsWith('/recipe/')) {
-          const handled = handleHistoricalBack();
-          if (handled) return;
-          navigate('/tabs/categories');
-          return;
-        }
+        nav('/tabs/categories');
+        return;
+      }
 
-        // 3. ROOT PAGE → App minimieren (nicht beenden!)
-        // Wir prüfen den Pfad direkt, NICHT canGoBack (weil navigate() die Browser History nicht korrekt aktualisiert)
-        if (isRootPage()) {
-          // minimizeApp() nur auf Android verfügbar - hält die App im Speicher
-          App.minimizeApp().catch(() => {
-            // Fallback: Falls minimizeApp nicht verfügbar (iOS), exitApp verwenden
-            App.exitApp();
-          });
-          return;
-        }
+      // 3. ROOT PAGE → App minimieren
+      const isRootPage = loc.pathname === '/tabs/categories' || loc.pathname === '/';
+      if (isRootPage) {
+        App.minimizeApp().catch(() => {
+          App.exitApp();
+        });
+        return;
+      }
 
-        // 4. Standard Navigation zu Root
-        handleStandardBack();
-      });
+      // 4. Standard Navigation zu Root
+      // SUBSCRIBE → Profil
+      if (loc.pathname.startsWith('/tabs/subscribe')) {
+        nav('/tabs/profile');
+        return;
+      }
 
-      return handler;
-    };
+      // ALLE ANDEREN → Kategorien
+      nav('/tabs/categories');
+    }).then((h) => {
+      handler = h;
+    });
 
-    const handlePromise = setupHandler();
-
+    // Cleanup NUR bei Unmount
     return () => {
-      handlePromise.then((handle) => handle?.remove());
+      handler?.remove();
     };
-  }, [isAnyModalOpen, location, handleHistoricalBack, handleStandardBack, navigate, closeModals, triggerHapticFeedback]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 }

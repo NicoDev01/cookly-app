@@ -2,6 +2,7 @@ import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import Stripe from "stripe";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 // ============================================================
 // INLINE PRICING - Keine Price-IDs aus Env-Variablen nötig!
@@ -60,15 +61,14 @@ export const createCheckoutSession = action({
     cancelUrl: v.string(),
   },
   handler: async (ctx, args): Promise<{ checkoutUrl: string }> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const authUserId = await getAuthUserId(ctx);
+    if (!authUserId) {
       throw new Error("Not authenticated");
     }
-    const clerkId = identity.subject;
 
     // User laden und Stripe Customer ID holen/erstellen
-    const user = await ctx.runQuery(internal.stripeInternal.getUserByClerkId, {
-      clerkId,
+    const user = await ctx.runQuery(internal.stripeInternal.getUserByAuthUserId, {
+      authUserId: authUserId.toString(),
     });
 
     let stripeCustomerId = user?.stripeCustomerId;
@@ -76,15 +76,13 @@ export const createCheckoutSession = action({
     // Falls keine Customer ID existiert, neue erstellen
     if (!stripeCustomerId) {
       const customer = await getStripe().customers.create({
-        email: identity.email,
-        name: identity.name,
-        metadata: { clerkId },
+        metadata: { convexUserId: user?._id ?? "" },
       });
       stripeCustomerId = customer.id;
 
       // Speichern in Convex
-      await ctx.runMutation(internal.users.updateSubscriptionByClerkId, {
-        clerkId,
+      await ctx.runMutation(internal.users.updateSubscriptionByConvexUserId, {
+        convexUserId: user!._id,
         stripeCustomerId,
         subscription: user?.subscription || "free",
         subscriptionStatus: user?.subscriptionStatus || "active",
@@ -116,12 +114,12 @@ export const createCheckoutSession = action({
         },
       ],
       metadata: {
-        clerkId,
+        convexUserId: user!._id,
         planId: args.planId,
       },
       subscription_data: {
         metadata: {
-          clerkId,
+          convexUserId: user!._id,
           planId: args.planId,
         },
       },
@@ -146,14 +144,13 @@ export const createPortalSession = action({
     returnUrl: v.string(),
   },
   handler: async (ctx, args): Promise<{ portalUrl: string }> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const authUserId = await getAuthUserId(ctx);
+    if (!authUserId) {
       throw new Error("Not authenticated");
     }
-    const clerkId = identity.subject;
 
-    const user = await ctx.runQuery(internal.stripeInternal.getUserByClerkId, {
-      clerkId,
+    const user = await ctx.runQuery(internal.stripeInternal.getUserByAuthUserId, {
+      authUserId: authUserId.toString(),
     });
 
     if (!user?.stripeCustomerId) {
@@ -179,14 +176,13 @@ export const createPortalSession = action({
 export const cancelSubscription = action({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const authUserId = await getAuthUserId(ctx);
+    if (!authUserId) {
       throw new Error("Not authenticated");
     }
-    const clerkId = identity.subject;
 
-    const user = await ctx.runQuery(internal.stripeInternal.getUserByClerkId, {
-      clerkId,
+    const user = await ctx.runQuery(internal.stripeInternal.getUserByAuthUserId, {
+      authUserId: authUserId.toString(),
     });
 
     if (!user?.stripeSubscriptionId) {
@@ -200,7 +196,7 @@ export const cancelSubscription = action({
 
     // In Convex markieren dass Counter bei Downgrade resetted werden sollen
     await ctx.runMutation(internal.users.markForDowngrade, {
-      clerkId,
+      userId: user._id,
     });
 
     return { success: true };
@@ -223,11 +219,11 @@ export const handleWebhookEvent = internalAction({
       // ============================================================
       case "checkout.session.completed": {
         const session = args.data as Stripe.Checkout.Session;
-        const clerkId = session.metadata?.clerkId;
+        const convexUserId = session.metadata?.convexUserId;
         const planId = session.metadata?.planId as PlanId | undefined;
 
-        if (!clerkId) {
-          console.error("[Stripe] Missing clerkId in checkout session metadata");
+        if (!convexUserId) {
+          console.error("[Stripe] Missing convexUserId in checkout session metadata");
           return;
         }
 
@@ -266,8 +262,8 @@ export const handleWebhookEvent = internalAction({
           }
         }
 
-        await ctx.runMutation(internal.users.updateSubscriptionByClerkId, {
-          clerkId,
+        await ctx.runMutation(internal.users.updateSubscriptionByConvexUserId, {
+          convexUserId,
           subscription,
           subscriptionStatus: "active",
           subscriptionStartDate: Date.now(),
@@ -276,7 +272,7 @@ export const handleWebhookEvent = internalAction({
           stripeCustomerId: session.customer as string,
         });
 
-        console.log(`[Stripe] User ${clerkId} upgraded to ${subscription} until ${new Date(periodEnd).toISOString()}`);
+        console.log(`[Stripe] User ${convexUserId} upgraded to ${subscription} until ${new Date(periodEnd).toISOString()}`);
         break;
       }
 
@@ -338,11 +334,11 @@ export const handleWebhookEvent = internalAction({
         // Counter resetten (nur wenn markiert)
         if (user.usageStats?.resetOnDowngrade) {
           await ctx.runMutation(internal.users.resetUsageCounters, {
-            clerkId: user.clerkId,
+            userId: user._id,
           });
         }
 
-        console.log(`[Stripe] User ${user.clerkId} downgraded to Free. Counters reset: ${user.usageStats?.resetOnDowngrade}`);
+        console.log(`[Stripe] User ${user._id} downgraded to Free. Counters reset: ${user.usageStats?.resetOnDowngrade}`);
         break;
       }
 

@@ -5,9 +5,9 @@ import { SplashScreen } from '@capacitor/splash-screen';
 import { LottieSplashScreen } from 'capacitor-lottie-splash-screen';
 import { App as CapacitorApp } from '@capacitor/app';
 import { LocalNotifications, LocalNotificationActionPerformed } from '@capacitor/local-notifications';
-import { useNavigate, Routes, Route, Navigate, Outlet } from 'react-router-dom';
-import { useAuth } from "@clerk/clerk-react";
+import { useNavigate, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useConvexAuth, useQuery, useMutation } from 'convex/react';
+import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from './convex/_generated/api';
 import { initDeepLinkHandler, removeDeepLinkHandler } from './services/deepLinkHandler';
 import { useBackButton } from './hooks/useBackButton';
@@ -31,116 +31,79 @@ const SignUpPage = React.lazy(() => import('./pages/SignUpPage'));
 const ForgotPasswordPage = React.lazy(() => import('./pages/ForgotPasswordPage'));
 const WelcomePage = React.lazy(() => import('./pages/WelcomePage'));
 const WelcomeScreen = React.lazy(() => import('./components/onboarding/WelcomeScreen'));
-const SSOCallbackPage = React.lazy(() => import('./pages/SSOCallbackPage'));
-const SSOBouncerPage = React.lazy(() => import('./pages/SSOBouncerPage'));
 const TabsLayout = React.lazy(() => import('./components/TabsLayout'));
 
+// Verarbeitet den OAuth-Code nach Google Login (Android Deep Link)
+const AuthCallbackPage: React.FC = () => {
+  const { isAuthenticated } = useConvexAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { signIn } = useAuthActions();
+  const hasProcessed = useRef(false);
 
+  useEffect(() => {
+    if (hasProcessed.current) return;
+    hasProcessed.current = true;
+
+    const params = new URLSearchParams(location.search);
+    const code = params.get('code');
+
+    if (!code) {
+      navigate('/welcome', { replace: true });
+      return;
+    }
+
+    // Convex Auth: code gegen Session tauschen
+    signIn('google', { code })
+      .then(() => navigate('/tabs/categories', { replace: true }))
+      .catch((err) => {
+        console.error('[AuthCallback] Code exchange failed:', err);
+        navigate('/sign-in', { replace: true });
+      });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Wenn bereits eingeloggt (race condition), direkt weiterleiten
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/tabs/categories', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
+
+  return null;
+};
 
 const RootRedirect: React.FC = () => {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoading, isAuthenticated } = useConvexAuth();
 
-  if (!isLoaded) {
-    return null;
-  }
-
-  if (isSignedIn) {
-    return <Navigate to="/tabs/categories" replace />;
-  }
-
-  // OAuth-Callback erkennen und direkt zu /sso-callback leiten
-  // Clerk verwendet verschiedene Parameter: __clerk_handshake, __clerk_db_jwt, state, code
-  const currentUrl = window.location.href;
-  const isOAuthCallback = 
-    currentUrl.includes('__clerk_handshake') || 
-    currentUrl.includes('__clerk_db_jwt') ||
-    currentUrl.includes('/sso-callback');
-  
-  if (isOAuthCallback) {
-    const url = new URL(currentUrl);
-    const params = url.searchParams.toString();
-    console.log('[RootRedirect] OAuth token detected, routing to /sso-callback');
-    return <Navigate to={`/sso-callback?${params}`} replace />;
-  }
-
+  if (isLoading) return null;
+  if (isAuthenticated) return <Navigate to="/tabs/categories" replace />;
   return <Navigate to="/welcome" replace />;
 };
 
 const ProtectedLayout: React.FC = () => {
   const navigate = useNavigate();
-  const { isSignedIn } = useAuth();
   const { isLoading, isAuthenticated } = useConvexAuth();
   const currentUser = useQuery(api.users.getCurrentUser);
-  const syncUser = useMutation(api.users.syncUserIfNotExists);
+  const createUser = useMutation(api.users.createOrSyncUser);
   const [hasTriedSync, setHasTriedSync] = useState(false);
 
   useEffect(() => {
-    // Nur redirect wenn BEIDE (Clerk UND Convex) bestätigen: nicht eingeloggt
-    // Verhindert Race Condition: Clerk ist sofort isSignedIn nach setActive(),
-    // aber Convex braucht noch ~200ms für den Token-Austausch
-    if (!isLoading && !isAuthenticated && !isSignedIn) {
+    if (!isLoading && !isAuthenticated) {
       navigate('/sign-in', { replace: true });
     }
-  }, [isLoading, isAuthenticated, isSignedIn, navigate]);
+  }, [isLoading, isAuthenticated, navigate]);
 
-  // Sync user if authenticated but not in Convex yet
-  // Exponential retry: 300ms → 600ms → 1200ms (max 3 retries)
   useEffect(() => {
-    const checkAndSyncUser = async () => {
-      // FIX: Auch bei currentUser === null (gefunden aber leer) syncen
-      if (!isLoading && isAuthenticated && (currentUser === undefined || currentUser === null) && !hasTriedSync) {
-        console.log('[ProtectedLayout] User authenticated but not found in Convex, starting exponential retry...');
-        setHasTriedSync(true);
+    if (!isLoading && isAuthenticated && currentUser === null && !hasTriedSync) {
+      setHasTriedSync(true);
+      createUser().catch(console.error);
+    }
+  }, [isLoading, isAuthenticated, currentUser, hasTriedSync, createUser]);
 
-        const retryDelays = [300, 600, 1200]; // Exponential backoff
-        let synced = false;
-
-        for (let attempt = 0; attempt < retryDelays.length && !synced; attempt++) {
-          const delay = retryDelays[attempt];
-          console.log(`[ProtectedLayout] Attempt ${attempt + 1}/${retryDelays.length}: waiting ${delay}ms...`);
-          
-          await new Promise(resolve => setTimeout(resolve, delay));
-
-          // Check if user appeared after wait (reactive query will update currentUser)
-          // Note: We need to check the current value, not the closure value
-          // The useEffect re-runs when currentUser changes, so if it appears, we exit
-          if (currentUser !== undefined && currentUser !== null) {
-            console.log(`[ProtectedLayout] ✅ User appeared after attempt ${attempt + 1}`);
-            synced = true;
-            break;
-          }
-        }
-
-        // If still no user after all retries, sync manually
-        if (!synced && (currentUser === undefined || currentUser === null)) {
-          try {
-            console.log('[ProtectedLayout] All retries exhausted, syncing user manually...');
-            await syncUser();
-            console.log('[ProtectedLayout] ✅ User synced successfully');
-          } catch (error) {
-            console.error('[ProtectedLayout] ❌ Sync failed:', error);
-          }
-        }
-      }
-    };
-    checkAndSyncUser();
-  }, [isLoading, isAuthenticated, currentUser, hasTriedSync, syncUser]);
-
-  // While auth syncs, native Lottie splash is visible in background
-  if (isLoading || (isSignedIn && !isAuthenticated)) {
+  if (isLoading || !isAuthenticated || currentUser === undefined || currentUser === null) {
     return null;
   }
 
-  if (!isAuthenticated) {
-    return null;
-  }
-
-  // FIX: currentUser === null abfangen (User noch nicht in DB)
-  if (currentUser === undefined || currentUser === null) {
-    return null;
-  }
-
-  // Redirect to onboarding if not completed
   if (!currentUser.onboardingCompleted) {
     return <Navigate to="/onboarding" replace />;
   }
@@ -157,92 +120,91 @@ const AppContent: React.FC = () => {
   const { isAnyModalOpen, closeAllModals } = useModal();
   useBackButton({ isAnyModalOpen, closeModals: closeAllModals });
 
+  // Ref für navigate — wird in Listener-Callbacks gelesen
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+
+  // Listener EINMALIG registrieren (mount-only)
   useEffect(() => {
-    initDeepLinkHandler(navigate);
+    if (!Capacitor.isNativePlatform()) return;
+
+    // Deep Link Handler registrieren
+    initDeepLinkHandler((path: string) => navigateRef.current(path));
 
     // Notification Channel für Android 8+ erstellen
-    if (Capacitor.isNativePlatform()) {
-      createNotificationChannel();
-    }
+    createNotificationChannel();
 
-    // Notification Action Listener - Deep Linking wenn User auf Notification klickt
-    const setupNotificationListener = async () => {
-      if (!Capacitor.isNativePlatform()) return;
+    // Listener-Handles für Cleanup sammeln
+    const cleanupFns: Array<() => void> = [];
 
-      try {
-        await LocalNotifications.addListener(
-          'localNotificationActionPerformed',
-          (notification: LocalNotificationActionPerformed) => {
-            console.log('[Notifications] Notification action performed:', notification);
-            
-            // Extrahiere recipeId aus den extra Daten
-            const extra = notification.notification.extra;
-            if (extra?.recipeId && extra?.type === 'recipe-import') {
-              console.log('[Notifications] Navigating to recipe:', extra.recipeId);
-              navigate(`/recipe/${extra.recipeId}`);
-            }
-          }
-        );
-        console.log('[Notifications] Action listener registered');
-      } catch (error) {
-        console.error('[Notifications] Failed to setup notification listener:', error);
-      }
-    };
-    setupNotificationListener();
-
-    // Helper to check for intents (Share Target)
-    const checkIntent = async (source: 'cold-start' | 'resume') => {
-        if (!Capacitor.isNativePlatform()) return;
-        
-        try {
-            intentCheckCountRef.current += 1;
-            const checkId = intentCheckCountRef.current;
-            console.log(`[SendIntent] checkIntent #${checkId} (${source})`);
-
-            const result = await SendIntent.checkSendIntentReceived();
-            console.log(`[SendIntent] checkIntent #${checkId} result:`, result);
-            if (result && (result.title || result.description || result.url)) {
-                console.log('SendIntent received:', result);
-                const { title, description, url } = result;
-
-                const signature = `${title ?? ''}|${description ?? ''}|${url ?? ''}`;
-                const isDuplicate = lastIntentSignatureRef.current === signature;
-                console.log(`[SendIntent] checkIntent #${checkId} has intent (duplicate=${isDuplicate})`, { signature });
-                lastIntentSignatureRef.current = signature;
-                
-                // Redirect to ShareTargetPage with query params
-                const params = new URLSearchParams();
-                if (title) params.append('title', title);
-                if (description) params.append('text', description); 
-                if (url) params.append('url', url);
-                
-                navigate(`/share-target?${params.toString()}`);
-            }
-        } catch (err) {
-            console.error('Error checking send intent:', err);
+    // Notification Action Listener
+    LocalNotifications.addListener(
+      'localNotificationActionPerformed',
+      (notification: LocalNotificationActionPerformed) => {
+        console.log('[Notifications] Notification action performed:', notification);
+        const extra = notification.notification.extra;
+        if (extra?.recipeId && extra?.type === 'recipe-import') {
+          console.log('[Notifications] Navigating to recipe:', extra.recipeId);
+          navigateRef.current(`/recipe/${extra.recipeId}`);
         }
+      }
+    ).then((handle) => {
+      cleanupFns.push(() => handle.remove());
+    });
+
+    // SendIntent Check Helper
+    const checkIntent = async (source: 'cold-start' | 'resume') => {
+      try {
+        intentCheckCountRef.current += 1;
+        const checkId = intentCheckCountRef.current;
+        console.log(`[SendIntent] checkIntent #${checkId} (${source})`);
+
+        const result = await SendIntent.checkSendIntentReceived();
+        console.log(`[SendIntent] checkIntent #${checkId} result:`, result);
+        if (result && (result.title || result.description || result.url)) {
+          console.log('SendIntent received:', result);
+          const { title, description, url } = result;
+
+          const signature = `${title ?? ''}|${description ?? ''}|${url ?? ''}`;
+          const isDuplicate = lastIntentSignatureRef.current === signature;
+          console.log(`[SendIntent] checkIntent #${checkId} has intent (duplicate=${isDuplicate})`, { signature });
+          lastIntentSignatureRef.current = signature;
+
+          const params = new URLSearchParams();
+          if (title) params.append('title', title);
+          if (description) params.append('text', description);
+          if (url) params.append('url', url);
+
+          navigateRef.current(`/share-target?${params.toString()}`);
+        }
+      } catch (err) {
+        // "No processing needed" ist kein echter Fehler — ignorieren
+        if (err instanceof Error && err.message.includes('No processing needed')) {
+          return;
+        }
+        console.error('Error checking send intent:', err);
+      }
     };
 
     // Initial check (Cold Start)
     checkIntent('cold-start');
 
     // Listen for App Resume (Warm Start)
-    const setupListener = async () => {
-        if (!Capacitor.isNativePlatform()) return;
-        
-        await CapacitorApp.addListener('appStateChange', ({ isActive }) => {
-            if (isActive) {
-                console.log('App resumed, checking for intent...');
-                checkIntent('resume');
-            }
-        });
-    };
-    setupListener();
+    CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) {
+        console.log('App resumed, checking for intent...');
+        checkIntent('resume');
+      }
+    }).then((handle) => {
+      cleanupFns.push(() => handle.remove());
+    });
 
+    // Cleanup NUR bei Unmount
     return () => {
       removeDeepLinkHandler();
+      cleanupFns.forEach((fn) => fn());
     };
-  }, [navigate]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Suspense fallback={null}>
@@ -252,30 +214,21 @@ const AppContent: React.FC = () => {
         <Route path="/sign-in" element={<SignInPage />} />
         <Route path="/sign-up" element={<SignUpPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        {/* Bouncer-Seite für OAuth - leitet von HTTPS zur nativen App weiter */}
-        <Route path="/sso-bouncer" element={<SSOBouncerPage />} />
-        {/* Interne OAuth-Callback-Seite - wird von der nativen App verwendet */}
-        <Route path="/sso-callback" element={<SSOCallbackPage />} />
         <Route path="/onboarding" element={<WelcomeScreen />} />
+        <Route path="/auth-callback" element={<AuthCallbackPage />} />
 
         <Route element={<ProtectedLayout />}>
-          {/*
-            Shared Shell: Use TabsLayout as the persistent container for ALL protected routes.
-            TabsLayout handles manual rendering for smooth transitions.
-          */}
           <Route element={<TabsLayout />}>
             <Route path="category/:category" element={<CategoryRecipesPage />} />
             <Route path="recipe/:id" element={<RecipePage />} />
             <Route path="share-target" element={<ShareTargetPage />} />
 
-            {/* Redirects to /tabs/* routes */}
             <Route path="favorites" element={<Navigate to="/tabs/favorites" replace />} />
             <Route path="weekly" element={<Navigate to="/tabs/weekly" replace />} />
             <Route path="shopping" element={<Navigate to="/tabs/shopping" replace />} />
             <Route path="profile" element={<Navigate to="/tabs/profile" replace />} />
             <Route path="subscribe" element={<Navigate to="/tabs/subscribe" replace />} />
 
-            {/* Tab routes - handled manually in TabsLayout for smooth transitions */}
             <Route path="tabs/*" element={<Outlet />} />
           </Route>
         </Route>
@@ -291,63 +244,47 @@ const App: React.FC = () => {
     console.error('Application Error:', error, errorInfo);
   }, []);
 
-  const { isLoaded: clerkLoaded, isSignedIn } = useAuth();
   const { isLoading: convexAuthLoading, isAuthenticated } = useConvexAuth();
   const currentUser = useQuery(api.users.getCurrentUser);
 
-  // PREFETCH: Load categories during splash for instant display
-  // CRITICAL: Only fetch when authenticated to avoid "Not authenticated" error
-  // This eliminates the "spinner gap" after splash ends
-  const shouldFetchCategories = isSignedIn && isAuthenticated;
+  const shouldFetchCategories = isAuthenticated && !!currentUser;
   useQuery(api.categories.getCategoriesWithStats, shouldFetchCategories ? {} : "skip");
-  // PREFETCH: api.categories.list für ShareTargetPage – sofort aus Cache verfügbar
   useQuery(api.categories.list, shouldFetchCategories ? {} : "skip");
 
-  // Track if splash has been hidden to prevent duplicate calls
   const splashHiddenRef = useRef(false);
 
-  // Centralized App Readiness Logic
-  // This determines when we are TRULY ready to show the app content to the user
-  // preventing any flicker or "black screen" issues.
   const isAppReady = React.useMemo(() => {
-    // 1. Clerk must be loaded to know if we are signed in or not
-    if (!clerkLoaded) return false;
-
-    // 2. If NOT signed in, we are ready to show the SignIn/Welcome pages
-    if (!isSignedIn) return true;
-
-    // 3. If Signed In, we must wait for Convex to accept the token
     if (convexAuthLoading) return false;
-    
-    // 4. If Convex claims we aren't authenticated (despite Clerk saying so), wait/sync
-    if (!isAuthenticated) return false;
-
-    // 5. Finally, we need the user data to be loaded (or confirmed null)
-    // Undefined means "loading", Null means "not found/new user" (handled by ProtectedLayout)
+    if (!isAuthenticated) return true;
     if (currentUser === undefined) return false;
-
     return true;
-  }, [clerkLoaded, isSignedIn, convexAuthLoading, isAuthenticated, currentUser]);
+  }, [convexAuthLoading, isAuthenticated, currentUser]);
 
-  // Effect: Hide Native Splash Screen ONLY when App is fully ready
-  // With smooth fade-out transition for buttery feel
   useEffect(() => {
     if (isAppReady && !splashHiddenRef.current) {
       splashHiddenRef.current = true;
 
-      // Phase 1: Fade-out duration (300ms for buttery smooth transition)
-      const fadeTimeout = setTimeout(() => {
-        SplashScreen.hide();
-        LottieSplashScreen.hide();
-        console.log('[Splash] Smooth fade-out complete - app visible');
-      }, 300);
+      const hideSplash = async () => {
+        try {
+          await SplashScreen.hide();
+        } catch (e) {
+          console.warn('[Splash] SplashScreen.hide() failed:', e);
+        }
+        try {
+          await LottieSplashScreen.hide();
+        } catch (e) {
+          console.warn('[Splash] LottieSplashScreen.hide() failed:', e);
+        }
+        console.log('[Splash] Splash hidden - app visible');
+      };
 
-      // Phase 2: SAFETY NET - force hide if something goes wrong (5s max)
-      const safetyTimeout = setTimeout(() => {
+      const fadeTimeout = setTimeout(hideSplash, 300);
+
+      const safetyTimeout = setTimeout(async () => {
         console.warn('[Splash] Safety timeout triggered - forcing splash hide');
-        SplashScreen.hide();
-        LottieSplashScreen.hide();
-      }, 5000);
+        try { await SplashScreen.hide(); } catch { /* ignore */ }
+        try { await LottieSplashScreen.hide(); } catch { /* ignore */ }
+      }, 15000);
 
       return () => {
         clearTimeout(fadeTimeout);
@@ -362,11 +299,7 @@ const App: React.FC = () => {
         <ModalProvider>
           <NotificationProvider>
             <div className="antialiased text-gray-900 dark:text-gray-100 min-h-screen bg-background-light dark:bg-background-dark relative">
-
-              {/* Main App Content - Native Lottie splash runs in background until isAppReady = true */}
-              {/* No React overlay needed - Lottie provides smooth visual continuity */}
               <AppContent />
-
             </div>
           </NotificationProvider>
         </ModalProvider>

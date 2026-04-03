@@ -1,25 +1,37 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
+import { Id } from "./_generated/dataModel";
 
-// Get shopping list for current user
+async function getAuthenticatedUserId(ctx: any): Promise<Id<"users">> {
+  const authUserId = await getAuthUserId(ctx);
+  if (!authUserId) throw new Error("Not authenticated");
+  const user = await ctx.db
+    .query("users")
+    .withIndex("by_authUserId", (q: any) => q.eq("authUserId", authUserId.toString()))
+    .first();
+  if (!user) throw new Error("User not found");
+  return user._id;
+}
+
 export const getShoppingList = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return [];
-    }
+    const authUserId = await getAuthUserId(ctx);
+    if (!authUserId) return [];
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_authUserId", (q: any) => q.eq("authUserId", authUserId.toString()))
+      .first();
+    if (!user) return [];
 
-    const items = await ctx.db
+    return await ctx.db
       .query("shoppingItems")
-      .withIndex("by_user", (q) => q.eq("clerkId", identity.subject))
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect();
-
-    return items;
   },
 });
 
-// Add shopping item
 export const addShoppingItem = mutation({
   args: {
     name: v.string(),
@@ -27,29 +39,21 @@ export const addShoppingItem = mutation({
     recipeId: v.optional(v.id("recipes")),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    const userId = await getAuthenticatedUserId(ctx);
 
-    // Normalize for deduplication
     const normalizedName = args.name.toLowerCase().trim();
     const normalizedAmount = args.amount?.toLowerCase().trim() || "";
     const key = `${normalizedName}|${normalizedAmount}`;
 
-    // Check if item already exists (user-specific)
     const existing = await ctx.db
       .query("shoppingItems")
-      .withIndex("by_user_key", (q) => q.eq("clerkId", identity.subject).eq("key", key))
+      .withIndex("by_user_key", (q) => q.eq("userId", userId).eq("key", key))
       .first();
 
-    if (existing) {
-      // Item already exists, don't duplicate
-      return existing._id;
-    }
+    if (existing) return existing._id;
 
-    const itemId = await ctx.db.insert("shoppingItems", {
-      clerkId: identity.subject,
+    return await ctx.db.insert("shoppingItems", {
+      userId,
       name: args.name,
       amount: args.amount,
       normalizedName,
@@ -58,12 +62,9 @@ export const addShoppingItem = mutation({
       recipeId: args.recipeId,
       createdAt: Date.now(),
     });
-
-    return itemId;
   },
 });
 
-// Toggle shopping item by name and amount (add if not exists, remove if exists)
 export const toggleShoppingItemByDetails = mutation({
   args: {
     name: v.string(),
@@ -71,30 +72,23 @@ export const toggleShoppingItemByDetails = mutation({
     recipeId: v.optional(v.id("recipes")),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    const userId = await getAuthenticatedUserId(ctx);
 
-    // Normalize for deduplication
     const normalizedName = args.name.toLowerCase().trim();
     const normalizedAmount = args.amount?.toLowerCase().trim() || "";
     const key = `${normalizedName}|${normalizedAmount}`;
 
-    // Check if item already exists (user-specific)
     const existing = await ctx.db
       .query("shoppingItems")
-      .withIndex("by_user_key", (q) => q.eq("clerkId", identity.subject).eq("key", key))
+      .withIndex("by_user_key", (q) => q.eq("userId", userId).eq("key", key))
       .first();
 
     if (existing) {
-      // Item exists, remove it (toggle off)
       await ctx.db.delete(existing._id);
       return { action: "removed", id: existing._id };
     } else {
-      // Item doesn't exist, add it (toggle on)
       const itemId = await ctx.db.insert("shoppingItems", {
-        clerkId: identity.subject,
+        userId,
         name: args.name,
         amount: args.amount,
         normalizedName,
@@ -108,58 +102,34 @@ export const toggleShoppingItemByDetails = mutation({
   },
 });
 
-// Toggle shopping item checked status
 export const toggleShoppingItem = mutation({
   args: { id: v.id("shoppingItems") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
+    const userId = await getAuthenticatedUserId(ctx);
     const item = await ctx.db.get(args.id);
-    if (!item || item.clerkId !== identity.subject) {
-      throw new Error("Item not found or access denied");
-    }
-
-    await ctx.db.patch(args.id, {
-      checked: !item.checked,
-    });
+    if (!item || item.userId !== userId) throw new Error("Item not found or access denied");
+    await ctx.db.patch(args.id, { checked: !item.checked });
   },
 });
 
-// Remove shopping item
 export const removeShoppingItem = mutation({
   args: { id: v.id("shoppingItems") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
+    const userId = await getAuthenticatedUserId(ctx);
     const item = await ctx.db.get(args.id);
-    if (!item || item.clerkId !== identity.subject) {
-      throw new Error("Item not found or access denied");
-    }
-
+    if (!item || item.userId !== userId) throw new Error("Item not found or access denied");
     await ctx.db.delete(args.id);
   },
 });
 
-// Clear shopping list
 export const clearShoppingList = mutation({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
+    const userId = await getAuthenticatedUserId(ctx);
     const items = await ctx.db
       .query("shoppingItems")
-      .withIndex("by_user", (q) => q.eq("clerkId", identity.subject))
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .collect();
-
     for (const item of items) {
       await ctx.db.delete(item._id);
     }

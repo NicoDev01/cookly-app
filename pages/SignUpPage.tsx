@@ -1,15 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { useSignUp, useAuth } from '@clerk/clerk-react';
+import React, { useState } from 'react';
+import { useAuthActions } from '@convex-dev/auth/react';
+import { useConvexAuth } from 'convex/react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useQuery } from 'convex/react';
-import { api } from '../convex/_generated/api';
 import { Input, IconButton } from '../components/ui/cookly';
 
 export const SignUpPage: React.FC = () => {
-  const { isLoaded: signUpLoaded, signUp, setActive } = useSignUp();
-  const { isSignedIn, isLoaded: authLoaded } = useAuth();
+  const { signIn } = useAuthActions();
+  const { isAuthenticated } = useConvexAuth();
   const navigate = useNavigate();
-  const currentUser = useQuery(api.users.getCurrentUser);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,25 +19,16 @@ export const SignUpPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  useEffect(() => {
-    if (authLoaded && isSignedIn) {
-      if (currentUser) {
-        navigate('/tabs/categories');
-      }
+  React.useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/tabs/categories', { replace: true });
     }
-  }, [authLoaded, isSignedIn, currentUser, navigate]);
+  }, [isAuthenticated, navigate]);
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!signUpLoaded) return;
-
     setLoading(true);
     setError('');
-
-    if (isSignedIn) {
-      navigate('/onboarding');
-      return;
-    }
 
     if (password !== confirmPassword) {
       setError('Passwörter stimmen nicht überein');
@@ -48,50 +37,14 @@ export const SignUpPage: React.FC = () => {
     }
 
     try {
-      const result = await signUp.create({
-        emailAddress: email,
-        password,
-      });
-
-      if (result.status === 'missing_requirements') {
-        setShowCodeInput(true);
-        setError('');
-      } else if (result.status === 'complete') {
-        if (result.createdSessionId) {
-          await setActive({ session: result.createdSessionId });
-        }
-        await new Promise(resolve => setTimeout(resolve, 100));
-        navigate('/onboarding');
-      }
+      await signIn('password', { email, password, flow: 'signUp' });
+      // Falls Email-Verifizierung erforderlich: Code-Eingabe anzeigen
+      setShowCodeInput(true);
     } catch (err: unknown) {
       let errorMessage = 'Registrierung fehlgeschlagen. Bitte versuche es erneut.';
-
-      if (err && typeof err === 'object') {
-        if ('errors' in err && Array.isArray(err.errors)) {
-          const clerkError = err as { errors: Array<{ message?: string; longMessage?: string; code?: string }> };
-
-          const alreadySignedIn = clerkError.errors.some(e => e.code === 'session_exists');
-
-          if (alreadySignedIn) {
-            navigate('/onboarding');
-            return;
-          }
-
-          const allMessages = clerkError.errors
-            .map(e => e.longMessage || e.message)
-            .filter(Boolean);
-          if (allMessages.length > 0) {
-            errorMessage = allMessages.join('\n');
-          }
-        }
-        else if ('message' in err && typeof err.message === 'string') {
-          errorMessage = err.message;
-        }
-        else if (toString.call(err) === '[object String]') {
-          errorMessage = String(err);
-        }
+      if (err instanceof Error) {
+        errorMessage = err.message;
       }
-
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -100,44 +53,17 @@ export const SignUpPage: React.FC = () => {
 
   const handleVerifyCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!signUpLoaded) return;
-
     setLoading(true);
     setError('');
 
     try {
-      const result = await signUp.attemptEmailAddressVerification({
-        code,
-      });
-
-      if (result.status === 'complete') {
-        if (result.createdSessionId) {
-          await setActive({ session: result.createdSessionId });
-        }
-        await new Promise(resolve => setTimeout(resolve, 100));
-        navigate('/onboarding');
-      }
+      await signIn('password', { email, code, flow: 'email-verification' });
+      navigate('/onboarding', { replace: true });
     } catch (err: unknown) {
       let errorMessage = 'Verifizierung fehlgeschlagen. Bitte prüfe den Code.';
-
-      if (err && typeof err === 'object') {
-        if ('errors' in err && Array.isArray(err.errors)) {
-          const clerkError = err as { errors: Array<{ message?: string; longMessage?: string; code?: string }> };
-          const allMessages = clerkError.errors
-            .map(e => e.longMessage || e.message)
-            .filter(Boolean);
-          if (allMessages.length > 0) {
-            errorMessage = allMessages.join('\n');
-          }
-        }
-        else if ('message' in err && typeof err.message === 'string') {
-          errorMessage = err.message;
-        }
-        else if (toString.call(err) === '[object String]') {
-          errorMessage = String(err);
-        }
+      if (err instanceof Error) {
+        errorMessage = err.message;
       }
-
       setError(errorMessage);
     } finally {
       setLoading(false);

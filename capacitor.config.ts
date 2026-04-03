@@ -6,7 +6,7 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   server: {
     androidScheme: 'https', // Oder 'cookly'
-    hostname: 'cookly.recipe', // Wichtig für HTTPS Deep Links (cookly.recipe/auth/...)
+    hostname: 'cookly-app.com',
   },
 
   plugins: {
@@ -28,7 +28,15 @@ const config: CapacitorConfig = {
   android: {
     allowMixedContent: false, // SECURITY: Only HTTPS in production
     captureInput: false, // FIX: Enable keyboard autocomplete suggestions
-    webContentsDebuggingEnabled: false, // CRITICAL: Must be false for Play Store
+    webContentsDebuggingEnabled: false,
+    allowNavigation: [
+      'cookly-app.com',
+      '*.convex.cloud',             // Convex backend (WebSocket + HTTP)
+      '*.convex.site',              // Convex Auth HTTP routes
+      'accounts.google.com',
+      'accounts.youtube.com',
+      'oauth.googleusercontent.com',
+    ],
   },
 };
 

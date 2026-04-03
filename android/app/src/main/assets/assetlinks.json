@@ -5,8 +5,8 @@
       "namespace": "android_app",
       "package_name": "com.cookly.recipe",
       "sha256_cert_fingerprints": [
-        "SHA256_FINGERPRINT_DEBUG",
-        "SHA256_FINGERPRINT_RELEASE"
+        "12:A0:72:91:76:21:4D:38:69:F0:EF:5A:FC:A2:F1:2D:0E:4D:60:53:FC:46:85:F6:F1:F8:98:7C:87:4D:42:0B",
+        "09:2C:E3:2C:5B:4C:5A:8A:A1:64:D0:70:32:11:DD:57:72:0D:13:A9:83:20:D2:8A:63:82:CC:5C:3E:73:1A:85"
       ]
     }
   }

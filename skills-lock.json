@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "skills": {
+    "clerk": {
+      "source": "clerk/skills",
+      "sourceType": "github",
+      "computedHash": "2c8457cd4de24484b47a25f04cadb2bc1ca41b76a2532811b4ce050f446d3fbb"
+    },
+    "clerk-android": {
+      "source": "clerk/skills",
+      "sourceType": "github",
+      "computedHash": "a2da98e1683eeeafa4c02267cf650bae642f488acddfa6e4339085131247da62"
+    },
+    "clerk-backend-api": {
+      "source": "clerk/skills",
+      "sourceType": "github",
+      "computedHash": "2f54e000863823297bc3742f86718e08af4051af44fb79c4da3ed89459abd83c"
+    },
+    "clerk-custom-ui": {
+      "source": "clerk/skills",
+      "sourceType": "github",
+      "computedHash": "80f072f60f08c4d8a5e842e301d6be81065ec5c284d167969424628f49156a81"
+    },
+    "clerk-nextjs-patterns": {
+      "source": "clerk/skills",
+      "sourceType": "github",
+      "computedHash": "dd47be182d7ca52c2e6b0d4f91cfe8f32409714f677757fc5559b393fb6bad5b"
+    },
+    "clerk-orgs": {
+      "source": "clerk/skills",
+      "sourceType": "github",
+      "computedHash": "f7f490396af325f8fe3567810ed7531b73d364f07371d96c40fccd07f6f0d943"
+    },
+    "clerk-setup": {
+      "source": "clerk/skills",
+      "sourceType": "github",
+      "computedHash": "f3cf1cdbaaa45fb526bcdbfb5e8188681942a7fe323faba986cb68952caf08fe"
+    },
+    "clerk-swift": {
+      "source": "clerk/skills",
+      "sourceType": "github",
+      "computedHash": "57801794a2d8f393751568c384bae46dc48138b4b56e1e1c85b3c6df956f7c46"
+    },
+    "clerk-testing": {
+      "source": "clerk/skills",
+      "sourceType": "github",
+      "computedHash": "c85c9f9a6067b60b50954317a6a7fa03f052e5cb01032f988fb5e1f62876bcfb"
+    },
+    "clerk-webhooks": {
+      "source": "clerk/skills",
+      "sourceType": "github",
+      "computedHash": "39233b7056673b41322efa9d83d8d7c50c6385f318e1ec2670b0495a67432291"
+    }
+  }
+}

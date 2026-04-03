@@ -1,6 +1,26 @@
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { FREE_LIMITS } from "./constants";
+import type { QueryCtx, MutationCtx } from "./_generated/server";
+
+// ============================================================
+// HELPER
+// ============================================================
+
+/**
+ * Gibt den aktuell eingeloggten User aus der custom users-Tabelle zurück.
+ * Nutzt Convex Auth statt Clerk identity.
+ */
+async function getCurrentUserFromCtx(ctx: QueryCtx | MutationCtx) {
+  const authUserId = await getAuthUserId(ctx);
+  if (!authUserId) return null;
+
+  return await ctx.db
+    .query("users")
+    .withIndex("by_authUserId", (q) => q.eq("authUserId", authUserId.toString()))
+    .first();
+}
 
 // ============================================================
 // PUBLIC QUERIES
@@ -12,53 +32,25 @@ import { FREE_LIMITS } from "./constants";
 export const getCurrentUser = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return null;
-    }
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
-    return user;
+    return await getCurrentUserFromCtx(ctx);
   },
 });
 
 /**
  * Prüft ob User ein manuelles Rezept erstellen kann
- * Wird proaktiv vom Frontend aufgerufen
  */
 export const canCreateManualRecipe = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return { canProceed: false, error: "NOT_AUTHENTICATED" };
-    }
+    const user = await getCurrentUserFromCtx(ctx);
+    if (!user) return { canProceed: false, error: "NOT_AUTHENTICATED" };
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
-    if (!user) {
-      return { canProceed: false, error: "NOT_AUTHENTICATED" };
-    }
-
-    // Pro User haben keine Limits
     if (user.subscription !== "free") {
-      return {
-        canProceed: true,
-        isPro: true,
-        subscription: user.subscription,
-      };
+      return { canProceed: true, isPro: true, subscription: user.subscription };
     }
 
     const current = user.usageStats?.manualRecipes || 0;
     const limit = FREE_LIMITS.MANUAL_RECIPES;
-
     return {
       canProceed: current < limit,
       isPro: false,
@@ -73,37 +65,19 @@ export const canCreateManualRecipe = query({
 
 /**
  * Prüft ob User einen Link Import machen kann
- * Wird proaktiv vom Frontend aufgerufen
  */
 export const canImportFromLink = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return { canProceed: false, error: "NOT_AUTHENTICATED" };
-    }
+    const user = await getCurrentUserFromCtx(ctx);
+    if (!user) return { canProceed: false, error: "NOT_AUTHENTICATED" };
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
-    if (!user) {
-      return { canProceed: false, error: "NOT_AUTHENTICATED" };
-    }
-
-    // Pro User haben keine Limits
     if (user.subscription !== "free") {
-      return {
-        canProceed: true,
-        isPro: true,
-        subscription: user.subscription,
-      };
+      return { canProceed: true, isPro: true, subscription: user.subscription };
     }
 
     const current = user.usageStats?.linkImports || 0;
     const limit = FREE_LIMITS.LINK_IMPORTS;
-
     return {
       canProceed: current < limit,
       isPro: false,
@@ -118,37 +92,19 @@ export const canImportFromLink = query({
 
 /**
  * Prüft ob User ein Foto scannen kann
- * Wird proaktiv vom Frontend aufgerufen
  */
 export const canScanPhoto = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return { canProceed: false, error: "NOT_AUTHENTICATED" };
-    }
+    const user = await getCurrentUserFromCtx(ctx);
+    if (!user) return { canProceed: false, error: "NOT_AUTHENTICATED" };
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
-    if (!user) {
-      return { canProceed: false, error: "NOT_AUTHENTICATED" };
-    }
-
-    // Pro User haben keine Limits
     if (user.subscription !== "free") {
-      return {
-        canProceed: true,
-        isPro: true,
-        subscription: user.subscription,
-      };
+      return { canProceed: true, isPro: true, subscription: user.subscription };
     }
 
     const current = user.usageStats?.photoScans || 0;
     const limit = FREE_LIMITS.PHOTO_SCANS;
-
     return {
       canProceed: current < limit,
       isPro: false,
@@ -162,23 +118,15 @@ export const canScanPhoto = query({
 });
 
 /**
- * Legacy - Get usage stats (für ProfilePage Kompatibilität)
+ * Get usage stats (für ProfilePage)
  */
 export const getUsageStats = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
+    const user = await getCurrentUserFromCtx(ctx);
     if (!user) return null;
 
     const isPro = user.subscription !== "free";
-
     return {
       usage: user.usageStats,
       isPro,
@@ -196,57 +144,54 @@ export const getUsageStats = query({
 // ============================================================
 
 /**
- * Create or update user (called from Clerk webhook)
+ * Erstellt den User-Datensatz nach erfolgreichem Login/Signup.
+ * Wird aus ProtectedLayout aufgerufen wenn currentUser null ist.
+ * Ersetzt syncUserIfNotExists + createOrUpdateUserFromWebhook.
  */
-export const createOrUpdateUser = mutation({
-  args: {
-    clerkId: v.string(),
-    email: v.optional(v.string()),
-    name: v.optional(v.string()),
-    avatar: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    // Check if user exists
-    const existingUser = await ctx.db
+export const createOrSyncUser = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const authUserId = await getAuthUserId(ctx);
+    if (!authUserId) throw new Error("Not authenticated");
+
+    // Existiert bereits → nichts tun
+    const existing = await ctx.db
       .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+      .withIndex("by_authUserId", (q) => q.eq("authUserId", authUserId.toString()))
       .first();
 
-    const now = Date.now();
+    if (existing) return existing._id;
 
-    if (existingUser) {
-      // Update existing user (nur Profil-Daten, Usage Stats bleiben!)
-      await ctx.db.patch(existingUser._id, {
-        email: args.email ?? existingUser.email,
-        name: args.name ?? existingUser.name,
-        avatar: args.avatar ?? existingUser.avatar,
-        updatedAt: now,
-      });
-      return existingUser._id;
-    } else {
-      // Create new user mit neuen usageStats
-      const userId = await ctx.db.insert("users", {
-        clerkId: args.clerkId,
-        email: args.email,
-        name: args.name,
-        avatar: args.avatar,
-        subscription: "free",
-        subscriptionStatus: "active",
-        onboardingCompleted: false,
-        notificationsEnabled: false,
-        usageStats: {
-          manualRecipes: 0,
-          linkImports: 0,
-          photoScans: 0,
-          subscriptionStartDate: undefined,
-          subscriptionEndDate: undefined,
-          resetOnDowngrade: false,
-        },
-        createdAt: now,
-        updatedAt: now,
-      });
-      return userId;
-    }
+    // Profildaten aus Convex Auth Identity
+    const identity = await ctx.auth.getUserIdentity();
+    const email = identity?.email ?? undefined;
+    const name = identity?.name ?? email?.split("@")[0] ?? "User";
+    const avatar = identity?.pictureUrl ?? undefined;
+
+    const now = Date.now();
+    const userId = await ctx.db.insert("users", {
+      authUserId: authUserId.toString(),
+      email,
+      name,
+      avatar,
+      subscription: "free",
+      subscriptionStatus: "active",
+      onboardingCompleted: false,
+      notificationsEnabled: false,
+      usageStats: {
+        manualRecipes: 0,
+        linkImports: 0,
+        photoScans: 0,
+        subscriptionStartDate: undefined,
+        subscriptionEndDate: undefined,
+        resetOnDowngrade: false,
+      },
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    console.log(`[UserSync] ✅ Created user ${authUserId} in Convex`);
+    return userId;
   },
 });
 
@@ -261,19 +206,8 @@ export const updateOnboarding = mutation({
     notificationsEnabled: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
+    const user = await getCurrentUserFromCtx(ctx);
+    if (!user) throw new Error("Not authenticated");
 
     await ctx.db.patch(user._id, {
       name: args.name ?? user.name,
@@ -291,19 +225,8 @@ export const updateOnboarding = mutation({
 export const completeOnboarding = mutation({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
+    const user = await getCurrentUserFromCtx(ctx);
+    if (!user) throw new Error("Not authenticated");
 
     await ctx.db.patch(user._id, {
       onboardingCompleted: true,
@@ -313,8 +236,7 @@ export const completeOnboarding = mutation({
 });
 
 /**
- * Update subscription (called from Stripe webhook)
- * HINWEIS: subscriptionStatus hat kein "trialing" mehr
+ * Update subscription (called from authenticated user context)
  */
 export const updateSubscription = mutation({
   args: {
@@ -333,19 +255,8 @@ export const updateSubscription = mutation({
     stripeSubscriptionId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
+    const user = await getCurrentUserFromCtx(ctx);
+    if (!user) throw new Error("Not authenticated");
 
     await ctx.db.patch(user._id, {
       subscription: args.subscription,
@@ -363,27 +274,19 @@ export const updateSubscription = mutation({
 
 /**
  * Delete user account (GDPR compliant)
- * Called from Clerk webhook when user is deleted
+ * Called when user deletes their own account
  */
-export const deleteUser = mutation({
-  args: { clerkId: v.string() },
-  handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-
-    if (!user) {
-      console.log(`User ${args.clerkId} not found in Convex, already deleted`);
-      return { success: true, message: "User not found" };
-    }
+export const deleteCurrentUser = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getCurrentUserFromCtx(ctx);
+    if (!user) throw new Error("Not authenticated");
 
     // Delete all user's recipes
     const recipes = await ctx.db
       .query("recipes")
-      .withIndex("by_user", (q) => q.eq("clerkId", args.clerkId))
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect();
-
     for (const recipe of recipes) {
       await ctx.db.delete(recipe._id);
     }
@@ -391,9 +294,8 @@ export const deleteUser = mutation({
     // Delete all user's weekly meals
     const weeklyMeals = await ctx.db
       .query("weeklyMeals")
-      .withIndex("by_user_date", (q) => q.eq("clerkId", args.clerkId))
+      .withIndex("by_user_date", (q) => q.eq("userId", user._id))
       .collect();
-
     for (const meal of weeklyMeals) {
       await ctx.db.delete(meal._id);
     }
@@ -401,23 +303,33 @@ export const deleteUser = mutation({
     // Delete all user's shopping items
     const shoppingItems = await ctx.db
       .query("shoppingItems")
-      .withIndex("by_user", (q) => q.eq("clerkId", args.clerkId))
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect();
-
     for (const item of shoppingItems) {
       await ctx.db.delete(item._id);
     }
 
-    // Finally delete the user record
+    // Delete categories and stats
+    const categories = await ctx.db
+      .query("categories")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    for (const cat of categories) {
+      await ctx.db.delete(cat._id);
+    }
+
+    const categoryStats = await ctx.db
+      .query("categoryStats")
+      .withIndex("by_user_category", (q) => q.eq("userId", user._id))
+      .collect();
+    for (const stat of categoryStats) {
+      await ctx.db.delete(stat._id);
+    }
+
     await ctx.db.delete(user._id);
 
-    console.log(`User ${args.clerkId} and all associated data deleted from Convex`);
-    return {
-      success: true,
-      deletedRecipes: recipes.length,
-      deletedWeeklyMeals: weeklyMeals.length,
-      deletedShoppingItems: shoppingItems.length,
-    };
+    console.log(`[DeleteUser] ✅ User ${user._id} and all data deleted`);
+    return { success: true };
   },
 });
 
@@ -426,12 +338,12 @@ export const deleteUser = mutation({
 // ============================================================
 
 /**
- * Erhöht den entsprechenden Counter nach erfolgreichem Insert
- * WIRD NUR AUFGERUFEN NACHDEM DAS REZEPT ERFOLGREICH ERSTELLT WURDE
+ * Erhöht den entsprechenden Usage Counter nach erfolgreichem Insert.
+ * Wird von recipes.ts etc. aufgerufen.
  */
 export const incrementUsageCounter = internalMutation({
   args: {
-    clerkId: v.string(),
+    userId: v.id("users"),
     feature: v.union(
       v.literal("manual_recipes"),
       v.literal("link_imports"),
@@ -439,21 +351,12 @@ export const incrementUsageCounter = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
+    const user = await ctx.db.get(args.userId);
+    if (!user) throw new Error("User not found");
 
     // Pro User brauchen keine Counter
-    if (user.subscription !== "free") {
-      return;
-    }
+    if (user.subscription !== "free") return;
 
-    const updates: Record<string, unknown> = {};
     const currentStats = user.usageStats || {
       manualRecipes: 0,
       linkImports: 0,
@@ -463,46 +366,30 @@ export const incrementUsageCounter = internalMutation({
       resetOnDowngrade: false,
     };
 
+    const updates: Record<string, unknown> = {};
     switch (args.feature) {
       case "manual_recipes":
-        updates.usageStats = {
-          ...currentStats,
-          manualRecipes: (currentStats.manualRecipes || 0) + 1,
-        };
+        updates.usageStats = { ...currentStats, manualRecipes: (currentStats.manualRecipes || 0) + 1 };
         break;
       case "link_imports":
-        updates.usageStats = {
-          ...currentStats,
-          linkImports: (currentStats.linkImports || 0) + 1,
-        };
+        updates.usageStats = { ...currentStats, linkImports: (currentStats.linkImports || 0) + 1 };
         break;
       case "photo_scans":
-        updates.usageStats = {
-          ...currentStats,
-          photoScans: (currentStats.photoScans || 0) + 1,
-        };
+        updates.usageStats = { ...currentStats, photoScans: (currentStats.photoScans || 0) + 1 };
         break;
     }
 
-    await ctx.db.patch(user._id, {
-      ...updates,
-      updatedAt: Date.now(),
-    });
+    await ctx.db.patch(user._id, { ...updates, updatedAt: Date.now() });
   },
 });
 
 /**
- * Setzt alle Counter auf 0 (wird bei Downgrade Pro→Free aufgerufen)
- * Rezepte bleiben erhalten!
+ * Setzt alle Counter auf 0 (bei Downgrade Pro→Free)
  */
 export const resetUsageCounters = internalMutation({
-  args: { clerkId: v.string() },
+  args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-
+    const user = await ctx.db.get(args.userId);
     if (!user) return;
 
     await ctx.db.patch(user._id, {
@@ -516,35 +403,24 @@ export const resetUsageCounters = internalMutation({
       },
       updatedAt: Date.now(),
     });
-
-    console.log(`[Reset] Usage counters reset for user ${args.clerkId}`);
+    console.log(`[Reset] Usage counters reset for user ${args.userId}`);
   },
 });
 
 /**
- * Markiert User für Downgrade (wird bei Kündigung aufgerufen)
+ * Markiert User für Downgrade (bei Kündigung)
  */
 export const markForDowngrade = internalMutation({
-  args: { clerkId: v.string() },
+  args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
+    const user = await ctx.db.get(args.userId);
+    if (!user) throw new Error("User not found");
 
     await ctx.db.patch(user._id, {
-      usageStats: {
-        ...user.usageStats,
-        resetOnDowngrade: true,
-      },
+      usageStats: { ...user.usageStats, resetOnDowngrade: true },
       updatedAt: Date.now(),
     });
-
-    console.log(`[Downgrade] User ${args.clerkId} marked for counter reset`);
+    console.log(`[Downgrade] User ${args.userId} marked for counter reset`);
   },
 });
 
@@ -575,17 +451,17 @@ export const markForDowngradeByStripeCustomer = internalMutation({
       },
       updatedAt: Date.now(),
     });
-
-    console.log(`[Downgrade] Customer ${args.stripeCustomerId} marked for counter reset at ${new Date(args.subscriptionEndDate).toISOString()}`);
+    console.log(`[Downgrade] Customer ${args.stripeCustomerId} marked for reset at ${new Date(args.subscriptionEndDate).toISOString()}`);
   },
 });
 
 /**
- * Update Subscription via Clerk ID (für Stripe Webhooks)
+ * Update Subscription via Convex User ID (für Stripe Webhooks)
+ * Ersetzt updateSubscriptionByClerkId
  */
-export const updateSubscriptionByClerkId = internalMutation({
+export const updateSubscriptionByConvexUserId = internalMutation({
   args: {
-    clerkId: v.string(),
+    convexUserId: v.string(),
     subscription: v.union(
       v.literal("free"),
       v.literal("pro_monthly"),
@@ -602,14 +478,8 @@ export const updateSubscriptionByClerkId = internalMutation({
     stripeSubscriptionId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
+    const user = await ctx.db.get(args.convexUserId as any);
+    if (!user) throw new Error(`User ${args.convexUserId} not found`);
 
     await ctx.db.patch(user._id, {
       subscription: args.subscription,
@@ -657,18 +527,9 @@ export const updateSubscriptionByStripeCustomer = internalMutation({
       return;
     }
 
-    const updates: Record<string, unknown> = {
-      updatedAt: Date.now(),
-    };
-
-    if (args.subscription !== undefined) {
-      updates.subscription = args.subscription;
-    }
-    if (args.subscriptionStatus !== undefined) {
-      updates.subscriptionStatus = args.subscriptionStatus;
-    }
-
-    // usageStats aktualisieren
+    const updates: Record<string, unknown> = { updatedAt: Date.now() };
+    if (args.subscription !== undefined) updates.subscription = args.subscription;
+    if (args.subscriptionStatus !== undefined) updates.subscriptionStatus = args.subscriptionStatus;
     if (args.subscriptionEndDate !== undefined || args.subscriptionStartDate !== undefined) {
       updates.usageStats = {
         ...user.usageStats,
@@ -676,7 +537,6 @@ export const updateSubscriptionByStripeCustomer = internalMutation({
         subscriptionStartDate: args.subscriptionStartDate,
       };
     }
-
     if (args.stripeSubscriptionId !== undefined) {
       updates.stripeSubscriptionId = args.stripeSubscriptionId;
     }
@@ -714,254 +574,3 @@ export const updateSubscriptionStatusByStripeCustomer = internalMutation({
     });
   },
 });
-
-// ============================================================
-// PUBLIC MUTATIONS - USER SYNC FALLBACK
-// ============================================================
-
-/**
- * Sync user from Clerk token to Convex if not exists
- * This is a fallback for when webhooks fail or are delayed
- * Called from ProtectedLayout when currentUser is undefined
- */
-export const syncUserIfNotExists = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const clerkId = identity.subject;
-
-    // Check if user already exists
-    const existing = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
-      .first();
-
-    if (existing) {
-      console.log(`[UserSync] User ${clerkId} already exists, skipping sync`);
-      return existing._id;
-    }
-
-    // Extract user data from Clerk token
-    const email = identity.email?.[0]?.emailAddress;
-    const name = identity.name || email?.split("@")[0] || "User";
-    const avatar = identity.pictureUrl;
-
-    const now = Date.now();
-
-    // Create user from Clerk token data
-    const userId = await ctx.db.insert("users", {
-      clerkId,
-      email,
-      name,
-      avatar,
-      subscription: "free",
-      subscriptionStatus: "active",
-      onboardingCompleted: false,
-      notificationsEnabled: false,
-      usageStats: {
-        manualRecipes: 0,
-        linkImports: 0,
-        photoScans: 0,
-        subscriptionStartDate: undefined,
-        subscriptionEndDate: undefined,
-        resetOnDowngrade: false,
-      },
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    console.log(`[UserSync] ✅ Created user ${clerkId} in Convex from Clerk token`);
-    return userId;
-  },
-});
-
-// ============================================================
-// INTERNAL MUTATIONS - FOR WEBHOOKS
-// ============================================================
-
-/**
- * Create or update user from Clerk webhook
- * Called from http.ts clerk-webhook endpoint
- * NOTE: Duplicate of createOrUpdateUser but as internalMutation for HTTP Actions
- */
-export const createOrUpdateUserFromWebhook = internalMutation({
-  args: {
-    clerkId: v.string(),
-    email: v.optional(v.string()),
-    name: v.optional(v.string()),
-    avatar: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-
-    // CRITICAL FIX: Check for existing user by EMAIL first (Clerk sends user.created twice)
-    // The first user.created is for unverified email, second for verified email
-    // Both have different clerkId but same email - we need to deduplicate!
-    if (args.email) {
-      const existingUserByEmail = await ctx.db
-        .query("users")
-        .filter((q) => q.eq(q.field("email"), args.email))
-        .first();
-
-      if (existingUserByEmail) {
-        // User mit dieser Email existiert bereits!
-        // Update nur die clerkId auf die neue verifizierte ID und update Profil-Daten
-        await ctx.db.patch(existingUserByEmail._id, {
-          clerkId: args.clerkId, // Update zur neuen (verifizierten) clerkId
-          name: args.name ?? existingUserByEmail.name,
-          avatar: args.avatar ?? existingUserByEmail.avatar,
-          updatedAt: now,
-        });
-        console.log(`[Webhook] 🔀 User with email ${args.email} already exists, updated clerkId to ${args.clerkId}`);
-        return existingUserByEmail._id;
-      }
-    }
-
-    // Check if user exists by clerkId
-    const existingUser = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-
-    if (existingUser) {
-      // Update existing user (nur Profil-Daten, Usage Stats bleiben!)
-      await ctx.db.patch(existingUser._id, {
-        email: args.email ?? existingUser.email,
-        name: args.name ?? existingUser.name,
-        avatar: args.avatar ?? existingUser.avatar,
-        updatedAt: now,
-      });
-      console.log(`[Webhook] User ${args.clerkId} updated in Convex`);
-      return existingUser._id;
-    }
-
-    // Create new user mit usageStats
-    const userId = await ctx.db.insert("users", {
-      clerkId: args.clerkId,
-      email: args.email,
-      name: args.name,
-      avatar: args.avatar,
-      subscription: "free",
-      subscriptionStatus: "active",
-      onboardingCompleted: false,
-      notificationsEnabled: false,
-      usageStats: {
-        manualRecipes: 0,
-        linkImports: 0,
-        photoScans: 0,
-        subscriptionStartDate: undefined,
-        subscriptionEndDate: undefined,
-        resetOnDowngrade: false,
-      },
-      createdAt: now,
-      updatedAt: now,
-    });
-    console.log(`[Webhook] ✅ User ${args.clerkId} created in Convex`);
-    return userId;
-  },
-});
-
-/**
- * Delete user from Clerk webhook
- * Called from http.ts clerk-webhook endpoint
- * NOTE: Duplicate of deleteUser but as internalMutation for HTTP Actions
- */
-export const deleteUserFromWebhook = internalMutation({
-  args: { clerkId: v.string() },
-  handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-
-    if (!user) {
-      console.log(`[Webhook] User ${args.clerkId} not found in Convex, already deleted`);
-      return { success: true, message: "User not found" };
-    }
-
-    // Delete all user's recipes
-    const recipes = await ctx.db
-      .query("recipes")
-      .withIndex("by_user", (q) => q.eq("clerkId", args.clerkId))
-      .collect();
-
-    for (const recipe of recipes) {
-      await ctx.db.delete(recipe._id);
-    }
-
-    // Delete all user's weekly meals
-    const weeklyMeals = await ctx.db
-      .query("weeklyMeals")
-      .withIndex("by_user_date", (q) => q.eq("clerkId", args.clerkId))
-      .collect();
-
-    for (const meal of weeklyMeals) {
-      await ctx.db.delete(meal._id);
-    }
-
-    // Delete all user's shopping items
-    const shoppingItems = await ctx.db
-      .query("shoppingItems")
-      .withIndex("by_user", (q) => q.eq("clerkId", args.clerkId))
-      .collect();
-
-    for (const item of shoppingItems) {
-      await ctx.db.delete(item._id);
-    }
-
-    // Finally delete the user record
-    await ctx.db.delete(user._id);
-
-    console.log(`[Webhook] ✅ User ${args.clerkId} and all associated data deleted from Convex`);
-    return {
-      success: true,
-      deletedRecipes: recipes.length,
-      deletedWeeklyMeals: weeklyMeals.length,
-      deletedShoppingItems: shoppingItems.length,
-    };
-  },
-});
-
-/**
- * ADMIN: Manuelles Setzen der Usage Stats für einen User
- */
-export const setUsageStats = mutation({
-  args: { 
-    clerkId: v.string(),
-    manualRecipes: v.optional(v.number()),
-    linkImports: v.optional(v.number()),
-    photoScans: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-
-    if (!user) throw new Error("User not found");
-
-    const currentStats = user.usageStats || {
-      manualRecipes: 0,
-      linkImports: 0,
-      photoScans: 0,
-      subscriptionStartDate: undefined,
-      subscriptionEndDate: undefined,
-      resetOnDowngrade: false,
-    };
-
-    await ctx.db.patch(user._id, {
-      usageStats: {
-        ...currentStats,
-        manualRecipes: args.manualRecipes ?? currentStats.manualRecipes,
-        linkImports: args.linkImports ?? currentStats.linkImports,
-        photoScans: args.photoScans ?? currentStats.photoScans,
-      },
-      updatedAt: Date.now(),
-    });
-  }
-});
-

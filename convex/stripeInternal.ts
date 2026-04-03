@@ -1,27 +1,16 @@
 import { internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
-// ============================================================
-// INTERNAL QUERIES
-// ============================================================
-
-/**
- * Get User by Clerk ID
- * HINWEIS: Die meisten Internal Mutations sind jetzt in users.ts
- */
-export const getUserByClerkId = internalQuery({
-  args: { clerkId: v.string() },
+export const getUserByAuthUserId = internalQuery({
+  args: { authUserId: v.string() },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+      .withIndex("by_authUserId", (q) => q.eq("authUserId", args.authUserId))
       .first();
   },
 });
 
-/**
- * Get User by Stripe Customer ID
- */
 export const getUserByStripeCustomerId = internalQuery({
   args: { stripeCustomerId: v.string() },
   handler: async (ctx, args) => {
@@ -32,9 +21,6 @@ export const getUserByStripeCustomerId = internalQuery({
   },
 });
 
-/**
- * Get All Pro Users (für Subscription Status Sync)
- */
 export const getAllProUsers = internalQuery({
   args: {},
   handler: async (ctx) => {
@@ -44,17 +30,3 @@ export const getAllProUsers = internalQuery({
       .collect();
   },
 });
-
-// ============================================================
-// INTERNAL MUTATIONS
-// ============================================================
-// HINWEIS: Die meisten Internal Mutations für Subscription Management
-// sind jetzt in users.ts:
-// - updateSubscriptionByClerkId
-// - updateSubscriptionByStripeCustomer
-// - updateSubscriptionStatusByStripeCustomer
-// - markForDowngrade
-// - markForDowngradeByStripeCustomer
-// - resetUsageCounters
-//
-// Diese Datei dient nur noch als Kompatibilitätslayer für alte Importe.

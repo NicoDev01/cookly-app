@@ -2,23 +2,9 @@ import React, { Component, ErrorInfo, ReactNode } from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
 import App from "./App";
-import { ConvexProviderWithClerk } from "convex/react-clerk";
-import { ClerkProvider, useAuth } from "@clerk/clerk-react";
-import { HashRouter, useNavigate } from "react-router-dom";
+import { ConvexAuthProvider } from "@convex-dev/auth/react";
+import { HashRouter } from "react-router-dom";
 import { convexClient } from "./convexClient";
-
-const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-
-if (!PUBLISHABLE_KEY) {
-  throw new Error("Missing Clerk Publishable Key");
-}
-
-// Convex URL aus Umgebungsvariablen
-const convexUrl = import.meta.env.VITE_CONVEX_URL;
-
-if (!convexUrl) {
-  throw new Error("Missing VITE_CONVEX_URL environment variable");
-}
 
 // --- Error Boundary Component ---
 interface Props {
@@ -77,6 +63,14 @@ class ErrorBoundary extends React.Component<Props, State> {
 
 // --- App Initialization ---
 
+// Global error handlers for Android WebView debugging
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[Global] Unhandled Promise Rejection:', event.reason);
+});
+window.onerror = (message, source, lineno, colno, error) => {
+  console.error('[Global] Uncaught Error:', message, source, lineno, colno, error);
+};
+
 const rootElement = document.getElementById("root");
 if (!rootElement) {
   throw new Error("Could not find root element to mount to");
@@ -84,42 +78,14 @@ if (!rootElement) {
 
 const root = ReactDOM.createRoot(rootElement);
 
-// Clerk Konfiguration für Capacitor mit Deep Link Support
-function ClerkProviderWithNavigate({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const navigate = useNavigate();
-
-  return (
-    <ClerkProvider
-      publishableKey={PUBLISHABLE_KEY}
-      afterSignOutUrl="/"
-      signInFallbackRedirectUrl="/tabs/categories"
-      signUpFallbackRedirectUrl="/tabs/categories"
-      routerPush={(to) => {
-        navigate(to);
-      }}
-      routerReplace={(to) => {
-        navigate(to, { replace: true });
-      }}
-    >
-      <ConvexProviderWithClerk client={convexClient} useAuth={useAuth}>
-        {children}
-      </ConvexProviderWithClerk>
-    </ClerkProvider>
-  );
-}
-
 root.render(
   <React.StrictMode>
     <ErrorBoundary>
-      <HashRouter>
-        <ClerkProviderWithNavigate>
+      <ConvexAuthProvider client={convexClient}>
+        <HashRouter>
           <App />
-        </ClerkProviderWithNavigate>
-      </HashRouter>
+        </HashRouter>
+      </ConvexAuthProvider>
     </ErrorBoundary>
   </React.StrictMode>,
 );
