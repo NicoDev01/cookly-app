@@ -58,6 +58,10 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
     const img = e.currentTarget;
     const naturalWidth = img.naturalWidth;
     const naturalHeight = img.naturalHeight;
+
+    if (containerSize.width <= 0 || containerSize.height <= 0) {
+      return;
+    }
     
     // Berechne angezeigte Größe (contain)
     const containerAspect = containerSize.width / containerSize.height;
@@ -216,21 +220,30 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
     if (!ctx) return;
 
     // Berechne die Position des Bildes im Container
-    const displayX = (containerSize.width - imageSize.width) / 2;
-    const displayY = (containerSize.height - imageSize.height) / 2;
+    const displayWidth = imageSize.width * scale;
+    const displayHeight = imageSize.height * scale;
+    const displayX = (containerSize.width - displayWidth) / 2;
+    const displayY = (containerSize.height - displayHeight) / 2;
+
+    if (displayWidth <= 0 || displayHeight <= 0) return;
 
     // Relativer Crop zum Bild-Ursprung (oben links vom Bild im Container)
     const relCropX = cropArea.x - displayX;
     const relCropY = cropArea.y - displayY;
 
     // Skalierungsfaktor zwischen Anzeigegröße und Originalgröße
-    const scaleFactor = imageSize.naturalWidth / imageSize.width;
+    const scaleFactor = imageSize.naturalWidth / displayWidth;
 
     // Crop-Koordinaten auf Originalbild umrechnen
-    const originalCropX = relCropX * scaleFactor;
-    const originalCropY = relCropY * scaleFactor;
-    const originalCropWidth = cropArea.width * scaleFactor;
-    const originalCropHeight = cropArea.height * scaleFactor;
+    const rawCropX = relCropX * scaleFactor;
+    const rawCropY = relCropY * scaleFactor;
+    const rawCropWidth = cropArea.width * scaleFactor;
+    const rawCropHeight = cropArea.height * scaleFactor;
+
+    const originalCropX = Math.max(0, Math.min(imageSize.naturalWidth - 1, rawCropX));
+    const originalCropY = Math.max(0, Math.min(imageSize.naturalHeight - 1, rawCropY));
+    const originalCropWidth = Math.max(1, Math.min(rawCropWidth, imageSize.naturalWidth - originalCropX));
+    const originalCropHeight = Math.max(1, Math.min(rawCropHeight, imageSize.naturalHeight - originalCropY));
 
     // Wenn Rotation vorhanden ist, müssen wir das Bild zuerst rotieren
     if (rotation !== 0) {
@@ -278,24 +291,35 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
       }
 
       // Finalen Canvas erstellen
-      canvas.width = finalCropWidth;
-      canvas.height = finalCropHeight;
+      const safeFinalCropX = Math.max(0, finalCropX);
+      const safeFinalCropY = Math.max(0, finalCropY);
+      const safeFinalCropWidth = Math.max(
+        1,
+        Math.min(finalCropWidth, rotatedCanvas.width - safeFinalCropX)
+      );
+      const safeFinalCropHeight = Math.max(
+        1,
+        Math.min(finalCropHeight, rotatedCanvas.height - safeFinalCropY)
+      );
+
+      canvas.width = Math.max(1, Math.round(safeFinalCropWidth));
+      canvas.height = Math.max(1, Math.round(safeFinalCropHeight));
       
       ctx.drawImage(
         rotatedCanvas,
-        finalCropX,
-        finalCropY,
-        finalCropWidth,
-        finalCropHeight,
+        safeFinalCropX,
+        safeFinalCropY,
+        safeFinalCropWidth,
+        safeFinalCropHeight,
         0,
         0,
-        finalCropWidth,
-        finalCropHeight
+        canvas.width,
+        canvas.height
       );
     } else {
       // Keine Rotation - direkt aus Originalbild croppen
-      canvas.width = originalCropWidth;
-      canvas.height = originalCropHeight;
+      canvas.width = Math.max(1, Math.round(originalCropWidth));
+      canvas.height = Math.max(1, Math.round(originalCropHeight));
       
       ctx.drawImage(
         img,
@@ -305,8 +329,8 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
         originalCropHeight,
         0,
         0,
-        originalCropWidth,
-        originalCropHeight
+        canvas.width,
+        canvas.height
       );
     }
     

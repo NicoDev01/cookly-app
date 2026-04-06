@@ -214,6 +214,9 @@ export const scrapeWebsite = action({
         // 4. Image Handling (Download, Resize, WebP, Blurhash & Store)
         let imageStorageId: Id<"_storage"> | undefined;
         let imageBlurhash: string | undefined;
+        let imageWidth: number | undefined;
+        let imageHeight: number | undefined;
+        let imageAspectRatio: number | undefined;
         let finalImageUrl = pageImageUrl;
 
         if (pageImageUrl) {
@@ -222,6 +225,9 @@ export const scrapeWebsite = action({
             if (result) {
                 imageStorageId = result.storageId;
                 imageBlurhash = result.blurhash;
+                imageWidth = result.width;
+                imageHeight = result.height;
+                imageAspectRatio = result.aspectRatio;
                 console.log("Successfully processed and stored page image.");
             }
         }
@@ -246,6 +252,9 @@ export const scrapeWebsite = action({
                 if (result) {
                     imageStorageId = result.storageId;
                     imageBlurhash = result.blurhash;
+                    imageWidth = result.width;
+                    imageHeight = result.height;
+                    imageAspectRatio = result.aspectRatio;
                     finalImageUrl = pollinationsUrl;
                     console.log("Successfully processed and stored Pollinations image.");
                 }
@@ -269,6 +278,9 @@ export const scrapeWebsite = action({
                 image: finalImageUrl,
                 imageStorageId: imageStorageId,
                 imageBlurhash: imageBlurhash,
+                imageWidth: imageWidth,
+                imageHeight: imageHeight,
+                imageAspectRatio: imageAspectRatio,
                 sourceImageUrl: pageImageUrl,
                 sourceUrl: args.url,
                 imageAlt: recipeData.title,
@@ -295,7 +307,10 @@ import { ActionCtx } from "./_generated/server";
  * Zieht das Bild, skaliert es auf max 1200px, konvertiert zu WebP 
  * und generiert einen Blurhash.
  */
-async function processAndUploadImage(ctx: ActionCtx, imageUrl: string): Promise<{ storageId: Id<"_storage">, blurhash?: string } | null> {
+async function processAndUploadImage(
+  ctx: ActionCtx,
+  imageUrl: string
+): Promise<{ storageId: Id<"_storage">; blurhash?: string; width: number; height: number; aspectRatio: number } | null> {
     try {
         const res = await fetch(imageUrl, { signal: AbortSignal.timeout(10000) });
         if (!res.ok) return null;
@@ -336,7 +351,13 @@ async function processAndUploadImage(ctx: ActionCtx, imageUrl: string): Promise<
 
         if (uploadRes.ok) {
             const { storageId } = await uploadRes.json();
-            return { storageId, blurhash: blurhashStr };
+            return {
+              storageId,
+              blurhash: blurhashStr,
+              width: image.width,
+              height: image.height,
+              aspectRatio: image.width / image.height,
+            };
         }
     } catch (err) {
         console.error("Image processing/upload failed:", err);

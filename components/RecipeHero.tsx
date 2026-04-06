@@ -2,7 +2,6 @@ import React, {
   useState,
   useRef,
   useEffect,
-  useLayoutEffect,
   memo,
   useCallback,
   Suspense,
@@ -121,22 +120,7 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isZoomOpen, setIsZoomOpen] = useState(false);
   const [heartBounce, setHeartBounce] = useState(false);
-  const [aspectRatio, setAspectRatio] = useState<number>(1.5); // Default 3:2
   const menuRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Detect natural aspect ratio of the image to prevent stretching/pixelation
-  // Using useLayoutEffect to minimize layout shifts by updating before paint
-  useLayoutEffect(() => {
-    if (!recipe.image) return;
-    const img = new Image();
-    img.src = recipe.image;
-    img.onload = () => {
-      if (img.naturalWidth && img.naturalHeight) {
-        setAspectRatio(img.naturalWidth / img.naturalHeight);
-      }
-    };
-  }, [recipe.image]);
 
   const toggleFavorite = useMutation(
     api.recipes.toggleFavorite,
@@ -209,6 +193,12 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
+
+  const heroAspectRatio =
+    recipe.imageAspectRatio && recipe.imageAspectRatio > 0.4 && recipe.imageAspectRatio < 3.5
+      ? recipe.imageAspectRatio
+      : 1.5;
+  const heroImageSrc = recipe.image || recipe.sourceImageUrl || "";
 
   return (
     <div className="flex flex-col w-full bg-white group/hero">
@@ -304,10 +294,9 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
 
       {/* Hero Image Container */}
       <div
-        ref={containerRef}
-        className="relative w-full overflow-hidden"
+        className="relative w-full overflow-hidden bg-gray-100"
         style={{
-          aspectRatio: `${aspectRatio}`,
+          aspectRatio: `${heroAspectRatio}`,
           minHeight: "20vh",
           maxHeight: "75vh",
           maskImage: EASED_MASK_GRADIENT,
@@ -319,10 +308,11 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
           onClick={() => setIsZoomOpen(true)}
         >
           <ImageWithBlurhash
-            className="w-full h-full object-cover object-center"
-            alt={recipe.imageAlt}
-            src={recipe.image}
+            className="w-full h-full object-contain object-center"
+            alt={recipe.imageAlt || recipe.title || "Rezeptbild"}
+            src={heroImageSrc}
             blurhash={recipe.imageBlurhash}
+            forceLoad={true}
             fetchPriority="high"
           />
           {/* Subtle hint for zoom */}
@@ -350,8 +340,8 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
         <ImageZoomModal
           isOpen={isZoomOpen}
           onClose={() => setIsZoomOpen(false)}
-          src={recipe.image}
-          alt={recipe.imageAlt}
+          src={heroImageSrc}
+          alt={recipe.imageAlt || recipe.title || "Rezeptbild"}
         />
       </Suspense>
 

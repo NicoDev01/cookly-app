@@ -89,6 +89,12 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
     });
   }, []);
 
+  const warmImage = React.useCallback((url?: string) => {
+    if (!url) return;
+    const img = new Image();
+    img.src = url;
+  }, []);
+
   const handlePointerDown = (e: React.PointerEvent, recipeId: Id<"recipes">) => {
     isLongPressRef.current = false;
     startPosRef.current = { x: e.clientX, y: e.clientY };
@@ -245,10 +251,34 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
                   >
                     <Link
                       to={`/recipe/${recipe._id}`}
-                      state={{ nav: { ids: recipeIds, index }, fromCategory: isAll ? 'all' : decodedCategory }}
+                      state={{
+                        nav: { ids: recipeIds, index },
+                        fromCategory: isAll ? 'all' : decodedCategory,
+                        heroPreview: {
+                          id: recipe._id,
+                          image: recipe.image,
+                          imageBlurhash: recipe.imageBlurhash,
+                          imageWidth: recipe.imageWidth,
+                          imageHeight: recipe.imageHeight,
+                          imageAspectRatio: recipe.imageAspectRatio,
+                          imageAlt: recipe.imageAlt || recipe.title,
+                          title: recipe.title,
+                          isFavorite: recipe.isFavorite,
+                        },
+                      }}
                       onClick={(e) => handleClick(e, recipe._id)}
-                      onPointerEnter={() => { void prefetchRecipePage(); }}
-                      onFocus={() => { void prefetchRecipePage(); }}
+                      onPointerEnter={() => {
+                        void prefetchRecipePage();
+                        warmImage(recipe.image);
+                      }}
+                      onFocus={() => {
+                        void prefetchRecipePage();
+                        warmImage(recipe.image);
+                      }}
+                      onTouchStart={() => {
+                        void prefetchRecipePage();
+                        warmImage(recipe.image);
+                      }}
                       className={`flex items-center gap-4 rounded-xl p-3 select-none transition-all group ${
                         isSelected
                           ? 'bg-gray-200 dark:bg-gray-800 shadow-inner'

@@ -6,6 +6,7 @@ import { GoogleGenAI } from "@google/genai";
 import { Id } from "./_generated/dataModel";
 import { RECIPE_CATEGORIES } from "./constants";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { Jimp } from "jimp";
 
 const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
@@ -224,23 +225,22 @@ export const scrapePost = action({
     // 7. Image Handling mit Graceful Degradation
     // ============================================================
     let imageStorageId: Id<"_storage"> | undefined;
+    let imageWidth: number | undefined;
+    let imageHeight: number | undefined;
+    let imageAspectRatio: number | undefined;
     let finalImageUrl = imageUrl;
 
     try {
       if (imageUrl) {
         const imageRes = await fetch(imageUrl);
         if (imageRes.ok) {
-          const imageBlob = await imageRes.blob();
-          const uploadUrl = await ctx.runMutation(api.recipes.generateImageUploadUrl);
-          const uploadRes = await fetch(uploadUrl, {
-            method: "POST",
-            headers: { "Content-Type": imageBlob.type },
-            body: imageBlob,
-          });
-
-          if (uploadRes.ok) {
-            const { storageId } = await uploadRes.json();
-            imageStorageId = storageId;
+          const imageBuffer = Buffer.from(await imageRes.arrayBuffer());
+          const processed = await processImageForStorage(ctx, imageBuffer, imageRes.headers.get("content-type") || "image/jpeg");
+          if (processed) {
+            imageStorageId = processed.storageId;
+            imageWidth = processed.width;
+            imageHeight = processed.height;
+            imageAspectRatio = processed.aspectRatio;
           }
         }
       }
@@ -253,18 +253,13 @@ export const scrapePost = action({
 
         const pollRes = await fetch(pollinationsUrl);
         if (pollRes.ok) {
-          const pollBlob = await pollRes.blob();
-          const uploadUrl = await ctx.runMutation(api.recipes.generateImageUploadUrl);
-
-          const uploadRes = await fetch(uploadUrl, {
-            method: "POST",
-            headers: { "Content-Type": pollBlob.type },
-            body: pollBlob,
-          });
-
-          if (uploadRes.ok) {
-            const { storageId } = await uploadRes.json();
-            imageStorageId = storageId;
+          const pollBuffer = Buffer.from(await pollRes.arrayBuffer());
+          const processed = await processImageForStorage(ctx, pollBuffer, pollRes.headers.get("content-type") || "image/jpeg");
+          if (processed) {
+            imageStorageId = processed.storageId;
+            imageWidth = processed.width;
+            imageHeight = processed.height;
+            imageAspectRatio = processed.aspectRatio;
             finalImageUrl = pollinationsUrl;
           }
         }
@@ -294,6 +289,9 @@ export const scrapePost = action({
         instructions: recipeData.instructions || [],
         image: finalImageUrl,
         imageStorageId: imageStorageId,
+        imageWidth: imageWidth,
+        imageHeight: imageHeight,
+        imageAspectRatio: imageAspectRatio,
         sourceImageUrl: imageUrl,
         sourceUrl: args.url,  // Setzt featureType = "link_imports"
         imageAlt: recipeData.title,
@@ -312,3 +310,35 @@ export const scrapePost = action({
     }
   },
 });
+
+const processImageForStorage = async (
+  ctx: any,
+  buffer: Buffer,
+  contentType: string
+): Promise<{ storageId: Id<"_storage">; width: number; height: number; aspectRatio: number } | null> => {
+  try {
+    const image = (await Jimp.read(buffer)) as any;
+    const width = image.width;
+    const height = image.height;
+
+    const uploadUrl = await ctx.runMutation(api.recipes.generateImageUploadUrl);
+    const uploadRes = await fetch(uploadUrl, {
+      method: "POST",
+      headers: { "Content-Type": contentType },
+      body: new Uint8Array(buffer),
+    });
+
+    if (!uploadRes.ok) return null;
+
+    const { storageId } = await uploadRes.json();
+    return {
+      storageId,
+      width,
+      height,
+      aspectRatio: width / height,
+    };
+  } catch (error) {
+    console.warn("Failed to process Instagram image metadata:", error);
+    return null;
+  }
+};

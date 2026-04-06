@@ -6,7 +6,13 @@ import { Id } from "../convex/_generated/dataModel";
 import { useNavigate } from 'react-router-dom';
 import { sanitizeInstructionsIcons } from '../utils/iconUtils';
 import { AI_SCAN_PROMPT_FIXED, analyzeRecipePhoto, createGeminiClient, AiScanPanel } from './addRecipeModal/AiScan.tsx';
-import { compressImage, uploadJpegToConvexStorage } from './addRecipeModal/recipeImage';
+import {
+  compressImage,
+  uploadJpegToConvexStorage,
+  getImageDimensionsFromBlob,
+  getImageDimensionsFromUrl,
+  type ImageDimensions,
+} from './addRecipeModal/recipeImage';
 import { encodeImageToBlurhash } from '../utils/blurhash';
 import ManualRecipeForm from './addRecipeModal/ManualRecipeForm';
 import UpgradeModal from './UpgradeModal';
@@ -18,13 +24,14 @@ interface AddRecipeModalProps {
   initialData?: Recipe | null; // Optional: Wenn gesetzt, sind wir im Edit-Mode
 }
 
+const PLACEHOLDER_RECIPE_IMAGE = 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?q=80&w=2626&auto=format&fit=crop';
+
 const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initialData }) => {
   const { addModalImportUrl, addModalInitialTab } = useModal();
   const navigate = useNavigate();
   const createRecipe = useMutation(api.recipes.create);
   const updateRecipe = useMutation(api.recipes.updateRecipe);
   const generateImageUploadUrl = useMutation(api.recipes.generateImageUploadUrl);
-  const deleteStorageFile = useMutation(api.recipes.deleteStorageFile);
   const generateAndStoreAiImage = useAction(api.recipes.generateAndStoreAiImage);
   const categoryStats = useQuery(api.recipes.getCategories);
   const existingCategories = categoryStats?.categories?.map(c => c.name) || [];
@@ -73,10 +80,13 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
   const [isImageActionMenuOpen, setIsImageActionMenuOpen] = useState(false);
   const imageActionMenuRef = useRef<HTMLDivElement>(null);
   const [isGeneratingAiImage, setIsGeneratingAiImage] = useState(false);
+  const [aiImageGenerationStage, setAiImageGenerationStage] = useState<'idle' | 'requesting' | 'generating' | 'loading'>('idle');
 
   const [recipeImageStorageId, setRecipeImageStorageId] = useState<Id<"_storage"> | null>(null);
   const [recipeImagePreviewUrl, setRecipeImagePreviewUrl] = useState<string | null>(null);
   const [recipeImageBlurhash, setRecipeImageBlurhash] = useState<string | null>(null);
+  const [recipeImageMeta, setRecipeImageMeta] = useState<ImageDimensions | null>(null);
+  const [pendingImageBlob, setPendingImageBlob] = useState<Blob | null>(null);
   const [isImageEditorOpen, setIsImageEditorOpen] = useState(false);
 
   // Trackt ob sich das Bild geändert hat (wichtig für Update)
@@ -85,6 +95,9 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
   const [originalImageData, setOriginalImageData] = useState<{
     storageId: Id<"_storage"> | null;
     url: string | null;
+    width?: number;
+    height?: number;
+    aspectRatio?: number;
   } | null>(null);
 
   useEffect(() => {
@@ -116,22 +129,27 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
     if (isUploadingRecipeImage || isSaving || isAnalyzing) return;
 
     setIsGeneratingAiImage(true);
+    setAiImageGenerationStage('requesting');
     setError(null);
+    if (navigator.vibrate) {
+      navigator.vibrate(25);
+    }
 
     try {
       const base = (formData.title || initialData?.title || formData.category || 'recipe').trim();
 
-      // Delete old storage image if exists (cleanup before generating new)
-      if (recipeImageStorageId) {
-        try {
-          await deleteStorageFile({ storageId: recipeImageStorageId });
-        } catch (e) {
-          console.warn('Could not delete old image:', e);
-        }
-      }
-
       // Generate Pollinations URL (no download, URL works directly)
+      setAiImageGenerationStage('generating');
       const result = await generateAndStoreAiImage({ recipeTitle: base });
+      setAiImageGenerationStage('loading');
+
+      let nextMeta: ImageDimensions | null = null;
+      try {
+        // Wait for image decoding once so the UI update appears instant/stable.
+        nextMeta = await getImageDimensionsFromUrl(result.url);
+      } catch (e) {
+        console.warn('Could not read AI image dimensions:', e);
+      }
 
       // Clean up old preview URL
       if (recipeImagePreviewUrl) {
@@ -140,7 +158,9 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
 
       // Pollinations URL: No storage needed, URL works directly
       setRecipeImageStorageId(null);
+      setPendingImageBlob(null);
       setRecipeImagePreviewUrl(result.url);
+      setRecipeImageMeta(nextMeta);
       setImageChanged(true); // MARKIERUNG: Bild hat geändert
 
       setFormData(prev => ({
@@ -153,11 +173,15 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
       encodeImageToBlurhash(result.url)
         .then(hash => setRecipeImageBlurhash(hash))
         .catch(e => console.warn('Could not generate blurhash:', e));
+      if (navigator.vibrate) {
+        navigator.vibrate([20, 30, 20]);
+      }
 
     } catch (err: any) {
       console.error('AI image generation error:', err);
       setError('Fehler beim Bild erzeugen: ' + (err?.message ?? String(err)));
     } finally {
+      setAiImageGenerationStage('idle');
       setIsGeneratingAiImage(false);
     }
   };
@@ -172,17 +196,34 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
   }, [recipeImagePreviewUrl]);
 
   // Form State
-  const [formData, setFormData] = useState({
-    title: '',
-    category: 'Hauptgericht',
-    prepTimeMinutes: 30,
-    difficulty: 'Mittel',
-    portions: 4,
-    ingredients: [{ name: '', amount: '' }],
-    instructions: [{ text: '' }],
-    image: 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?q=80&w=2626&auto=format&fit=crop', // Platzhalter
-    imageAlt: 'Leckeres Gericht',
-    sourceImageUrl: ''
+  const [formData, setFormData] = useState(() => {
+    if (initialData) {
+      return {
+        title: initialData.title,
+        category: initialData.category,
+        prepTimeMinutes: initialData.prepTimeMinutes,
+        difficulty: initialData.difficulty,
+        portions: initialData.portions,
+        ingredients: initialData.ingredients.length > 0 ? initialData.ingredients : [{ name: '', amount: '' }],
+        instructions: initialData.instructions.length > 0 ? sanitizeInstructionsIcons(initialData.instructions) : [{ text: '' }],
+        image: initialData.image || PLACEHOLDER_RECIPE_IMAGE,
+        imageAlt: initialData.imageAlt || '',
+        sourceImageUrl: initialData.sourceImageUrl || ''
+      };
+    }
+
+    return {
+      title: '',
+      category: 'Hauptgericht',
+      prepTimeMinutes: 30,
+      difficulty: 'Mittel' as 'Einfach' | 'Mittel' | 'Schwer',
+      portions: 4,
+      ingredients: [{ name: '', amount: '' }],
+      instructions: [{ text: '' }],
+      image: PLACEHOLDER_RECIPE_IMAGE,
+      imageAlt: 'Leckeres Gericht',
+      sourceImageUrl: addModalImportUrl || ''
+    };
   });
 
   // Effect: Wenn initialData sich ändert (oder Modal öffnet), Formular befüllen
@@ -196,46 +237,38 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         portions: initialData.portions,
         ingredients: initialData.ingredients.length > 0 ? initialData.ingredients : [{ name: '', amount: '' }],
         instructions: initialData.instructions.length > 0 ? sanitizeInstructionsIcons(initialData.instructions) : [{ text: '' }],
-        image: initialData.image || '',
+        image: initialData.image || PLACEHOLDER_RECIPE_IMAGE,
         imageAlt: initialData.imageAlt || '',
         sourceImageUrl: initialData.sourceImageUrl || ''
       });
       setRecipeImageStorageId(initialData.imageStorageId ?? null);
+      setPendingImageBlob(null);
+      setRecipeImageBlurhash(initialData.imageBlurhash ?? null);
+      setAiImageGenerationStage('idle');
+      setRecipeImageMeta(
+        initialData.imageWidth && initialData.imageHeight && initialData.imageAspectRatio
+          ? {
+              width: initialData.imageWidth,
+              height: initialData.imageHeight,
+              aspectRatio: initialData.imageAspectRatio,
+            }
+          : null
+      );
+      setRecipeImagePreviewUrl(
+        initialData.image && !initialData.image.startsWith('blob:')
+          ? initialData.image
+          : null
+      );
 
       // Original-Bilddaten speichern (für Change-Tracking)
       setOriginalImageData({
         storageId: initialData.imageStorageId ?? null,
-        url: initialData.image ?? null
+        url: initialData.image ?? null,
+        width: initialData.imageWidth,
+        height: initialData.imageHeight,
+        aspectRatio: initialData.imageAspectRatio,
       });
       setImageChanged(false);
-
-      const loadImageFromStorage = async () => {
-        setRecipeImagePreviewUrl(null);
-
-        if (initialData.imageStorageId && initialData.image) {
-          try {
-            const response = await fetch(initialData.image);
-            if (!response.ok) {
-              if (response.status === 404) {
-                console.warn('Storage image not found (404), clearing stale reference');
-                setRecipeImageStorageId(null);
-                setOriginalImageData({ storageId: null, url: null });
-              }
-              throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            const blob = await response.blob();
-            const objectUrl = URL.createObjectURL(blob);
-            setRecipeImagePreviewUrl(objectUrl);
-          } catch (error) {
-            console.warn('Could not load image from storage:', error);
-            setRecipeImagePreviewUrl(null);
-          }
-        } else if (initialData.image && !initialData.image.startsWith('blob:')) {
-          setRecipeImagePreviewUrl(initialData.image);
-        }
-      };
-
-      loadImageFromStorage();
       setActiveTab('manual');
     } else {
       // Reset für "Neues Rezept"
@@ -247,12 +280,16 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         portions: 4,
         ingredients: [{ name: '', amount: '' }],
         instructions: [{ text: '' }],
-        image: 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?q=80&w=2626&auto=format&fit=crop',
+        image: PLACEHOLDER_RECIPE_IMAGE,
         imageAlt: 'Leckeres Gericht',
         sourceImageUrl: addModalImportUrl || ''
       });
       setRecipeImageStorageId(null);
       setRecipeImagePreviewUrl(null);
+      setRecipeImageBlurhash(null);
+      setAiImageGenerationStage('idle');
+      setRecipeImageMeta(null);
+      setPendingImageBlob(null);
       // If we have an import URL, switch to manual tab where the URL input is visible
       // Otherwise use initialTab if provided, default to 'ai'
       if (addModalImportUrl) {
@@ -338,6 +375,17 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         sourceImageUrl: '__AI_SCAN__',
         ...doc,
       }));
+      setImageChanged(!!doc.image);
+      if (doc.image) {
+        getImageDimensionsFromUrl(doc.image)
+          .then((meta) => setRecipeImageMeta(meta))
+          .catch((e) => {
+            console.warn('Could not read AI-scan preview dimensions:', e);
+            setRecipeImageMeta(null);
+          });
+      } else {
+        setRecipeImageMeta(null);
+      }
 
       setAnalysisStage('complete');
       setAnalysisProgress(100);
@@ -351,10 +399,22 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
 
       setIsSaving(true);
       try {
+        let aiImageMeta: ImageDimensions | undefined;
+        if (doc.image) {
+          try {
+            aiImageMeta = await getImageDimensionsFromUrl(doc.image);
+          } catch (e) {
+            console.warn('Could not read AI-scan image dimensions:', e);
+          }
+        }
+
         const id = await createRecipe({
           ...formData,
           ...doc,
           imageStorageId: undefined,
+          imageWidth: aiImageMeta?.width,
+          imageHeight: aiImageMeta?.height,
+          imageAspectRatio: aiImageMeta?.aspectRatio,
           // WICHTIG: sourceImageUrl wird gesetzt durch setFormData oben (base64)
           // Das signalisiert recipes.ts, dass es ein Foto-Scan ist (photo_scans Counter)
           isFavorite: false,
@@ -416,6 +476,15 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
 
           if (cancelBulkRef.current) return;
 
+          let aiImageMeta: ImageDimensions | undefined;
+          if (doc.image) {
+            try {
+              aiImageMeta = await getImageDimensionsFromUrl(doc.image);
+            } catch (e) {
+              console.warn('Could not read bulk AI image dimensions:', e);
+            }
+          }
+
           // 2. Create Recipe
           const id = await createRecipe({
             title: doc.title,
@@ -423,6 +492,9 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
             image: doc.image,
             imageStorageId: undefined,
             imageBlurhash: undefined,
+            imageWidth: aiImageMeta?.width,
+            imageHeight: aiImageMeta?.height,
+            imageAspectRatio: aiImageMeta?.aspectRatio,
             imageAlt: doc.imageAlt,
             // WICHTIG: Marker-Wert statt base64 verwenden (base64 würde ausgefiltert)
             sourceImageUrl: '__AI_SCAN__',
@@ -514,12 +586,11 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
     setError(null);
 
     try {
-      const compressed = await compressImage(file, 1200, 0.75);
-      const uploadUrl = await generateImageUploadUrl({});
-
-      const json = await uploadJpegToConvexStorage(uploadUrl, compressed);
-      const storageId = json.storageId as Id<'_storage'>;
-      setRecipeImageStorageId(storageId);
+      const compressed = await compressImage(file, 1200, 0.75, 'image/jpeg');
+      const dimensions = await getImageDimensionsFromBlob(compressed);
+      setPendingImageBlob(compressed);
+      setRecipeImageStorageId(null);
+      setRecipeImageMeta(dimensions);
 
       if (recipeImagePreviewUrl) URL.revokeObjectURL(recipeImagePreviewUrl);
       const preview = URL.createObjectURL(compressed);
@@ -543,8 +614,9 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         console.warn('Failed to generate blurhash:', hashErr);
       }
     } catch (err: any) {
-      console.error('Image upload error:', err);
-      setError('Fehler beim Bild-Upload: ' + err.message);
+      console.error('Image processing error:', err);
+      setRecipeImageMeta(null);
+      setError('Fehler bei der Bildverarbeitung: ' + err.message);
     } finally {
       setIsUploadingRecipeImage(false);
     }
@@ -556,15 +628,11 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
 
     try {
       // Bild komprimieren
-      const compressed = await compressImage(editedBlob as File, 1200, 0.75);
-
-      // Upload URL generieren
-      const uploadUrl = await generateImageUploadUrl({});
-
-      // Bild zu Convex Storage hochladen
-      const json = await uploadJpegToConvexStorage(uploadUrl, compressed);
-      const storageId = json.storageId as Id<'_storage'>;
-      setRecipeImageStorageId(storageId);
+      const compressed = await compressImage(editedBlob, 1200, 0.75, 'image/jpeg');
+      const dimensions = await getImageDimensionsFromBlob(compressed);
+      setPendingImageBlob(compressed);
+      setRecipeImageStorageId(null);
+      setRecipeImageMeta(dimensions);
 
       // Alte Preview URL aufräumen
       if (recipeImagePreviewUrl) URL.revokeObjectURL(recipeImagePreviewUrl);
@@ -595,6 +663,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
       setError(null);
     } catch (err: any) {
       console.error('Image editor apply error:', err);
+      setRecipeImageMeta(null);
       setError('Fehler beim Speichern des bearbeiteten Bildes: ' + err.message);
     } finally {
       setIsUploadingRecipeImage(false);
@@ -660,19 +729,43 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
 
       const sourceImageUrl = sanitizeSourceImageUrlForSave(formData.sourceImageUrl);
       const instructions = sanitizeInstructionsIcons(formData.instructions);
+      let nextImageStorageId = recipeImageStorageId;
+      let imageMetaToSave: ImageDimensions | null = recipeImageMeta;
+
+      // Upload lokale Änderungen erst beim Save, um verwaiste Files zu minimieren.
+      if (imageChanged && pendingImageBlob) {
+        if (!imageMetaToSave) {
+          try {
+            imageMetaToSave = await getImageDimensionsFromBlob(pendingImageBlob);
+          } catch (e) {
+            console.warn('Could not read pending image dimensions:', e);
+          }
+        }
+
+        const uploadUrl = await generateImageUploadUrl({});
+        const json = await uploadJpegToConvexStorage(uploadUrl, pendingImageBlob);
+        nextImageStorageId = json.storageId as Id<'_storage'>;
+        setRecipeImageStorageId(nextImageStorageId);
+        setPendingImageBlob(null);
+      }
 
       // URL für Bild ermitteln
-      let imageUrl: string | undefined;
-      if (recipeImageStorageId && recipeImagePreviewUrl) {
+      let imageUrl: string | undefined = sanitizeImageUrl(formData.image) || undefined;
+      if (nextImageStorageId && recipeImagePreviewUrl) {
         // Bei Storage-Bild: Original-URL aus initialData verwenden wenn keine Änderung
         if (initialData && originalImageData?.url && !imageChanged) {
           imageUrl = originalImageData.url; // Behalte Original-URL
         } else if (!recipeImagePreviewUrl.startsWith('blob:')) {
           imageUrl = recipeImagePreviewUrl;
         }
-        // Wenn blob:-URL, leer lassen (Mutation überschreibt nicht)
-      } else {
-        imageUrl = sanitizeImageUrl(formData.image) || undefined;
+      }
+
+      if (imageChanged && !imageMetaToSave && imageUrl) {
+        try {
+          imageMetaToSave = await getImageDimensionsFromUrl(imageUrl);
+        } catch (e) {
+          console.warn('Could not read final image dimensions from URL:', e);
+        }
       }
 
       if (initialData) {
@@ -694,8 +787,20 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         // Bild-Felder nur senden wenn sich das Bild geändert hat
         if (imageChanged) {
           updateData.image = imageUrl;
-          updateData.imageStorageId = recipeImageStorageId ?? undefined;
           updateData.imageBlurhash = recipeImageBlurhash ?? undefined;
+          if (nextImageStorageId) {
+            updateData.imageStorageId = nextImageStorageId;
+          } else if (originalImageData?.storageId) {
+            updateData.clearImageStorageId = true;
+          }
+
+          if (imageMetaToSave) {
+            updateData.imageWidth = imageMetaToSave.width;
+            updateData.imageHeight = imageMetaToSave.height;
+            updateData.imageAspectRatio = imageMetaToSave.aspectRatio;
+          } else {
+            updateData.clearImageMetadata = true;
+          }
         }
 
         await updateRecipe(updateData);
@@ -703,10 +808,13 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         // CREATE - Immer alle Daten senden
         await createRecipe({
           ...formData,
-          image: imageUrl || 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?q=80&w=2626&auto=format&fit=crop',
+          image: imageUrl || (nextImageStorageId ? undefined : PLACEHOLDER_RECIPE_IMAGE),
           instructions,
-          imageStorageId: recipeImageStorageId ?? undefined,
+          imageStorageId: nextImageStorageId ?? undefined,
           imageBlurhash: recipeImageBlurhash ?? undefined,
+          imageWidth: imageMetaToSave?.width,
+          imageHeight: imageMetaToSave?.height,
+          imageAspectRatio: imageMetaToSave?.aspectRatio,
           sourceImageUrl,
           isFavorite: false,
         });
@@ -842,6 +950,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
               handleRecipeImageSelect={handleRecipeImageSelect}
               isUploadingRecipeImage={isUploadingRecipeImage}
               isGeneratingAiImage={isGeneratingAiImage}
+              aiImageGenerationStage={aiImageGenerationStage}
               isSaving={isSaving}
               isAnalyzing={isAnalyzing}
               isImageEditorOpen={isImageEditorOpen}

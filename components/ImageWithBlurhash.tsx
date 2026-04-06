@@ -1,6 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Blurhash } from 'react-blurhash';
 
+const MAX_LOADED_IMAGE_CACHE = 200;
+const loadedImageUrls = new Set<string>();
+const loadedImageOrder: string[] = [];
+
+const rememberLoadedImage = (url: string) => {
+  if (!url || loadedImageUrls.has(url)) return;
+  loadedImageUrls.add(url);
+  loadedImageOrder.push(url);
+
+  if (loadedImageOrder.length > MAX_LOADED_IMAGE_CACHE) {
+    const oldest = loadedImageOrder.shift();
+    if (oldest) loadedImageUrls.delete(oldest);
+  }
+};
+
 interface ImageWithBlurhashProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   src: string;
   blurhash?: string | null;
@@ -17,14 +32,21 @@ const ImageWithBlurhash: React.FC<ImageWithBlurhashProps> = ({
   forceLoad = false,
   ...props
 }) => {
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(() => loadedImageUrls.has(src));
   const [hasError, setHasError] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
+  const shouldInstantRender = forceLoad;
 
   // Preload image with proper error handling
   useEffect(() => {
     if (!src) return;
+
+    if (loadedImageUrls.has(src)) {
+      setHasError(false);
+      setIsLoaded(true);
+      return;
+    }
 
     setIsLoaded(false);
     setHasError(false);
@@ -33,6 +55,7 @@ const ImageWithBlurhash: React.FC<ImageWithBlurhashProps> = ({
     img.referrerPolicy = "no-referrer";
 
     img.onload = () => {
+      rememberLoadedImage(src);
       setIsLoaded(true);
     };
     img.onerror = (e) => {
@@ -78,9 +101,9 @@ const ImageWithBlurhash: React.FC<ImageWithBlurhashProps> = ({
 
   return (
     <div className={`relative overflow-hidden ${className}`}>
-      {blurhash && !hasError && (
+      {blurhash && !hasError && !isLoaded && !shouldInstantRender && (
         <div
-          className={`absolute inset-0 transition-opacity duration-500 ${isLoaded ? 'opacity-0' : 'opacity-100'}`}
+          className={`absolute inset-0 transition-opacity duration-150 ${isLoaded ? 'opacity-0' : 'opacity-100'}`}
           style={{ zIndex: 1 }}
         >
           <Blurhash
@@ -100,8 +123,11 @@ const ImageWithBlurhash: React.FC<ImageWithBlurhashProps> = ({
         alt={alt}
         referrerPolicy="no-referrer"
         loading={forceLoad ? 'eager' : 'lazy'}
-        className={`w-full h-full object-cover transition-opacity duration-500 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
-        onLoad={() => setIsLoaded(true)}
+        className={`w-full h-full object-cover ${shouldInstantRender ? 'opacity-100 transition-none' : `transition-opacity duration-150 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}`}
+        onLoad={() => {
+          rememberLoadedImage(src);
+          setIsLoaded(true);
+        }}
         onError={() => {
           setHasError(true);
           setIsLoaded(true);

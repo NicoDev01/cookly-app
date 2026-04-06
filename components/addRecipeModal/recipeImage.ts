@@ -1,4 +1,15 @@
 type ImageFormat = 'image/webp' | 'image/jpeg';
+export type ImageDimensions = {
+  width: number;
+  height: number;
+  aspectRatio: number;
+};
+
+const toImageDimensions = (width: number, height: number): ImageDimensions => ({
+  width,
+  height,
+  aspectRatio: width / height,
+});
 
 export const compressImage = async (
   file: File | Blob,
@@ -24,6 +35,28 @@ export const compressImage = async (
   if (!blob) throw new Error("Bild konnte nicht komprimiert werden");
   return blob;
 };
+
+export const getImageDimensionsFromBlob = async (file: File | Blob): Promise<ImageDimensions> => {
+  const bitmap = await createImageBitmap(file);
+  const dimensions = toImageDimensions(bitmap.width, bitmap.height);
+  bitmap.close();
+  return dimensions;
+};
+
+export const getImageDimensionsFromUrl = (url: string): Promise<ImageDimensions> =>
+  new Promise((resolve, reject) => {
+    const img = new Image();
+    img.referrerPolicy = "no-referrer";
+    img.onload = () => {
+      if (!img.naturalWidth || !img.naturalHeight) {
+        reject(new Error("Bildabmessungen konnten nicht gelesen werden"));
+        return;
+      }
+      resolve(toImageDimensions(img.naturalWidth, img.naturalHeight));
+    };
+    img.onerror = () => reject(new Error("Bild konnte nicht geladen werden"));
+    img.src = url;
+  });
 
 /**
  * optimizeImage - Wählt automatisch das beste Format basierend auf Dateigröße

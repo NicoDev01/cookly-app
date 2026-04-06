@@ -45,6 +45,7 @@ type Props = {
 
   isUploadingRecipeImage: boolean;
   isGeneratingAiImage: boolean;
+  aiImageGenerationStage: "idle" | "requesting" | "generating" | "loading";
   isSaving: boolean;
   isAnalyzing: boolean;
 
@@ -73,6 +74,7 @@ const ManualRecipeForm: React.FC<Props> = ({
   handleRecipeImageSelect,
   isUploadingRecipeImage,
   isGeneratingAiImage,
+  aiImageGenerationStage,
   isSaving,
   isAnalyzing,
   isImageEditorOpen,
@@ -80,6 +82,15 @@ const ManualRecipeForm: React.FC<Props> = ({
   handleImageEditorApply,
   handleImageEditorCancel,
 }) => {
+  const aiGenerationLabel =
+    aiImageGenerationStage === "requesting"
+      ? "Anfrage wird gestartet..."
+      : aiImageGenerationStage === "generating"
+        ? "KI erstellt dein Bild..."
+        : aiImageGenerationStage === "loading"
+          ? "Bild wird geladen..."
+          : null;
+
   const updateIngredient = (index: number, field: "name" | "amount", value: string) => {
     const newIngredients = [...formData.ingredients];
     newIngredients[index] = { ...newIngredients[index], [field]: value };
@@ -135,12 +146,25 @@ const ManualRecipeForm: React.FC<Props> = ({
         <div className="pt-2">
 
           <div className="flex flex-col md:flex-row gap-4 items-start">
-            <div className="w-full md:w-56 aspect-video rounded-xl overflow-hidden bg-gray-100 dark:bg-white/5">
+            <div className="relative w-full md:w-56 aspect-video rounded-xl overflow-hidden bg-gray-100 dark:bg-white/5">
               <img
                 src={recipeImagePreviewUrl ?? formData.image}
                 alt={formData.imageAlt || formData.title || "Rezeptbild"}
                 className="w-full h-full object-cover"
               />
+              {isGeneratingAiImage && (
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/50 backdrop-blur-[2px] text-white">
+                  <span className="material-symbols-outlined animate-spin text-2xl">
+                    progress_activity
+                  </span>
+                  <p className="text-xs font-semibold tracking-wide">
+                    {aiGenerationLabel ?? "Bild wird erzeugt..."}
+                  </p>
+                  <div className="w-28 h-1.5 rounded-full bg-white/20 overflow-hidden">
+                    <div className="h-full w-1/2 bg-white animate-pulse" />
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex-1 w-full">
               <div className="flex flex-nowrap items-center gap-2">
@@ -213,7 +237,11 @@ const ManualRecipeForm: React.FC<Props> = ({
               )}
 
               {isGeneratingAiImage && (
-                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Bild wird erzeugt...</p>
+                <div className="mt-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2">
+                  <p className="text-xs font-medium text-primary">
+                    {aiGenerationLabel ?? "KI erstellt dein Bild..."}
+                  </p>
+                </div>
               )}
 
             </div>

@@ -19,6 +19,9 @@ export interface Recipe {
   image?: string;
   imageStorageId?: Id<"_storage">;
   imageBlurhash?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  imageAspectRatio?: number;
   imageAlt?: string;
   sourceImageUrl?: string; // URL zum abfotografierten Original
   sourceUrl?: string; // URL zum Original-Post (z.B. Instagram)

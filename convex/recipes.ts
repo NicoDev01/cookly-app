@@ -272,6 +272,9 @@ export const create = mutation({
     imageAlt: v.optional(v.string()),
     imageStorageId: v.optional(v.id("_storage")),
     imageBlurhash: v.optional(v.string()),
+    imageWidth: v.optional(v.number()),
+    imageHeight: v.optional(v.number()),
+    imageAspectRatio: v.optional(v.number()),
     sourceImageUrl: v.optional(v.string()),
     sourceUrl: v.optional(v.string()),
     isFavorite: v.optional(v.boolean()),
@@ -376,6 +379,9 @@ async function insertRecipe(ctx: any, userId: Id<"users">, args: any): Promise<a
     imageAlt: args.imageAlt,
     imageStorageId: args.imageStorageId,
     imageBlurhash: args.imageBlurhash,
+    imageWidth: args.imageWidth,
+    imageHeight: args.imageHeight,
+    imageAspectRatio: args.imageAspectRatio,
     sourceImageUrl: args.sourceImageUrl,
     sourceUrl: args.sourceUrl,
     createdAt: now,
@@ -411,7 +417,12 @@ export const update = mutation({
     image: v.optional(v.string()),
     imageAlt: v.optional(v.string()),
     imageStorageId: v.optional(v.id("_storage")),
+    clearImageStorageId: v.optional(v.boolean()),
+    clearImageMetadata: v.optional(v.boolean()),
     imageBlurhash: v.optional(v.string()),
+    imageWidth: v.optional(v.number()),
+    imageHeight: v.optional(v.number()),
+    imageAspectRatio: v.optional(v.number()),
     sourceImageUrl: v.optional(v.string()),
     sourceUrl: v.optional(v.string()),
     isFavorite: v.optional(v.boolean()),
@@ -426,9 +437,25 @@ export const update = mutation({
     const recipe = await ctx.db.get(args.id);
     if (!recipe || recipe.userId !== userId) throw new Error("Recipe not found or access denied");
 
-    const { id, ingredients, image, imageStorageId, ...otherUpdates } = args;
+    const {
+      id,
+      ingredients,
+      image,
+      imageStorageId,
+      clearImageStorageId,
+      clearImageMetadata,
+      imageWidth,
+      imageHeight,
+      imageAspectRatio,
+      ...otherUpdates
+    } = args;
+    const shouldClearImageStorageId = clearImageStorageId === true;
+    const shouldClearImageMetadata = clearImageMetadata === true;
 
-    if (imageStorageId && recipe.imageStorageId && recipe.imageStorageId !== imageStorageId) {
+    if (
+      recipe.imageStorageId &&
+      (shouldClearImageStorageId || (imageStorageId && recipe.imageStorageId !== imageStorageId))
+    ) {
       try {
         await ctx.storage.delete(recipe.imageStorageId);
       } catch (e) {
@@ -442,6 +469,9 @@ export const update = mutation({
       updates.image = image;
     }
     if (imageStorageId !== undefined) updates.imageStorageId = imageStorageId;
+    if (imageWidth !== undefined) updates.imageWidth = imageWidth;
+    if (imageHeight !== undefined) updates.imageHeight = imageHeight;
+    if (imageAspectRatio !== undefined) updates.imageAspectRatio = imageAspectRatio;
 
     if (ingredients) {
       updates.ingredients = ingredients.map(ing => ({ ...ing, checked: ing.checked ?? false }));
@@ -451,6 +481,21 @@ export const update = mutation({
       await adjustCategoryCount(ctx, recipe.category, -1, userId);
       await adjustCategoryCount(ctx, args.category, 1, userId);
       await ensureCategoryExists(ctx, args.category, userId);
+    }
+
+    if (shouldClearImageStorageId || shouldClearImageMetadata) {
+      const { _id, _creationTime, ...recipeDoc } = recipe;
+      const replacement: Record<string, unknown> = { ...recipeDoc, ...updates };
+      if (shouldClearImageStorageId) {
+        delete (replacement as { imageStorageId?: unknown }).imageStorageId;
+      }
+      if (shouldClearImageMetadata) {
+        delete (replacement as { imageWidth?: unknown }).imageWidth;
+        delete (replacement as { imageHeight?: unknown }).imageHeight;
+        delete (replacement as { imageAspectRatio?: unknown }).imageAspectRatio;
+      }
+      await ctx.db.replace(args.id, replacement as any);
+      return;
     }
 
     await ctx.db.patch(args.id, updates);

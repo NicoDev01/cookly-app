@@ -74,6 +74,9 @@ export default defineSchema({
     imageAlt: v.optional(v.string()), // Alt text for image
     imageStorageId: v.optional(v.id("_storage")), // Convex storage ID for uploaded images
     imageBlurhash: v.optional(v.string()), // Blurhash for loading placeholder
+    imageWidth: v.optional(v.number()), // Final rendered image width in px
+    imageHeight: v.optional(v.number()), // Final rendered image height in px
+    imageAspectRatio: v.optional(v.number()), // width / height
     sourceImageUrl: v.optional(v.string()), // Original photo URL from KI scan
     sourceUrl: v.optional(v.string()), // Source URL (Instagram/Website)
     
