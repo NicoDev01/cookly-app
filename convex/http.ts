@@ -6,6 +6,8 @@ import { clearWebhookEventRecord, recordWebhookEventIfNew } from "./stripeIntern
 
 const http = httpRouter();
 let stripeWebhookClient: Stripe | null = null;
+const STRIPE_WEBHOOK_RETENTION_DAYS = 45;
+const STRIPE_WEBHOOK_CLEANUP_BATCH_SIZE = 100;
 
 function getStripeWebhookClient(): Stripe {
   if (!stripeWebhookClient) {
@@ -61,20 +63,27 @@ const stripeWebhookHandler = httpAction(async (ctx, request) => {
     }
 
     try {
+      const { internal } = await import("./_generated/api");
+      const cleanupArgs = {
+        olderThanMs:
+          Date.now() - STRIPE_WEBHOOK_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+        batchSize: STRIPE_WEBHOOK_CLEANUP_BATCH_SIZE,
+      };
+
       const isNewEvent = await ctx.runMutation(recordWebhookEventIfNew, {
         eventId: event.id,
         eventType: event.type,
       });
       if (!isNewEvent) {
+        await ctx.runMutation(internal.stripeInternal.cleanupOldWebhookEvents, cleanupArgs);
         return new Response("Webhook already processed", { status: 200 });
       }
-
-      const { internal } = await import("./_generated/api");
       
       await ctx.runAction(internal.stripe.handleWebhookEvent, {
         eventType: event.type,
         data: event.data.object,
       });
+      await ctx.runMutation(internal.stripeInternal.cleanupOldWebhookEvents, cleanupArgs);
 
       return new Response("Webhook processed", { status: 200 });
     } catch (error) {

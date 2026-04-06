@@ -85,6 +85,14 @@ function getStripe(): Stripe {
 
 type InternalSubscriptionPlan = "pro_monthly" | "pro_yearly";
 type InternalSubscriptionStatus = "active" | "canceled" | "past_due";
+const BLOCKING_SUBSCRIPTION_STATUSES = new Set([
+  "active",
+  "trialing",
+  "past_due",
+  "unpaid",
+  "paused",
+  "incomplete",
+]);
 
 function toCustomerId(
   customer: string | Stripe.Customer | Stripe.DeletedCustomer | null | undefined
@@ -146,6 +154,14 @@ function getSubscriptionPeriods(subscription: Stripe.Subscription): {
   };
 }
 
+function getBlockingSubscription(
+  subscriptions: Stripe.Subscription[]
+): Stripe.Subscription | undefined {
+  return subscriptions.find((subscription) =>
+    BLOCKING_SUBSCRIPTION_STATUSES.has(subscription.status)
+  );
+}
+
 // ============================================================
 // ACTIONS - Checkout & Portal
 // ============================================================
@@ -192,6 +208,19 @@ export const createCheckoutSession = action({
         subscription: user?.subscription || "free",
         subscriptionStatus: user?.subscriptionStatus || "active",
       });
+    }
+
+    // Schutz gegen doppelte Abos: vorhandene aktive/trialing/past_due/etc. Subscriptions blockieren.
+    const existingSubscriptions = await getStripe().subscriptions.list({
+      customer: stripeCustomerId,
+      status: "all",
+      limit: 20,
+    });
+    const blockingSubscription = getBlockingSubscription(existingSubscriptions.data);
+    if (blockingSubscription) {
+      throw new Error(
+        `Subscription already exists (${blockingSubscription.status}). Please use the billing portal to manage your plan.`
+      );
     }
 
     const plan = PLAN_PRICES[args.planId];

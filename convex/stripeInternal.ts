@@ -78,3 +78,26 @@ export const clearWebhookEventRecord = internalMutation({
     return null;
   },
 });
+
+export const cleanupOldWebhookEvents = internalMutation({
+  args: {
+    olderThanMs: v.number(),
+    batchSize: v.optional(v.number()),
+  },
+  returns: v.object({
+    deletedCount: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const maxBatchSize = Math.min(Math.max(args.batchSize ?? 100, 1), 500);
+    const oldEvents = await ctx.db
+      .query("stripeWebhookEvents")
+      .withIndex("by_processedAt", (q) => q.lt("processedAt", args.olderThanMs))
+      .take(maxBatchSize);
+
+    for (const event of oldEvents) {
+      await ctx.db.delete(event._id);
+    }
+
+    return { deletedCount: oldEvents.length };
+  },
+});

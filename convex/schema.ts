@@ -166,5 +166,7 @@ export default defineSchema({
     eventId: v.string(),
     eventType: v.string(),
     processedAt: v.number(),
-  }).index("by_eventId", ["eventId"]),
+  })
+    .index("by_eventId", ["eventId"])
+    .index("by_processedAt", ["processedAt"]),
 });
