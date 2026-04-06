@@ -2,7 +2,7 @@
 
 > **Erstellt:** 2026-02-19  
 > **Projekt:** Cookly App  
-> **Stack:** Vite + React · Convex · Clerk · Stripe · Capacitor
+> **Stack:** Vite + React · Convex · · Stripe · Capacitor
 
 ---
 

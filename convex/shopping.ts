@@ -6,12 +6,16 @@ import { Id } from "./_generated/dataModel";
 async function getAuthenticatedUserId(ctx: any): Promise<Id<"users">> {
   const authUserId = await getAuthUserId(ctx);
   if (!authUserId) throw new Error("Not authenticated");
-  const user = await ctx.db
+  const linkedUser = await ctx.db
     .query("users")
     .withIndex("by_authUserId", (q: any) => q.eq("authUserId", authUserId.toString()))
     .first();
-  if (!user) throw new Error("User not found");
-  return user._id;
+  if (linkedUser) return linkedUser._id;
+
+  const authUser = await ctx.db.get(authUserId as Id<"users">);
+  if (authUser) return authUser._id;
+
+  throw new Error("User not found");
 }
 
 export const getShoppingList = query({
@@ -40,6 +44,12 @@ export const addShoppingItem = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthenticatedUserId(ctx);
+    if (args.recipeId) {
+      const recipe = await ctx.db.get(args.recipeId);
+      if (!recipe || recipe.userId !== userId) {
+        throw new Error("Recipe not found or access denied");
+      }
+    }
 
     const normalizedName = args.name.toLowerCase().trim();
     const normalizedAmount = args.amount?.toLowerCase().trim() || "";
@@ -73,6 +83,12 @@ export const toggleShoppingItemByDetails = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthenticatedUserId(ctx);
+    if (args.recipeId) {
+      const recipe = await ctx.db.get(args.recipeId);
+      if (!recipe || recipe.userId !== userId) {
+        throw new Error("Recipe not found or access denied");
+      }
+    }
 
     const normalizedName = args.name.toLowerCase().trim();
     const normalizedAmount = args.amount?.toLowerCase().trim() || "";

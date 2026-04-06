@@ -4,7 +4,6 @@ import { api, internal } from "./_generated/api";
 import { v } from "convex/values";
 import { GoogleGenAI } from "@google/genai";
 import { Id } from "./_generated/dataModel";
-import { checkRateLimit, getRateLimitStatus } from "./rateLimiter";
 import { RECIPE_CATEGORIES } from "./constants";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
@@ -56,19 +55,20 @@ export const scrapeWebsite = action({
         // ============================================================
         // 2. Rate Limiting prüfen (10 Requests/Minute)
         // ============================================================
-        if (!checkRateLimit(userIdStr)) {
-            const status = getRateLimitStatus(userIdStr);
+        const rateLimit = await ctx.runMutation(internal.rateLimiter.checkAndConsumeRateLimit, {
+            identifier: userIdStr,
+            bucket: "website",
+        });
+        if (!rateLimit.allowed) {
             throw new Error(JSON.stringify({
                 type: "RATE_LIMIT_EXCEEDED",
-                resetAt: status.resetAt,
+                resetAt: rateLimit.resetAt,
                 message: "Du hast zu viele Anfragen gestellt. Bitte warte einen Moment.",
             }));
         }
 
         // Check if we already have this recipe to save costs and time
-        const user = await ctx.runQuery(internal.stripeInternal.getUserByAuthUserId, { authUserId: userIdStr });
-        if (!user) throw new Error("NOT_AUTHENTICATED");
-        const existingId = await ctx.runQuery(api.recipes.getBySourceUrl, { url: args.url, userId: user._id });
+        const existingId = await ctx.runQuery(api.recipes.getBySourceUrl, { url: args.url });
         if (existingId) {
             console.log(`Recipe already exists for ${args.url}, returning existing ID.`);
             return existingId;

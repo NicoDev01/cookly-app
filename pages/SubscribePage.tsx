@@ -31,6 +31,7 @@ const PRO_FEATURES_YEARLY = [
 export default function SubscribePage() {
   const handleBack = useBackNavigation();
   const currentUser = useQuery(api.users.getCurrentUser);
+  const pricing = useQuery(api.stripe.getPlanPricing);
   const createCheckout = useAction(api.stripe.createCheckoutSession);
   const createPortal = useAction(api.stripe.createPortalSession);
   const [loading, setLoading] = useState<string | null>(null);
@@ -82,8 +83,12 @@ export default function SubscribePage() {
     }
   };
 
-  const proPrice = isYearly ? "€24,99" : "€2,99";
-  const proPeriod = isYearly ? "Jahr" : "Monat";
+  const selectedPlan = isYearly ? pricing?.pro_yearly : pricing?.pro_monthly;
+  const proPrice = selectedPlan?.displayPrice ?? (isYearly ? "24,99 €" : "2,99 €");
+  const proPeriod = selectedPlan?.displayPeriod ?? (isYearly ? "Jahr" : "Monat");
+  const billingLabel =
+    selectedPlan?.billingLabel ??
+    (isYearly ? "Jährliche Abrechnung (Gesamt 24,99 €)" : "Monatliche Abrechnung (Gesamt 35,88 €/Jahr)");
   const proPlanId = (isYearly ? "pro_yearly" : "pro_monthly") as "pro_monthly" | "pro_yearly";
 
   return (
@@ -161,11 +166,11 @@ export default function SubscribePage() {
                   </span>
                   <span className="text-muted-foreground text-xl">/{proPeriod}</span>
                 </div>
-                <p className="text-sm font-medium mt-2 text-primary">
-                  {isYearly ? "Jährliche Abrechnung (Gesamt €24,99)" : "Monatliche Abrechnung (Gesamt €35,88/Jahr)"}
-                </p>
-              </div>
-            </CardHeader>
+                  <p className="text-sm font-medium mt-2 text-primary">
+                    {billingLabel}
+                  </p>
+                </div>
+              </CardHeader>
             
             <CardContent className="flex-grow">
               <Separator className="mb-8 bg-primary/20" />

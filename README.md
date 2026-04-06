@@ -8,8 +8,7 @@ Save recipes from anywhere – snap a photo, paste a URL, or add manually. Cookl
 
 - 🤖 **AI Recipe Scanner** - Scan recipes from photos using Google Gemini
 - 🌐 **URL Import** - Save recipes from any website (auto-extraction)
-- 📸 **Instagram Import** - Import recipes directly from Instagram posts
--  **Multi-user Authentication** - Secure login with Clerk
+- 📸 **Instagram Import** - Import recipes directly from 
 - 💳 **Stripe Subscriptions** - Monthly, Yearly, and Lifetime plans
 - 📱 **Native Android App** - Built with Capacitor
 - 🛒 **Shopping Lists** - Smart shopping list with deduplication
@@ -20,7 +19,7 @@ Save recipes from anywhere – snap a photo, paste a URL, or add manually. Cookl
 
 - **Frontend**: React 19, TypeScript, Vite
 - **Backend**: Convex (Serverless, Realtime Database)
-- **Authentication**: Clerk
+
 - **Payments**: Stripe
 - **AI**: Google Gemini API
 - **Styling**: Tailwind CSS
@@ -28,7 +27,6 @@ Save recipes from anywhere – snap a photo, paste a URL, or add manually. Cookl
 
 ## Architecture
 
-Cookly follows a **multi-tenant architecture** where all user data is isolated by `clerkId`. Key patterns:
 
 - **Identity Verification**: Every Convex function uses `ctx.auth.getUserIdentity()` to validate requests
 - **Subscription Limits**: Backend enforces import limits and validates ownership before mutations
@@ -42,7 +40,7 @@ Cookly follows a **multi-tenant architecture** where all user data is isolated b
 - Node.js 18+
 - npm or yarn
 - Convex account
-- Clerk account
+
 - Google Gemini API key
 
 ### Installation
@@ -65,7 +63,7 @@ cp ENV_EXAMPLE.txt .env
 
 Edit `.env` and add your credentials:
 ```env
-VITE_CLERK_PUBLISHABLE_KEY=pk_test_your_key_here
+
 VITE_CONVEX_URL=https://your-project.convex.cloud
 VITE_GEMINI_API_KEY=AIza_your_key_here
 ```
@@ -161,14 +159,13 @@ npx cap open android
 ## Environment Variables
 
 ### Frontend (.env)
-- `VITE_CLERK_PUBLISHABLE_KEY` - Clerk publishable key
+
 - `VITE_CONVEX_URL` - Convex deployment URL
 - `VITE_GEMINI_API_KEY` - Google Gemini API key
 
 ### Convex (set via CLI)
 ```bash
 npx convex env set GEMINI_API_KEY your_key_here
-npx convex env set CLERK_WEBHOOK_SECRET your_secret_here
 npx convex env set STRIPE_SECRET_KEY your_key_here --prod
 npx convex env set STRIPE_WEBHOOK_SECRET your_webhook_secret_here --prod
 ```

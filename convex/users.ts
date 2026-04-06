@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { FREE_LIMITS } from "./constants";
 import type { QueryCtx, MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 
 // ============================================================
 // HELPER
@@ -10,16 +11,19 @@ import type { QueryCtx, MutationCtx } from "./_generated/server";
 
 /**
  * Gibt den aktuell eingeloggten User aus der custom users-Tabelle zurück.
- * Nutzt Convex Auth statt Clerk identity.
+ * Nutzt Convex Auth statt  identity.
  */
 async function getCurrentUserFromCtx(ctx: QueryCtx | MutationCtx) {
   const authUserId = await getAuthUserId(ctx);
   if (!authUserId) return null;
 
-  return await ctx.db
+  const linkedUser = await ctx.db
     .query("users")
     .withIndex("by_authUserId", (q) => q.eq("authUserId", authUserId.toString()))
     .first();
+  if (linkedUser) return linkedUser;
+
+  return await ctx.db.get(authUserId as Id<"users">);
 }
 
 // ============================================================
@@ -32,7 +36,17 @@ async function getCurrentUserFromCtx(ctx: QueryCtx | MutationCtx) {
 export const getCurrentUser = query({
   args: {},
   handler: async (ctx) => {
-    return await getCurrentUserFromCtx(ctx);
+    const authUserId = await getAuthUserId(ctx);
+    if (!authUserId) return null;
+
+    const linkedUser = await ctx.db
+      .query("users")
+      .withIndex("by_authUserId", (q) => q.eq("authUserId", authUserId.toString()))
+      .first();
+    if (linkedUser) return linkedUser;
+
+    // Trigger createOrSyncUser in the client bootstrap flow.
+    return null;
   },
 });
 
@@ -44,9 +58,10 @@ export const canCreateManualRecipe = query({
   handler: async (ctx) => {
     const user = await getCurrentUserFromCtx(ctx);
     if (!user) return { canProceed: false, error: "NOT_AUTHENTICATED" };
+    const subscription = user.subscription ?? "free";
 
-    if (user.subscription !== "free") {
-      return { canProceed: true, isPro: true, subscription: user.subscription };
+    if (subscription !== "free") {
+      return { canProceed: true, isPro: true, subscription };
     }
 
     const current = user.usageStats?.manualRecipes || 0;
@@ -71,9 +86,10 @@ export const canImportFromLink = query({
   handler: async (ctx) => {
     const user = await getCurrentUserFromCtx(ctx);
     if (!user) return { canProceed: false, error: "NOT_AUTHENTICATED" };
+    const subscription = user.subscription ?? "free";
 
-    if (user.subscription !== "free") {
-      return { canProceed: true, isPro: true, subscription: user.subscription };
+    if (subscription !== "free") {
+      return { canProceed: true, isPro: true, subscription };
     }
 
     const current = user.usageStats?.linkImports || 0;
@@ -98,9 +114,10 @@ export const canScanPhoto = query({
   handler: async (ctx) => {
     const user = await getCurrentUserFromCtx(ctx);
     if (!user) return { canProceed: false, error: "NOT_AUTHENTICATED" };
+    const subscription = user.subscription ?? "free";
 
-    if (user.subscription !== "free") {
-      return { canProceed: true, isPro: true, subscription: user.subscription };
+    if (subscription !== "free") {
+      return { canProceed: true, isPro: true, subscription };
     }
 
     const current = user.usageStats?.photoScans || 0;
@@ -126,7 +143,7 @@ export const getUsageStats = query({
     const user = await getCurrentUserFromCtx(ctx);
     if (!user) return null;
 
-    const isPro = user.subscription !== "free";
+    const isPro = (user.subscription ?? "free") !== "free";
     return {
       usage: user.usageStats,
       isPro,
@@ -161,6 +178,38 @@ export const createOrSyncUser = mutation({
       .first();
 
     if (existing) return existing._id;
+
+    const authUserDoc = await ctx.db.get(authUserId as Id<"users">);
+    if (authUserDoc) {
+      const now = Date.now();
+      const identity = await ctx.auth.getUserIdentity();
+      const email = identity?.email ?? undefined;
+      const name = identity?.name ?? email?.split("@")[0] ?? "User";
+      const avatar = identity?.pictureUrl ?? undefined;
+
+      await ctx.db.patch(authUserDoc._id, {
+        authUserId: authUserId.toString(),
+        email: authUserDoc.email ?? email,
+        name: authUserDoc.name ?? name,
+        avatar: authUserDoc.avatar ?? avatar,
+        subscription: authUserDoc.subscription ?? "free",
+        subscriptionStatus: authUserDoc.subscriptionStatus ?? "active",
+        onboardingCompleted: authUserDoc.onboardingCompleted ?? false,
+        notificationsEnabled: authUserDoc.notificationsEnabled ?? false,
+        usageStats: authUserDoc.usageStats ?? {
+          manualRecipes: 0,
+          linkImports: 0,
+          photoScans: 0,
+          subscriptionStartDate: undefined,
+          subscriptionEndDate: undefined,
+          resetOnDowngrade: false,
+        },
+        createdAt: authUserDoc.createdAt ?? now,
+        updatedAt: now,
+      });
+
+      return authUserDoc._id;
+    }
 
     // Profildaten aus Convex Auth Identity
     const identity = await ctx.auth.getUserIdentity();
@@ -254,21 +303,8 @@ export const updateSubscription = mutation({
     stripeCustomerId: v.optional(v.string()),
     stripeSubscriptionId: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const user = await getCurrentUserFromCtx(ctx);
-    if (!user) throw new Error("Not authenticated");
-
-    await ctx.db.patch(user._id, {
-      subscription: args.subscription,
-      subscriptionStatus: args.subscriptionStatus,
-      usageStats: {
-        ...user.usageStats,
-        subscriptionEndDate: args.subscriptionEndDate,
-      },
-      stripeCustomerId: args.stripeCustomerId ?? user.stripeCustomerId,
-      stripeSubscriptionId: args.stripeSubscriptionId ?? user.stripeSubscriptionId,
-      updatedAt: Date.now(),
-    });
+  handler: async () => {
+    throw new Error("Subscription updates are managed by Stripe webhooks only.");
   },
 });
 
@@ -279,56 +315,141 @@ export const updateSubscription = mutation({
 export const deleteCurrentUser = mutation({
   args: {},
   handler: async (ctx) => {
-    const user = await getCurrentUserFromCtx(ctx);
-    if (!user) throw new Error("Not authenticated");
+    const authUserId = await getAuthUserId(ctx);
+    if (!authUserId) throw new Error("Not authenticated");
 
-    // Delete all user's recipes
-    const recipes = await ctx.db
-      .query("recipes")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .collect();
-    for (const recipe of recipes) {
-      await ctx.db.delete(recipe._id);
+    const currentUser = await getCurrentUserFromCtx(ctx);
+    if (!currentUser) throw new Error("Not authenticated");
+
+    const authUserDoc = await ctx.db.get(authUserId as Id<"users">);
+    const userIds = Array.from(
+      new Set(
+        [currentUser._id, authUserDoc?._id]
+          .filter(Boolean)
+          .map((id) => id as Id<"users">),
+      ),
+    );
+
+    for (const userId of userIds) {
+      const recipes = await ctx.db
+        .query("recipes")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .collect();
+      for (const recipe of recipes) {
+        if (recipe.imageStorageId) {
+          try {
+            await ctx.storage.delete(recipe.imageStorageId);
+          } catch {
+            // ignore orphaned files
+          }
+        }
+        await ctx.db.delete(recipe._id);
+      }
+
+      const weeklyMeals = await ctx.db
+        .query("weeklyMeals")
+        .withIndex("by_user_date", (q) => q.eq("userId", userId))
+        .collect();
+      for (const meal of weeklyMeals) {
+        await ctx.db.delete(meal._id);
+      }
+
+      const shoppingItems = await ctx.db
+        .query("shoppingItems")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .collect();
+      for (const item of shoppingItems) {
+        await ctx.db.delete(item._id);
+      }
+
+      const categories = await ctx.db
+        .query("categories")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .collect();
+      for (const cat of categories) {
+        if (cat.imageStorageId) {
+          try {
+            await ctx.storage.delete(cat.imageStorageId);
+          } catch {
+            // ignore orphaned files
+          }
+        }
+        await ctx.db.delete(cat._id);
+      }
+
+      const categoryStats = await ctx.db
+        .query("categoryStats")
+        .withIndex("by_user_category", (q) => q.eq("userId", userId))
+        .collect();
+      for (const stat of categoryStats) {
+        await ctx.db.delete(stat._id);
+      }
     }
 
-    // Delete all user's weekly meals
-    const weeklyMeals = await ctx.db
-      .query("weeklyMeals")
-      .withIndex("by_user_date", (q) => q.eq("userId", user._id))
-      .collect();
-    for (const meal of weeklyMeals) {
-      await ctx.db.delete(meal._id);
+    const identifiers = new Set<string>();
+    identifiers.add(authUserId.toString());
+    if (currentUser.email) identifiers.add(currentUser.email);
+    if (authUserDoc?.email) identifiers.add(authUserDoc.email);
+
+    for (const userId of userIds) {
+      const sessions = await ctx.db
+        .query("authSessions")
+        .withIndex("userId", (q) => q.eq("userId", userId))
+        .collect();
+      for (const session of sessions) {
+        const refreshTokens = await ctx.db
+          .query("authRefreshTokens")
+          .withIndex("sessionId", (q) => q.eq("sessionId", session._id))
+          .collect();
+        for (const token of refreshTokens) {
+          await ctx.db.delete(token._id);
+        }
+
+        const verifiers = await ctx.db
+          .query("authVerifiers")
+          .filter((q) => q.eq(q.field("sessionId"), session._id))
+          .collect();
+        for (const verifier of verifiers) {
+          await ctx.db.delete(verifier._id);
+        }
+
+        await ctx.db.delete(session._id);
+      }
+
+      const accounts = await ctx.db
+        .query("authAccounts")
+        .filter((q) => q.eq(q.field("userId"), userId))
+        .collect();
+      for (const account of accounts) {
+        const verificationCodes = await ctx.db
+          .query("authVerificationCodes")
+          .withIndex("accountId", (q) => q.eq("accountId", account._id))
+          .collect();
+        for (const code of verificationCodes) {
+          await ctx.db.delete(code._id);
+        }
+        await ctx.db.delete(account._id);
+      }
     }
 
-    // Delete all user's shopping items
-    const shoppingItems = await ctx.db
-      .query("shoppingItems")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .collect();
-    for (const item of shoppingItems) {
-      await ctx.db.delete(item._id);
+    for (const identifier of identifiers) {
+      const rateLimitRows = await ctx.db
+        .query("authRateLimits")
+        .withIndex("identifier", (q) => q.eq("identifier", identifier))
+        .collect();
+      for (const row of rateLimitRows) {
+        await ctx.db.delete(row._id);
+      }
     }
 
-    // Delete categories and stats
-    const categories = await ctx.db
-      .query("categories")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .collect();
-    for (const cat of categories) {
-      await ctx.db.delete(cat._id);
+    for (const userId of userIds) {
+      const user = await ctx.db.get(userId);
+      if (user) {
+        await ctx.db.delete(userId);
+      }
     }
 
-    const categoryStats = await ctx.db
-      .query("categoryStats")
-      .withIndex("by_user_category", (q) => q.eq("userId", user._id))
-      .collect();
-    for (const stat of categoryStats) {
-      await ctx.db.delete(stat._id);
-    }
-
-    await ctx.db.delete(user._id);
-
-    console.log(`[DeleteUser] ✅ User ${user._id} and all data deleted`);
+    console.log(`[DeleteUser] ✅ Deleted user data and auth state for ${authUserId}`);
     return { success: true };
   },
 });
@@ -355,7 +476,7 @@ export const incrementUsageCounter = internalMutation({
     if (!user) throw new Error("User not found");
 
     // Pro User brauchen keine Counter
-    if (user.subscription !== "free") return;
+    if ((user.subscription ?? "free") !== "free") return;
 
     const currentStats = user.usageStats || {
       manualRecipes: 0,
@@ -456,8 +577,68 @@ export const markForDowngradeByStripeCustomer = internalMutation({
 });
 
 /**
+ * Entfernt den Downgrade-Marker (z. B. wenn Kündigung rückgängig gemacht wurde)
+ */
+export const clearDowngradeMarkByStripeCustomer = internalMutation({
+  args: {
+    stripeCustomerId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_stripeCustomer", (q) => q.eq("stripeCustomerId", args.stripeCustomerId))
+      .first();
+
+    if (!user) {
+      console.error(`User with stripeCustomerId ${args.stripeCustomerId} not found`);
+      return;
+    }
+
+    await ctx.db.patch(user._id, {
+      usageStats: {
+        ...user.usageStats,
+        resetOnDowngrade: false,
+      },
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+/**
+ * Setzt Subscription-Felder auf Free zurück (harte Downgrade-Aktion)
+ */
+export const downgradeToFreeByStripeCustomer = internalMutation({
+  args: {
+    stripeCustomerId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_stripeCustomer", (q) => q.eq("stripeCustomerId", args.stripeCustomerId))
+      .first();
+
+    if (!user) {
+      console.error(`User with stripeCustomerId ${args.stripeCustomerId} not found`);
+      return;
+    }
+
+    await ctx.db.patch(user._id, {
+      subscription: "free",
+      subscriptionStatus: "canceled",
+      usageStats: {
+        ...user.usageStats,
+        subscriptionStartDate: undefined,
+        subscriptionEndDate: undefined,
+      },
+      stripeSubscriptionId: undefined,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+/**
  * Update Subscription via Convex User ID (für Stripe Webhooks)
- * Ersetzt updateSubscriptionByClerkId
+ * Ersetzt 
  */
 export const updateSubscriptionByConvexUserId = internalMutation({
   args: {
@@ -481,14 +662,20 @@ export const updateSubscriptionByConvexUserId = internalMutation({
     const user = await ctx.db.get(args.convexUserId as any);
     if (!user) throw new Error(`User ${args.convexUserId} not found`);
 
+    const nextUsageStats = {
+      ...user.usageStats,
+      ...(args.subscriptionStartDate !== undefined
+        ? { subscriptionStartDate: args.subscriptionStartDate }
+        : {}),
+      ...(args.subscriptionEndDate !== undefined
+        ? { subscriptionEndDate: args.subscriptionEndDate }
+        : {}),
+    };
+
     await ctx.db.patch(user._id, {
       subscription: args.subscription,
       subscriptionStatus: args.subscriptionStatus,
-      usageStats: {
-        ...user.usageStats,
-        subscriptionStartDate: args.subscriptionStartDate,
-        subscriptionEndDate: args.subscriptionEndDate,
-      },
+      usageStats: nextUsageStats,
       stripeCustomerId: args.stripeCustomerId ?? user.stripeCustomerId,
       stripeSubscriptionId: args.stripeSubscriptionId ?? user.stripeSubscriptionId,
       updatedAt: Date.now(),
@@ -531,10 +718,15 @@ export const updateSubscriptionByStripeCustomer = internalMutation({
     if (args.subscription !== undefined) updates.subscription = args.subscription;
     if (args.subscriptionStatus !== undefined) updates.subscriptionStatus = args.subscriptionStatus;
     if (args.subscriptionEndDate !== undefined || args.subscriptionStartDate !== undefined) {
+      const nextUsageStats = { ...user.usageStats };
+      if (args.subscriptionEndDate !== undefined) {
+        nextUsageStats.subscriptionEndDate = args.subscriptionEndDate;
+      }
+      if (args.subscriptionStartDate !== undefined) {
+        nextUsageStats.subscriptionStartDate = args.subscriptionStartDate;
+      }
       updates.usageStats = {
-        ...user.usageStats,
-        subscriptionEndDate: args.subscriptionEndDate,
-        subscriptionStartDate: args.subscriptionStartDate,
+        ...nextUsageStats,
       };
     }
     if (args.stripeSubscriptionId !== undefined) {

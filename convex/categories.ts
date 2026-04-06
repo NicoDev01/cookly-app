@@ -6,12 +6,16 @@ import { Id } from "./_generated/dataModel";
 async function getAuthenticatedUserId(ctx: any): Promise<Id<"users">> {
   const authUserId = await getAuthUserId(ctx);
   if (!authUserId) throw new Error("Not authenticated");
-  const user = await ctx.db
+  const linkedUser = await ctx.db
     .query("users")
     .withIndex("by_authUserId", (q: any) => q.eq("authUserId", authUserId.toString()))
     .first();
-  if (!user) throw new Error("User not found");
-  return user._id;
+  if (linkedUser) return linkedUser._id;
+
+  const authUser = await ctx.db.get(authUserId as Id<"users">);
+  if (authUser) return authUser._id;
+
+  throw new Error("User not found");
 }
 
 export const list = query({
@@ -150,6 +154,15 @@ export const deleteCategory = mutation({
 export const getStorageUrl = query({
   args: { storageId: v.id("_storage") },
   handler: async (ctx, args) => {
+    const userId = await getAuthenticatedUserId(ctx);
+    const ownsImage = await ctx.db
+      .query("categories")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("imageStorageId"), args.storageId))
+      .first();
+    if (!ownsImage) {
+      throw new Error("Not authorized");
+    }
     return await ctx.storage.getUrl(args.storageId);
   },
 });

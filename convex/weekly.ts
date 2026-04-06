@@ -6,12 +6,16 @@ import { Id } from "./_generated/dataModel";
 async function getAuthenticatedUserId(ctx: any): Promise<Id<"users">> {
   const authUserId = await getAuthUserId(ctx);
   if (!authUserId) throw new Error("Not authenticated");
-  const user = await ctx.db
+  const linkedUser = await ctx.db
     .query("users")
     .withIndex("by_authUserId", (q: any) => q.eq("authUserId", authUserId.toString()))
     .first();
-  if (!user) throw new Error("User not found");
-  return user._id;
+  if (linkedUser) return linkedUser._id;
+
+  const authUser = await ctx.db.get(authUserId as Id<"users">);
+  if (authUser) return authUser._id;
+
+  throw new Error("User not found");
 }
 
 export const getWeek = query({
@@ -35,7 +39,7 @@ export const getWeek = query({
     const recipes = new Map();
     for (const recipeId of recipeIds) {
       const recipe = await ctx.db.get(recipeId);
-      if (recipe) recipes.set(recipeId, recipe);
+      if (recipe && recipe.userId === userId) recipes.set(recipeId, recipe);
     }
 
     const result: any[] = [];
@@ -68,6 +72,10 @@ export const addMeal = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthenticatedUserId(ctx);
+    const recipe = await ctx.db.get(args.recipeId);
+    if (!recipe || recipe.userId !== userId) {
+      throw new Error("Recipe not found or access denied");
+    }
 
     const scope = args.scope ?? (args.date.includes('#WEEKLY') ? "week" : "day");
     const cleanDate = args.date.replace('#WEEKLY', '');
@@ -103,6 +111,13 @@ export const addMeals = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthenticatedUserId(ctx);
+
+    for (const recipeId of args.recipeIds) {
+      const recipe = await ctx.db.get(recipeId);
+      if (!recipe || recipe.userId !== userId) {
+        throw new Error("Recipe not found or access denied");
+      }
+    }
 
     const scope = args.scope ?? (args.date.includes('#WEEKLY') ? "week" : "day");
     const cleanDate = args.date.replace('#WEEKLY', '');

@@ -160,4 +160,11 @@ export default defineSchema({
     count: v.number(),
   })
   .index("by_user_category", ["userId", "category"]),
+
+  // Stripe webhook idempotency guard
+  stripeWebhookEvents: defineTable({
+    eventId: v.string(),
+    eventType: v.string(),
+    processedAt: v.number(),
+  }).index("by_eventId", ["eventId"]),
 });

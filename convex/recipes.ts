@@ -9,12 +9,16 @@ import { Id } from "./_generated/dataModel";
 async function getAuthenticatedUserId(ctx: any): Promise<Id<"users">> {
   const authUserId = await getAuthUserId(ctx);
   if (!authUserId) throw new Error("Not authenticated");
-  const user = await ctx.db
+  const linkedUser = await ctx.db
     .query("users")
     .withIndex("by_authUserId", (q: any) => q.eq("authUserId", authUserId.toString()))
     .first();
-  if (!user) throw new Error("User not found");
-  return user._id;
+  if (linkedUser) return linkedUser._id;
+
+  const authUser = await ctx.db.get(authUserId as Id<"users">);
+  if (authUser) return authUser._id;
+
+  throw new Error("User not found");
 }
 
 // Helper: Kategorie-Statistiken aktualisieren
@@ -185,13 +189,13 @@ export const listPaginated = query({
 export const getBySourceUrl = query({
   args: {
     url: v.string(),
-    userId: v.id("users"),
   },
   handler: async (ctx, args) => {
+    const userId = await getAuthenticatedUserId(ctx);
     const recipe = await ctx.db
       .query("recipes")
       .withIndex("by_user_sourceUrl", (q) =>
-        q.eq("userId", args.userId).eq("sourceUrl", args.url)
+        q.eq("userId", userId).eq("sourceUrl", args.url)
       )
       .first();
     return recipe ? recipe._id : null;
@@ -290,7 +294,7 @@ export const create = mutation({
     if (!user) throw new Error("NOT_AUTHENTICATED");
 
     // Pro User: kein Limit
-    if (user.subscription !== "free") {
+    if ((user.subscription ?? "free") !== "free") {
       const recipeId = await insertRecipe(ctx, userId, args);
       await adjustCategoryCount(ctx, args.category, 1, userId);
       await ensureCategoryExists(ctx, args.category, userId);
@@ -663,6 +667,7 @@ export const updateRecipe = update;
 export const generateImageUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
+    await getAuthenticatedUserId(ctx);
     return await ctx.storage.generateUploadUrl();
   },
 });
@@ -692,6 +697,15 @@ export const deleteStorageFile = mutation({
 export const getStorageUrl = query({
   args: { storageId: v.id("_storage") },
   handler: async (ctx, args) => {
+    const userId = await getAuthenticatedUserId(ctx);
+    const ownsImage = await ctx.db
+      .query("recipes")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("imageStorageId"), args.storageId))
+      .first();
+    if (!ownsImage) {
+      throw new Error("Not authorized");
+    }
     return await ctx.storage.getUrl(args.storageId);
   },
 });

@@ -1,4 +1,4 @@
-import { action, internalAction } from "./_generated/server";
+import { action, internalAction, query } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import Stripe from "stripe";
@@ -28,6 +28,43 @@ export const PLAN_PRICES = {
 
 export type PlanId = keyof typeof PLAN_PRICES;
 
+function formatEuroFromCents(cents: number): string {
+  return new Intl.NumberFormat("de-DE", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: 2,
+  }).format(cents / 100);
+}
+
+export const getPlanPricing = query({
+  args: {},
+  handler: async () => {
+    const monthly = PLAN_PRICES.pro_monthly.unit_amount;
+    const yearly = PLAN_PRICES.pro_yearly.unit_amount;
+
+    return {
+      pro_monthly: {
+        planId: "pro_monthly" as const,
+        unitAmount: monthly,
+        currency: PLAN_PRICES.pro_monthly.currency,
+        interval: PLAN_PRICES.pro_monthly.interval,
+        displayPrice: formatEuroFromCents(monthly),
+        displayPeriod: "Monat" as const,
+        billingLabel: `Monatliche Abrechnung (Gesamt ${formatEuroFromCents(monthly * 12)}/Jahr)`,
+      },
+      pro_yearly: {
+        planId: "pro_yearly" as const,
+        unitAmount: yearly,
+        currency: PLAN_PRICES.pro_yearly.currency,
+        interval: PLAN_PRICES.pro_yearly.interval,
+        displayPrice: formatEuroFromCents(yearly),
+        displayPeriod: "Jahr" as const,
+        billingLabel: `Jährliche Abrechnung (Gesamt ${formatEuroFromCents(yearly)})`,
+      },
+    };
+  },
+});
+
 // ============================================================
 // STRIPE INSTANCE
 // ============================================================
@@ -44,6 +81,69 @@ function getStripe(): Stripe {
     });
   }
   return stripeInstance;
+}
+
+type InternalSubscriptionPlan = "pro_monthly" | "pro_yearly";
+type InternalSubscriptionStatus = "active" | "canceled" | "past_due";
+
+function toCustomerId(
+  customer: string | Stripe.Customer | Stripe.DeletedCustomer | null | undefined
+): string | null {
+  if (!customer) return null;
+  return typeof customer === "string" ? customer : customer.id;
+}
+
+function toSubscriptionId(
+  subscription: string | Stripe.Subscription | null | undefined
+): string | null {
+  if (!subscription) return null;
+  return typeof subscription === "string" ? subscription : subscription.id;
+}
+
+function mapStripeStatusToInternal(status: string | null | undefined): InternalSubscriptionStatus {
+  if (!status) return "past_due";
+  if (status === "active" || status === "trialing") return "active";
+  if (status === "canceled" || status === "incomplete_expired") return "canceled";
+  return "past_due";
+}
+
+function mapPlanFromSubscription(
+  subscription: Stripe.Subscription,
+  fallbackPlanId?: PlanId
+): InternalSubscriptionPlan {
+  const metadataPlanId = subscription.metadata?.planId as PlanId | undefined;
+  if (metadataPlanId === "pro_yearly") return "pro_yearly";
+  if (metadataPlanId === "pro_monthly") return "pro_monthly";
+
+  const firstItem = subscription.items?.data?.[0];
+  const interval = firstItem?.price?.recurring?.interval;
+  if (interval === "year") return "pro_yearly";
+  if (interval === "month") return "pro_monthly";
+
+  if (fallbackPlanId === "pro_yearly") return "pro_yearly";
+  return "pro_monthly";
+}
+
+function toMs(value: unknown): number | undefined {
+  return typeof value === "number" ? value * 1000 : undefined;
+}
+
+function getSubscriptionPeriods(subscription: Stripe.Subscription): {
+  start: number | undefined;
+  end: number | undefined;
+} {
+  const firstItem = subscription.items?.data?.[0] as
+    | { current_period_start?: number; current_period_end?: number }
+    | undefined;
+  const subscriptionLike = subscription as {
+    current_period_start?: number;
+    current_period_end?: number;
+  };
+
+  return {
+    start: toMs(firstItem?.current_period_start ?? subscriptionLike.current_period_start),
+    end: toMs(firstItem?.current_period_end ?? subscriptionLike.current_period_end),
+  };
 }
 
 // ============================================================
@@ -70,19 +170,24 @@ export const createCheckoutSession = action({
     const user = await ctx.runQuery(internal.stripeInternal.getUserByAuthUserId, {
       authUserId: authUserId.toString(),
     });
+    if (!user?._id) {
+      throw new Error("User profile not found. Please sign in again.");
+    }
 
     let stripeCustomerId = user?.stripeCustomerId;
 
     // Falls keine Customer ID existiert, neue erstellen
     if (!stripeCustomerId) {
       const customer = await getStripe().customers.create({
+        email: user.email,
+        name: user.name,
         metadata: { convexUserId: user?._id ?? "" },
       });
       stripeCustomerId = customer.id;
 
       // Speichern in Convex
       await ctx.runMutation(internal.users.updateSubscriptionByConvexUserId, {
-        convexUserId: user!._id,
+        convexUserId: user._id,
         stripeCustomerId,
         subscription: user?.subscription || "free",
         subscriptionStatus: user?.subscriptionStatus || "active",
@@ -90,13 +195,10 @@ export const createCheckoutSession = action({
     }
 
     const plan = PLAN_PRICES[args.planId];
-
-    // Checkout Session mit inline price_data erstellen
-    // Kein vorhandenes Produkt oder Price-ID im Stripe Dashboard nötig!
+    // Inline-Preise als Single Source of Truth (Backend -> Frontend -> Stripe Checkout).
     const session = await getStripe().checkout.sessions.create({
       customer: stripeCustomerId,
       mode: "subscription",
-      payment_method_types: ["card", "paypal"],
       line_items: [
         {
           price_data: {
@@ -114,12 +216,12 @@ export const createCheckoutSession = action({
         },
       ],
       metadata: {
-        convexUserId: user!._id,
+        convexUserId: user._id,
         planId: args.planId,
       },
       subscription_data: {
         metadata: {
-          convexUserId: user!._id,
+          convexUserId: user._id,
           planId: args.planId,
         },
       },
@@ -213,6 +315,50 @@ export const handleWebhookEvent = internalAction({
     data: v.any(),
   },
   handler: async (ctx, args) => {
+    const syncFromStripeSubscriptionId = async (
+      stripeSubscriptionId: string,
+      fallbackPlanId?: PlanId
+    ) => {
+      const latestSubscription = await getStripe().subscriptions.retrieve(stripeSubscriptionId);
+      const stripeCustomerId = toCustomerId(latestSubscription.customer);
+      if (!stripeCustomerId) {
+        throw new Error(`[Stripe] Missing customer on subscription ${latestSubscription.id}`);
+      }
+
+      const subscription = mapPlanFromSubscription(latestSubscription, fallbackPlanId);
+      const subscriptionStatus = mapStripeStatusToInternal(latestSubscription.status);
+      const periods = getSubscriptionPeriods(latestSubscription);
+
+      await ctx.runMutation(internal.users.updateSubscriptionByStripeCustomer, {
+        stripeCustomerId,
+        subscription,
+        subscriptionStatus,
+        subscriptionStartDate: periods.start,
+        subscriptionEndDate: periods.end,
+        stripeSubscriptionId: latestSubscription.id,
+      });
+
+      if (latestSubscription.cancel_at_period_end && periods.end) {
+        await ctx.runMutation(internal.users.markForDowngradeByStripeCustomer, {
+          stripeCustomerId,
+          subscriptionEndDate: periods.end,
+        });
+      } else {
+        await ctx.runMutation(internal.users.clearDowngradeMarkByStripeCustomer, {
+          stripeCustomerId,
+        });
+      }
+
+      return {
+        stripeCustomerId,
+        stripeSubscriptionId: latestSubscription.id,
+        subscription,
+        subscriptionStatus,
+        subscriptionStartDate: periods.start,
+        subscriptionEndDate: periods.end,
+      };
+    };
+
     switch (args.eventType) {
       // ============================================================
       // CHECKOUT COMPLETED - Neue Subscription
@@ -221,86 +367,104 @@ export const handleWebhookEvent = internalAction({
         const session = args.data as Stripe.Checkout.Session;
         const convexUserId = session.metadata?.convexUserId;
         const planId = session.metadata?.planId as PlanId | undefined;
+        const stripeSubscriptionId = toSubscriptionId(session.subscription);
+        const stripeCustomerIdFromSession = toCustomerId(session.customer);
 
-        if (!convexUserId) {
-          console.error("[Stripe] Missing convexUserId in checkout session metadata");
-          return;
-        }
+        let resolved = {
+          stripeCustomerId: stripeCustomerIdFromSession,
+          stripeSubscriptionId: stripeSubscriptionId,
+          subscription: (planId === "pro_yearly" ? "pro_yearly" : "pro_monthly") as InternalSubscriptionPlan,
+          subscriptionStatus: "active" as InternalSubscriptionStatus,
+          subscriptionStartDate: Date.now(),
+          subscriptionEndDate:
+            Date.now() +
+            (planId === "pro_yearly" ? 365 : 30) * 24 * 60 * 60 * 1000,
+        };
 
-        // Subscription-Daten direkt aus der Stripe Subscription holen
-        // (exakte Daten statt geschätzte Zeiträume)
-        let subscription: "pro_monthly" | "pro_yearly" = "pro_monthly";
-        let periodEnd: number = Date.now() + 30 * 24 * 60 * 60 * 1000;
-
-        if (planId === "pro_yearly") {
-          subscription = "pro_yearly";
-        }
-
-        // Wenn Subscription-ID vorhanden, echte Daten von Stripe holen
-        if (session.subscription) {
+        if (stripeSubscriptionId) {
           try {
-            const stripeSubscription = await getStripe().subscriptions.retrieve(
-              session.subscription as string
-            );
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const subData = stripeSubscription as any;
-            if (subData.current_period_end) {
-              periodEnd = subData.current_period_end * 1000;
-            }
-
-            // Plan aus Subscription-Metadaten bestimmen (Fallback auf planId)
-            const subPlanId = subData.metadata?.planId as PlanId | undefined;
-            if (subPlanId === "pro_yearly" || planId === "pro_yearly") {
-              subscription = "pro_yearly";
-            }
+            const synced = await syncFromStripeSubscriptionId(stripeSubscriptionId, planId);
+            resolved = synced;
           } catch (err) {
-            console.error("[Stripe] Failed to retrieve subscription details:", err);
-            // Fallback: geschätzte Daten verwenden
-            if (planId === "pro_yearly") {
-              periodEnd = Date.now() + 365 * 24 * 60 * 60 * 1000;
-            }
+            console.error("[Stripe] Failed to sync latest subscription after checkout:", err);
           }
         }
 
-        await ctx.runMutation(internal.users.updateSubscriptionByConvexUserId, {
-          convexUserId,
-          subscription,
-          subscriptionStatus: "active",
-          subscriptionStartDate: Date.now(),
-          subscriptionEndDate: periodEnd,
-          stripeSubscriptionId: session.subscription as string,
-          stripeCustomerId: session.customer as string,
-        });
+        if (convexUserId) {
+          await ctx.runMutation(internal.users.updateSubscriptionByConvexUserId, {
+            convexUserId,
+            subscription: resolved.subscription,
+            subscriptionStatus: resolved.subscriptionStatus,
+            subscriptionStartDate: resolved.subscriptionStartDate,
+            subscriptionEndDate: resolved.subscriptionEndDate,
+            stripeSubscriptionId: resolved.stripeSubscriptionId ?? undefined,
+            stripeCustomerId: resolved.stripeCustomerId ?? undefined,
+          });
+        } else if (resolved.stripeCustomerId) {
+          await ctx.runMutation(internal.users.updateSubscriptionByStripeCustomer, {
+            stripeCustomerId: resolved.stripeCustomerId,
+            subscription: resolved.subscription,
+            subscriptionStatus: resolved.subscriptionStatus,
+            subscriptionStartDate: resolved.subscriptionStartDate,
+            subscriptionEndDate: resolved.subscriptionEndDate,
+            stripeSubscriptionId: resolved.stripeSubscriptionId ?? undefined,
+          });
+        } else {
+          console.error("[Stripe] Missing both convexUserId and stripeCustomerId on checkout.session.completed");
+          return;
+        }
 
-        console.log(`[Stripe] User ${convexUserId} upgraded to ${subscription} until ${new Date(periodEnd).toISOString()}`);
+        if (resolved.subscriptionEndDate) {
+          console.log(
+            `[Stripe] Checkout completed (${resolved.subscription}) until ${new Date(
+              resolved.subscriptionEndDate
+            ).toISOString()}`
+          );
+        }
         break;
       }
 
       // ============================================================
       // SUBSCRIPTION UPDATED - Statusänderung / Renewal
       // ============================================================
+      case "customer.subscription.created":
       case "customer.subscription.updated": {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const subUpdated = args.data as any;
-        const stripeCustomerId = subUpdated.customer as string;
-        const periodEnd = (subUpdated.current_period_end ?? 0) * 1000;
+        const subUpdated = args.data as Stripe.Subscription;
+        const stripeCustomerId = toCustomerId(subUpdated.customer);
+        if (!stripeCustomerId) {
+          console.error("[Stripe] Missing stripeCustomerId on subscription event");
+          return;
+        }
 
-        // Wurde cancel_at_period_end gesetzt? (User hat gekündigt)
-        if (subUpdated.cancel_at_period_end) {
+        const periods = getSubscriptionPeriods(subUpdated);
+        const subscription = mapPlanFromSubscription(subUpdated);
+        const subscriptionStatus = mapStripeStatusToInternal(subUpdated.status);
+
+        await ctx.runMutation(internal.users.updateSubscriptionByStripeCustomer, {
+          stripeCustomerId,
+          subscription,
+          subscriptionStatus,
+          subscriptionStartDate: periods.start,
+          subscriptionEndDate: periods.end,
+          stripeSubscriptionId: subUpdated.id,
+        });
+
+        if (subUpdated.cancel_at_period_end && periods.end) {
           await ctx.runMutation(internal.users.markForDowngradeByStripeCustomer, {
             stripeCustomerId,
-            subscriptionEndDate: periodEnd,
+            subscriptionEndDate: periods.end,
           });
-
-          console.log(`[Stripe] Customer ${stripeCustomerId} marked for downgrade at ${new Date(periodEnd).toISOString()}`);
-        } else if (subUpdated.status === "active") {
-          // Renewal oder Reaktivierung: Enddatum aktualisieren
-          await ctx.runMutation(internal.users.updateSubscriptionStatusByStripeCustomer, {
+          console.log(
+            `[Stripe] Customer ${stripeCustomerId} marked for downgrade at ${new Date(
+              periods.end
+            ).toISOString()}`
+          );
+        } else {
+          await ctx.runMutation(internal.users.clearDowngradeMarkByStripeCustomer, {
             stripeCustomerId,
-            subscriptionStatus: "active",
           });
-          console.log(`[Stripe] Customer ${stripeCustomerId} subscription renewed/reactivated`);
         }
+
         break;
       }
 
@@ -309,7 +473,11 @@ export const handleWebhookEvent = internalAction({
       // ============================================================
       case "customer.subscription.deleted": {
         const subscription = args.data as Stripe.Subscription;
-        const stripeCustomerId = subscription.customer as string;
+        const stripeCustomerId = toCustomerId(subscription.customer);
+        if (!stripeCustomerId) {
+          console.error("[Stripe] Missing stripeCustomerId on customer.subscription.deleted");
+          return;
+        }
 
         // User laden
         const user = await ctx.runQuery(internal.stripeInternal.getUserByStripeCustomerId, {
@@ -322,13 +490,8 @@ export const handleWebhookEvent = internalAction({
         }
 
         // DOWNGRADE: Pro -> Free
-        await ctx.runMutation(internal.users.updateSubscriptionByStripeCustomer, {
+        await ctx.runMutation(internal.users.downgradeToFreeByStripeCustomer, {
           stripeCustomerId,
-          subscription: "free",
-          subscriptionStatus: "canceled",
-          subscriptionEndDate: undefined,
-          subscriptionStartDate: undefined,
-          stripeSubscriptionId: undefined,
         });
 
         // Counter resetten (nur wenn markiert)
@@ -347,14 +510,26 @@ export const handleWebhookEvent = internalAction({
       // ============================================================
       case "invoice.payment_failed": {
         const invoice = args.data as Stripe.Invoice;
-        const stripeCustomerId = invoice.customer as string;
+        const stripeSubscriptionId = toSubscriptionId(
+          invoice.subscription as string | Stripe.Subscription | null | undefined
+        );
+        if (stripeSubscriptionId) {
+          try {
+            await syncFromStripeSubscriptionId(stripeSubscriptionId);
+            break;
+          } catch (err) {
+            console.error("[Stripe] Failed to sync subscription after payment_failed:", err);
+          }
+        }
 
-        await ctx.runMutation(internal.users.updateSubscriptionStatusByStripeCustomer, {
-          stripeCustomerId,
-          subscriptionStatus: "past_due",
-        });
-
-        console.log(`[Stripe] Payment failed for customer ${stripeCustomerId}`);
+        const stripeCustomerId = toCustomerId(invoice.customer);
+        if (stripeCustomerId) {
+          await ctx.runMutation(internal.users.updateSubscriptionStatusByStripeCustomer, {
+            stripeCustomerId,
+            subscriptionStatus: "past_due",
+          });
+          console.log(`[Stripe] Payment failed for customer ${stripeCustomerId}`);
+        }
         break;
       }
 
@@ -363,15 +538,25 @@ export const handleWebhookEvent = internalAction({
       // ============================================================
       case "invoice.payment_succeeded": {
         const invoice = args.data as Stripe.Invoice;
-        const stripeCustomerId = invoice.customer as string;
+        const stripeSubscriptionId = toSubscriptionId(
+          invoice.subscription as string | Stripe.Subscription | null | undefined
+        );
+        if (stripeSubscriptionId) {
+          try {
+            await syncFromStripeSubscriptionId(stripeSubscriptionId);
+            break;
+          } catch (err) {
+            console.error("[Stripe] Failed to sync subscription after payment_succeeded:", err);
+          }
+        }
 
-        // Nur bei Renewals (billing_reason = "subscription_cycle")
-        if (invoice.billing_reason === "subscription_cycle") {
+        const stripeCustomerId = toCustomerId(invoice.customer);
+        if (stripeCustomerId) {
           await ctx.runMutation(internal.users.updateSubscriptionStatusByStripeCustomer, {
             stripeCustomerId,
             subscriptionStatus: "active",
           });
-          console.log(`[Stripe] Renewal payment succeeded for customer ${stripeCustomerId}`);
+          console.log(`[Stripe] Payment succeeded for customer ${stripeCustomerId}`);
         }
         break;
       }

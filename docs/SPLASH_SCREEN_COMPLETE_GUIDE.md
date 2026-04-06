@@ -30,7 +30,7 @@ Cookly uses a **hybrid native-to-web splash screen system** that delivers a butt
 │                          ↓                                      │
 │  ┌───────────────────────────────────────────────────────────┐  │
 │  │ PHASE 2: Data Prefetch (Background)                      │  │
-│  │ - Clerk Auth loaded                                       │  │
+│  │ -  Auth loaded                                       │  │
 │  │ - Convex Token-Exchange complete                          │  │
 │  │ - Categories pre-fetched (cached)                        │  │
 │  │ - User data loaded                                        │  │
@@ -110,7 +110,7 @@ LottieSplashScreen: {
 ```typescript
 // Centralized app readiness determination
 const isAppReady = React.useMemo(() => {
-  if (!clerkLoaded) return false;        // Wait for Clerk
+  if (!) return false;        // Wait for Clerk
   if (!isSignedIn) return true;          // Not logged in? Show login immediately
   if (convexAuthLoading) return false;   // Wait for Convex
   if (!isAuthenticated) return false;    // Wait for auth confirmation
