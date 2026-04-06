@@ -4,6 +4,7 @@ import { internal, api } from "./_generated/api";
 import { FREE_LIMITS } from "./constants";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { Id } from "./_generated/dataModel";
+import { createImportTimer } from "./importTiming";
 
 // Helper: Authentifizierten User laden (wirft wenn nicht eingeloggt)
 async function getAuthenticatedUserId(ctx: any): Promise<Id<"users">> {
@@ -776,44 +777,59 @@ export const generateAndStoreAiImage = action({
 // Proxy external image to Convex Storage
 export const proxyExternalImage = action({
   args: { recipeId: v.id("recipes") },
-  handler: async (ctx, args): Promise<{ success: boolean; imageStorageId?: Id<"storage">; imageUrl?: string }> => {
+  handler: async (ctx, args): Promise<{ success: boolean; imageStorageId?: Id<"_storage">; imageUrl?: string }> => {
+    const timer = createImportTimer("image_proxy", { recipeId: args.recipeId });
     const authUserId = await getAuthUserId(ctx);
     if (!authUserId) throw new Error("Not authenticated");
+    timer.mark("authenticated");
 
     const recipe = await ctx.runQuery(api.recipes.get, { id: args.recipeId });
     if (!recipe) throw new Error("Recipe not found or access denied");
+    timer.mark("recipe_loaded");
 
-    if (!recipe.sourceImageUrl || recipe.imageStorageId) {
+    if (recipe.imageStorageId) {
+      timer.mark("already_proxied");
+      timer.summary({ result: "skipped_already_proxied" });
       return { success: false };
     }
-
-    const isInstagram = recipe.sourceImageUrl.includes('cdninstagram.com') ||
-                        recipe.sourceImageUrl.includes('instagram.com');
-
-    if (!isInstagram) return { success: false };
+    let sourceImageUrl = recipe.sourceImageUrl;
+    if (!sourceImageUrl) {
+      const { getConsistentSeed, buildRecipeImageUrl } = await import("./pollinationsHelper");
+      const seed = getConsistentSeed(recipe.title || "Delicious Food");
+      sourceImageUrl = buildRecipeImageUrl(recipe.title || "Delicious Food", seed, process.env.POLLINATIONS_API_KEY || "");
+      timer.mark("fallback_image_generated");
+    }
 
     try {
-      const response = await fetch(recipe.sourceImageUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      const response = await fetch(sourceImageUrl, {
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+        signal: AbortSignal.timeout(12000),
       });
 
       if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
+      timer.mark("source_fetched");
 
       const imageBuffer = await response.arrayBuffer();
       const blob = new Blob([imageBuffer]);
       const storageId = await ctx.storage.store(blob);
+      timer.mark("stored_in_convex");
 
       await ctx.runMutation(api.recipes.update, {
         id: args.recipeId,
         imageStorageId: storageId,
-        image: undefined,
+        image: sourceImageUrl,
+        sourceImageUrl,
       });
+      timer.mark("recipe_updated");
 
       const imageUrl = await ctx.storage.getUrl(storageId);
+      timer.mark("storage_url_loaded");
+      timer.summary({ result: "proxied" });
       return { success: true, imageStorageId: storageId, imageUrl: imageUrl || undefined };
 
     } catch (error) {
       console.error('[proxyExternalImage] ❌ Failed:', error);
+      timer.summary({ result: "failed", error: error instanceof Error ? error.message : String(error) });
       return { success: false };
     }
   },

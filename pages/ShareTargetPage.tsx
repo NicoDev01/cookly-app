@@ -17,6 +17,7 @@ const ShareTargetPage: React.FC = () => {
     const scrapePost = useAction(api.instagram.scrapePost);
     const scrapeFacebookPost = useAction(api.facebook.scrapePost);
     const scrapeWebsite = useAction(api.website.scrapeWebsite);
+    const proxyExternalImage = useAction(api.recipes.proxyExternalImage);
     const [status, setStatus] = useState<'idle' | 'analyzing' | 'success' | 'error'>('idle');
     const [error, setError] = useState<string | null>(null);
     const [limitData, setLimitData] = useState<{ current: number, limit: number, feature: 'manual_recipes' | 'link_imports' | 'photo_scans' } | null>(null);
@@ -102,10 +103,10 @@ const ShareTargetPage: React.FC = () => {
                     const postUrl = `https://www.instagram.com/${instagramMatch[1]}/${instagramMatch[2]}/`;
                     console.log(`[ShareTarget] #${shareRunId} instagramMatch`, { postUrl });
                     setStatus('analyzing');
+                    const startedAt = Date.now();
 
                     // Phase 1: Analysieren
                     setPhase('analyzing');
-                    await new Promise(r => setTimeout(r, 1500));
 
                     // Phase 2: Extrahieren
                     setPhase('extrahieren');
@@ -115,12 +116,20 @@ const ShareTargetPage: React.FC = () => {
 
                     // Phase 3: Importieren
                     setPhase('importieren');
-                    await new Promise(r => setTimeout(r, 800));
 
                     setSavedRecipeId(recipeId);
                     setStatus('success');
                     showImportToast(recipeId); // Global Toast anzeigen
                     showSimpleImportNotification(recipeId); // System Notification
+                    // Async image proxying after fast recipe creation (don't block UX)
+                    void proxyExternalImage({ recipeId: recipeId as Id<"recipes"> })
+                        .then((result) => {
+                            console.log(`[ShareTarget] #${shareRunId} proxyExternalImage done`, result);
+                        })
+                        .catch((proxyErr) => {
+                            console.warn(`[ShareTarget] #${shareRunId} proxyExternalImage failed`, proxyErr);
+                        });
+                    console.log(`[ShareTarget] #${shareRunId} instagram totalMs`, { totalMs: Date.now() - startedAt });
                     if (selectedCategoryRef.current) {
                         updateRecipe({ id: recipeId as Id<"recipes">, category: selectedCategoryRef.current }).catch(() => {});
                     }
@@ -128,10 +137,10 @@ const ShareTargetPage: React.FC = () => {
                     const postUrl = facebookMatch[0];
                     console.log(`[ShareTarget] #${shareRunId} facebookMatch`, { postUrl });
                     setStatus('analyzing');
+                    const startedAt = Date.now();
 
                     // Phase 1: Analysieren
                     setPhase('analyzing');
-                    await new Promise(r => setTimeout(r, 1500));
 
                     // Phase 2: Extrahieren
                     setPhase('extrahieren');
@@ -141,12 +150,20 @@ const ShareTargetPage: React.FC = () => {
 
                     // Phase 3: Importieren
                     setPhase('importieren');
-                    await new Promise(r => setTimeout(r, 800));
 
                     setSavedRecipeId(recipeId);
                     setStatus('success');
                     showImportToast(recipeId); // Global Toast anzeigen
                     showSimpleImportNotification(recipeId); // System Notification
+                    // Async image proxying after fast recipe creation (don't block UX)
+                    void proxyExternalImage({ recipeId: recipeId as Id<"recipes"> })
+                        .then((result) => {
+                            console.log(`[ShareTarget] #${shareRunId} proxyExternalImage done`, result);
+                        })
+                        .catch((proxyErr) => {
+                            console.warn(`[ShareTarget] #${shareRunId} proxyExternalImage failed`, proxyErr);
+                        });
+                    console.log(`[ShareTarget] #${shareRunId} facebook totalMs`, { totalMs: Date.now() - startedAt });
                     if (selectedCategoryRef.current) {
                         updateRecipe({ id: recipeId as Id<"recipes">, category: selectedCategoryRef.current }).catch(() => {});
                     }
@@ -154,10 +171,10 @@ const ShareTargetPage: React.FC = () => {
                     const websiteUrl = genericUrlMatch[1];
                     console.log(`[ShareTarget] #${shareRunId} genericUrlMatch`, { websiteUrl });
                     setStatus('analyzing');
+                    const startedAt = Date.now();
 
                     // Phase 1: Analysieren
                     setPhase('analyzing');
-                    await new Promise(r => setTimeout(r, 1500));
 
                     // Phase 2: Extrahieren
                     setPhase('extrahieren');
@@ -167,12 +184,20 @@ const ShareTargetPage: React.FC = () => {
 
                     // Phase 3: Importieren
                     setPhase('importieren');
-                    await new Promise(r => setTimeout(r, 800));
 
                     setSavedRecipeId(recipeId);
                     setStatus('success');
                     showImportToast(recipeId); // Global Toast anzeigen
                     showSimpleImportNotification(recipeId); // System Notification
+                    // Async image proxying after fast recipe creation (don't block UX)
+                    void proxyExternalImage({ recipeId: recipeId as Id<"recipes"> })
+                        .then((result) => {
+                            console.log(`[ShareTarget] #${shareRunId} proxyExternalImage done`, result);
+                        })
+                        .catch((proxyErr) => {
+                            console.warn(`[ShareTarget] #${shareRunId} proxyExternalImage failed`, proxyErr);
+                        });
+                    console.log(`[ShareTarget] #${shareRunId} website totalMs`, { totalMs: Date.now() - startedAt });
                     if (selectedCategoryRef.current) {
                         updateRecipe({ id: recipeId as Id<"recipes">, category: selectedCategoryRef.current }).catch(() => {});
                     }
@@ -228,7 +253,7 @@ const ShareTargetPage: React.FC = () => {
         if (status === 'idle') {
             handleShare();
         }
-    }, [searchParams, scrapePost, scrapeFacebookPost, scrapeWebsite, status]);
+    }, [searchParams, scrapePost, scrapeFacebookPost, scrapeWebsite, proxyExternalImage, status]);
 
     // Native Back Button Handler - führt zu Instagram zurück während des Imports
     useEffect(() => {

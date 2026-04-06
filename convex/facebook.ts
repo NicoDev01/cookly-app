@@ -6,7 +6,7 @@ import { GoogleGenAI } from "@google/genai";
 import { Id } from "./_generated/dataModel";
 import { RECIPE_CATEGORIES } from "./constants";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { Jimp } from "jimp";
+import { createImportTimer } from "./importTiming";
 
 const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
@@ -111,8 +111,10 @@ const extractImageFromPost = (post: Record<string, unknown>): string => {
 export const scrapePost = action({
   args: { url: v.string() },
   handler: async (ctx, args): Promise<Id<"recipes">> => {
+    const timer = createImportTimer("facebook", { url: args.url });
     if (!APIFY_TOKEN) throw new Error("APIFY_API_TOKEN is missing in Convex Environment Variables");
     if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY is missing in Convex Environment Variables");
+    timer.mark("env_checked");
 
     // ============================================================
     // 1. Authentifizierung
@@ -122,6 +124,7 @@ export const scrapePost = action({
       throw new Error("NOT_AUTHENTICATED");
     }
     const userIdStr = authUserId.toString();
+    timer.mark("authenticated");
 
     // ============================================================
     // 2. Rate Limiting prüfen (10 Requests/Minute)
@@ -137,6 +140,7 @@ export const scrapePost = action({
         message: "Du hast zu viele Anfragen gestellt. Bitte warte einen Moment.",
       }));
     }
+    timer.mark("rate_limit_checked");
 
     // ============================================================
     // 3. URL Validation
@@ -144,6 +148,7 @@ export const scrapePost = action({
     if (!args.url.includes("facebook.com") && !args.url.includes("fb.watch")) {
       throw new Error("INVALID_FACEBOOK_URL");
     }
+    timer.mark("url_validated");
 
     // ============================================================
     // 4. Check if already exists (Cost Optimization)
@@ -151,20 +156,13 @@ export const scrapePost = action({
     const existingId = await ctx.runQuery(api.recipes.getBySourceUrl, { url: args.url });
     if (existingId) {
       console.log(`Recipe already exists for ${args.url}, returning existing ID.`);
+      timer.mark("dedupe_hit");
+      timer.summary({ result: "existing_recipe" });
       return existingId;
     }
+    timer.mark("dedupe_miss");
 
     console.log(`Starting Facebook import for: ${args.url}`);
-
-    // DEBUG: URL-Analyse für Diagnose
-    const isShareUrl = args.url.includes("/share/r/") || args.url.includes("/share/v/");
-    const shareIdMatch = args.url.match(/\/share\/[rv]\/([A-Za-z0-9]+)/);
-    const requestedShareId = shareIdMatch ? shareIdMatch[1] : null;
-    console.log("=== URL ANALYSIS ===", {
-      originalUrl: args.url,
-      isShareUrl,
-      requestedShareId,
-    });
 
     // ============================================================
     // 5. Apify Call mit Graceful Degradation
@@ -173,8 +171,9 @@ export const scrapePost = action({
     let imageUrl: string;
 
     try {
+      // Faster than polling: wait for run completion and get dataset items in one request.
       const runResponse = await fetch(
-        `https://api.apify.com/v2/acts/apify~facebook-posts-scraper/runs?token=${APIFY_TOKEN}`,
+        `https://api.apify.com/v2/acts/apify~facebook-posts-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -182,6 +181,7 @@ export const scrapePost = action({
             startUrls: [{ url: args.url }],
             resultsLimit: 1,
           }),
+          signal: AbortSignal.timeout(25000),
         }
       );
 
@@ -189,85 +189,20 @@ export const scrapePost = action({
         throw new Error(`Apify run failed: ${runResponse.statusText}`);
       }
 
-      const runData = await runResponse.json();
-      const runId = runData.data.id;
-
-      // Polling
-      let datasetId: string | undefined;
-      let attempts = 0;
-      while (attempts < 30) {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        const statusRes = await fetch(
-          `https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_TOKEN}`
-        );
-        const statusData = await statusRes.json();
-        const status = statusData.data.status;
-
-        if (status === "SUCCEEDED") {
-          datasetId = statusData.data.defaultDatasetId;
-          break;
-        }
-        if (status === "FAILED" || status === "ABORTED") {
-          throw new Error(`Apify run ${status}`);
-        }
-        attempts++;
-      }
-
-      if (!datasetId) {
-        throw new Error("Apify run timed out");
-      }
-
-      // Results fetchen
-      const itemsRes = await fetch(
-        `https://api.apify.com/v2/datasets/${datasetId}/items?token=${APIFY_TOKEN}&format=json&limit=1`
-      );
-      const items = await itemsRes.json();
-
-      // ===== DEBUG: Komplette Apify Response loggen =====
-      console.log("=== APIFY COMPLETE RESPONSE ===");
-      console.log("Items array length:", items?.length);
-      console.log("Full items array:", JSON.stringify(items, null, 2));
-      // =================================================
+      const items = await runResponse.json();
 
       if (!items || items.length === 0) {
         throw new Error("No data found in Apify dataset");
       }
 
       const post = items[0] as Record<string, unknown>;
-
-      // ===== DEBUG: Komplettes Post-Objekt loggen =====
-      console.log("=== COMPLETE POST OBJECT ===");
-      console.log(JSON.stringify(post, null, 2));
-      console.log("=== POST OBJECT KEYS ===");
-      console.log("Top-level keys:", Object.keys(post));
-      // ================================================
-
-      // ===== DEBUG: URL-VALIDIERUNG - Prüfe ob richtiges Video =====
-      const returnedUrl = post.url || post.postUrl || post.inputUrl;
-      const pageName = post.pageName;
-      const postId = post.postId || post.id;
-      console.log("=== URL VALIDATION CHECK ===", {
-        requestedUrl: args.url,
-        requestedShareId,
-        returnedUrl,
-        pageName,
-        postId,
-        urlsMatch: args.url === returnedUrl || String(returnedUrl).includes(String(requestedShareId)),
-        isLikelyWrongVideo: pageName === "reel" && requestedShareId !== null,
-      });
-      // ==============================================================
-
-      console.log("Facebook post debug", {
-        hasMessage: !!post.message,
-        messageType: typeof post.message,
-        messageTextType: typeof (post.message as Record<string, unknown>)?.text,
-      });
       caption = extractCaptionFromPost(post);
       console.log("Facebook caption extracted", { length: caption.length, preview: caption.substring(0, 100) });
 
       // Image Extraction
       imageUrl = extractImageFromPost(post);
       console.log("Facebook image extracted", { imageUrl: imageUrl.substring(0, 80) });
+      timer.mark("apify_sync_done", { captionLength: caption.length, hasImage: !!imageUrl });
 
     } catch (apifyError) {
       console.error("Apify error:", apifyError);
@@ -292,7 +227,7 @@ export const scrapePost = action({
       const prompt = FACEBOOK_PROMPT.replace("{{TEXT}}", caption);
 
       const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.1-flash-lite-preview",
         contents: prompt
       });
 
@@ -306,6 +241,7 @@ export const scrapePost = action({
 
       const rawCategory = recipeData.category || "Sonstiges";
       recipeData.category = (RECIPE_CATEGORIES as readonly string[]).includes(rawCategory) ? rawCategory : "Sonstiges";
+      timer.mark("gemini_parsed", { hasIngredients: !!recipeData.ingredients?.length, hasInstructions: !!recipeData.instructions?.length });
 
     } catch (geminiError) {
       console.error("Gemini error:", geminiError);
@@ -320,54 +256,9 @@ export const scrapePost = action({
         ingredients: [],
         instructions: [],
       };
+      timer.mark("gemini_fallback_used");
     }
-
-    // ============================================================
-    // 7. Image Handling mit Graceful Degradation
-    // ============================================================
-    let imageStorageId: Id<"_storage"> | undefined;
-    let imageWidth: number | undefined;
-    let imageHeight: number | undefined;
-    let imageAspectRatio: number | undefined;
-    let finalImageUrl = imageUrl;
-
-    try {
-      if (imageUrl) {
-        const imageRes = await fetch(imageUrl);
-        if (imageRes.ok) {
-          const imageBuffer = Buffer.from(await imageRes.arrayBuffer());
-          const processed = await processImageForStorage(ctx, imageBuffer, imageRes.headers.get("content-type") || "image/jpeg");
-          if (processed) {
-            imageStorageId = processed.storageId;
-            imageWidth = processed.width;
-            imageHeight = processed.height;
-            imageAspectRatio = processed.aspectRatio;
-          }
-        }
-      }
-    } catch (imageError) {
-      console.warn("Facebook image download failed:", imageError);
-      // Fallback: Pollinations
-      try {
-        const safeTitle = encodeURIComponent(recipeData.title || "Delicious Food");
-        const pollinationsUrl = `https://image.pollinations.ai/prompt/realistic%20food%20photography%20${safeTitle}?width=1024&height=1024&model=klein&nologo=true`;
-
-        const pollRes = await fetch(pollinationsUrl);
-        if (pollRes.ok) {
-          const pollBuffer = Buffer.from(await pollRes.arrayBuffer());
-          const processed = await processImageForStorage(ctx, pollBuffer, pollRes.headers.get("content-type") || "image/jpeg");
-          if (processed) {
-            imageStorageId = processed.storageId;
-            imageWidth = processed.width;
-            imageHeight = processed.height;
-            imageAspectRatio = processed.aspectRatio;
-            finalImageUrl = pollinationsUrl;
-          }
-        }
-      } catch (pollErr) {
-        console.error("Pollinations fallback also failed:", pollErr);
-      }
-    }
+    timer.mark("ready_to_create");
 
     // ============================================================
     // 8. Save Recipe (sourceUrl gesetzt = link_imports Counter!)
@@ -376,8 +267,11 @@ export const scrapePost = action({
     const finalExisting = await ctx.runQuery(api.recipes.getBySourceUrl, { url: args.url });
     if (finalExisting) {
       console.log("Recipe already created by parallel request, returning existing");
+      timer.mark("dedupe_final_hit");
+      timer.summary({ result: "existing_recipe_final_check" });
       return finalExisting;
     }
+    timer.mark("dedupe_final_miss");
 
     try {
       const newRecipeId = await ctx.runMutation(api.recipes.create, {
@@ -388,17 +282,15 @@ export const scrapePost = action({
         portions: recipeData.portions || 2,
         ingredients: recipeData.ingredients || [],
         instructions: recipeData.instructions || [],
-        image: finalImageUrl,
-        imageStorageId: imageStorageId,
-        imageWidth: imageWidth,
-        imageHeight: imageHeight,
-        imageAspectRatio: imageAspectRatio,
+        image: imageUrl || undefined,
         sourceImageUrl: imageUrl,
         sourceUrl: args.url,
         imageAlt: recipeData.title || "Facebook Rezept",
         isFavorite: false,
       });
 
+      timer.mark("recipe_created", { recipeId: newRecipeId });
+      timer.summary({ result: "created" });
       return newRecipeId;
 
     } catch (createError: unknown) {
@@ -411,35 +303,3 @@ export const scrapePost = action({
     }
   },
 });
-
-const processImageForStorage = async (
-  ctx: any,
-  buffer: Buffer,
-  contentType: string
-): Promise<{ storageId: Id<"_storage">; width: number; height: number; aspectRatio: number } | null> => {
-  try {
-    const image = (await Jimp.read(buffer)) as any;
-    const width = image.width;
-    const height = image.height;
-
-    const uploadUrl = await ctx.runMutation(api.recipes.generateImageUploadUrl);
-    const uploadRes = await fetch(uploadUrl, {
-      method: "POST",
-      headers: { "Content-Type": contentType },
-      body: new Uint8Array(buffer),
-    });
-
-    if (!uploadRes.ok) return null;
-
-    const { storageId } = await uploadRes.json();
-    return {
-      storageId,
-      width,
-      height,
-      aspectRatio: width / height,
-    };
-  } catch (error) {
-    console.warn("Failed to process Facebook image metadata:", error);
-    return null;
-  }
-};

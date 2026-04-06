@@ -10,7 +10,6 @@ import RecipeHero from '../components/RecipeHero';
 import RecipeMeta from '../components/RecipeMeta';
 import Ingredients from '../components/Ingredients';
 import Instructions from '../components/Instructions';
-import ImageWithBlurhash from '../components/ImageWithBlurhash';
 import { Recipe } from '../types';
 
 const AddRecipeModal = React.lazy(() => import('../components/AddRecipeModal'));
@@ -59,31 +58,25 @@ const RecipeSlideContent = React.memo(({
 
   if (!recipe) {
     const hasHeroPreview = !!heroPreview?.image;
-    const previewAspectRatio =
-      heroPreview?.imageAspectRatio && heroPreview.imageAspectRatio > 0.4 && heroPreview.imageAspectRatio < 3.5
-        ? heroPreview.imageAspectRatio
-        : 1.5;
     return (
       <main className="relative z-10 flex-1 min-h-full bg-white">
-        <div
-          className="relative w-full overflow-hidden bg-gray-100"
-          style={{ aspectRatio: `${previewAspectRatio}`, minHeight: "20vh", maxHeight: "75vh" }}
-        >
+        <div className="relative w-full bg-white overflow-hidden" style={{ maxHeight: "70vh" }}>
           {hasHeroPreview ? (
-            <ImageWithBlurhash
-              className="w-full h-full object-contain object-center"
+            <img
               alt={heroPreview?.imageAlt || heroPreview?.title || "Rezeptbild"}
-              src={heroPreview!.image!}
-              blurhash={heroPreview?.imageBlurhash}
-              forceLoad={true}
+              src={heroPreview?.image}
+              referrerPolicy="no-referrer"
+              loading="eager"
               fetchPriority="high"
+              className="block w-full h-auto"
             />
           ) : (
-            <div className="h-full w-full bg-gray-200 animate-pulse" />
+            <div className="w-full h-56 bg-gray-200 animate-pulse" />
           )}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-b from-transparent to-white" />
         </div>
 
-        <div className="relative z-20 -mt-6 mb-6 mx-2 p-6 rounded-3xl glassmorphism bg-white/60 backdrop-blur-xl shadow-neo-light-convex border border-gray-100 md:mx-auto md:max-w-2xl lg:max-w-3xl">
+        <div className="relative z-20 -mt-3 mb-6 mx-2 p-6 rounded-3xl glassmorphism bg-white/60 backdrop-blur-xl shadow-neo-light-convex border border-gray-100 md:mx-auto md:max-w-2xl lg:max-w-3xl">
           <div className="space-y-3 animate-pulse">
             <div className="h-7 w-2/3 rounded-lg bg-gray-200" />
             <div className="h-4 w-1/3 rounded bg-gray-200" />
@@ -103,7 +96,7 @@ const RecipeSlideContent = React.memo(({
         onEdit={() => onEdit(recipe)}
         onDelete={() => onDelete(recipe._id)}
       />
-      <div className="relative z-20 -mt-6 mb-6 mx-2 p-6 rounded-3xl glassmorphism bg-white/60 backdrop-blur-xl shadow-neo-light-convex border border-gray-100 md:mx-auto md:max-w-2xl lg:max-w-3xl">
+      <div className="relative z-20 -mt-3 mb-6 mx-2 p-6 rounded-3xl glassmorphism bg-white/60 backdrop-blur-xl shadow-neo-light-convex border border-gray-100 md:mx-auto md:max-w-2xl lg:max-w-3xl">
         <RecipeMeta recipe={recipe} />
         <Ingredients ingredients={recipe.ingredients} />
         <Instructions instructions={recipe.instructions} ingredients={recipe.ingredients} />

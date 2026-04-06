@@ -6,12 +6,11 @@ import { GoogleGenAI } from "@google/genai";
 import { Id } from "./_generated/dataModel";
 import { RECIPE_CATEGORIES } from "./constants";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { createImportTimer } from "./importTiming";
 
 const JINA_API_KEY = process.env.JINA_API_KEY;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
-import { Jimp } from "jimp";
-import { encode } from "blurhash";
 
 const WEBSITE_RECIPE_PROMPT = `
 Extrahiere aus diesem Rezept-Inhalt ein strukturiertes Rezept.
@@ -40,8 +39,10 @@ Antworte NUR mit dem JSON.
 export const scrapeWebsite = action({
     args: { url: v.string() },
     handler: async (ctx, args): Promise<Id<"recipes">> => {
+        const timer = createImportTimer("website", { url: args.url });
         if (!JINA_API_KEY) throw new Error("JINA_API_KEY is missing in Convex Environment Variables");
         if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY is missing in Convex Environment Variables");
+        timer.mark("env_checked");
 
         // ============================================================
         // 1. Authentifizierung
@@ -51,6 +52,7 @@ export const scrapeWebsite = action({
             throw new Error("NOT_AUTHENTICATED");
         }
         const userIdStr = authUserId.toString();
+        timer.mark("authenticated");
 
         // ============================================================
         // 2. Rate Limiting prüfen (10 Requests/Minute)
@@ -66,13 +68,17 @@ export const scrapeWebsite = action({
                 message: "Du hast zu viele Anfragen gestellt. Bitte warte einen Moment.",
             }));
         }
+        timer.mark("rate_limit_checked");
 
         // Check if we already have this recipe to save costs and time
         const existingId = await ctx.runQuery(api.recipes.getBySourceUrl, { url: args.url });
         if (existingId) {
             console.log(`Recipe already exists for ${args.url}, returning existing ID.`);
+            timer.mark("dedupe_hit");
+            timer.summary({ result: "existing_recipe" });
             return existingId;
         }
+        timer.mark("dedupe_miss");
 
         console.log(`Starting website import for: ${args.url}`);
 
@@ -139,6 +145,7 @@ export const scrapeWebsite = action({
             }
 
             console.log(`Extracted content. Title: "${pageTitle}", Image: "${pageImageUrl ? 'found' : 'missing'}", Markdown length: ${markdown.length} chars`);
+            timer.mark("jina_extracted", { markdownLength: markdown.length, hasPageImage: !!pageImageUrl });
 
         } catch (jinaError) {
             console.error("Jina AI error:", jinaError);
@@ -155,6 +162,7 @@ export const scrapeWebsite = action({
 
         // 2. Limit markdown to prevent Gemini context overflow (max 50K chars)
         const truncatedMarkdown = markdown.slice(0, 50000);
+        timer.mark("markdown_truncated", { truncatedLength: truncatedMarkdown.length });
 
         // ============================================================
         // 4. Parse with Gemini mit Graceful Degradation
@@ -179,7 +187,7 @@ export const scrapeWebsite = action({
                 .replace("{{MARKDOWN}}", truncatedMarkdown);
 
             const result = await ai.models.generateContent({
-                model: "gemini-3-flash-preview",
+                model: "gemini-3.1-flash-lite-preview",
                 contents: prompt,
             });
 
@@ -195,6 +203,7 @@ export const scrapeWebsite = action({
 
             const rawCategory = recipeData.category || "Sonstiges";
             recipeData.category = (RECIPE_CATEGORIES as readonly string[]).includes(rawCategory) ? rawCategory : "Sonstiges";
+            timer.mark("gemini_parsed", { hasIngredients: !!recipeData.ingredients?.length, hasInstructions: !!recipeData.instructions?.length });
 
         } catch (geminiError) {
             console.error("Gemini error:", geminiError);
@@ -209,59 +218,21 @@ export const scrapeWebsite = action({
                 ingredients: [],
                 instructions: [],
             };
+            timer.mark("gemini_fallback_used");
         }
 
-        // 4. Image Handling (Download, Resize, WebP, Blurhash & Store)
-        let imageStorageId: Id<"_storage"> | undefined;
-        let imageBlurhash: string | undefined;
-        let imageWidth: number | undefined;
-        let imageHeight: number | undefined;
-        let imageAspectRatio: number | undefined;
-        let finalImageUrl = pageImageUrl;
-
-        if (pageImageUrl) {
-            console.log(`Processing page image: ${pageImageUrl}`);
-            const result = await processAndUploadImage(ctx, pageImageUrl);
-            if (result) {
-                imageStorageId = result.storageId;
-                imageBlurhash = result.blurhash;
-                imageWidth = result.width;
-                imageHeight = result.height;
-                imageAspectRatio = result.aspectRatio;
-                console.log("Successfully processed and stored page image.");
-            }
-        }
-
-        // Fallback: Generate Pollinations Image if no page image or processing failed
-        if (!imageStorageId) {
-            try {
-                // Extract core keywords from title (remove common stopwords)
-                const stopwords = ["nach", "mit", "aus", "vom", "von", "zu", "für", "in", "an", "auf", "bei", "durch", "original", "originalrezept", "rezept", "klassisch", "traditionell", "einfach", "schnell", "lecker"];
-                const titleWords = (recipeData.title || "Delicious Food")
-                    .toLowerCase()
-                    .split(/\s+/)
-                    .filter((word: string) => !stopwords.includes(word) && word.length > 2)
-                    .slice(0, 3) // max 3 keywords
-                    .join(" ");
-
-                const safeTitle = encodeURIComponent(titleWords || "Delicious Food");
-                const pollinationsUrl = `https://image.pollinations.ai/prompt/realistic%20food%20photography%20${safeTitle}?width=1024&height=1024&model=klein&nologo=true`;
-
-                console.log(`Fetching Pollinations image: ${pollinationsUrl}`);
-                const result = await processAndUploadImage(ctx, pollinationsUrl);
-                if (result) {
-                    imageStorageId = result.storageId;
-                    imageBlurhash = result.blurhash;
-                    imageWidth = result.width;
-                    imageHeight = result.height;
-                    imageAspectRatio = result.aspectRatio;
-                    finalImageUrl = pollinationsUrl;
-                    console.log("Successfully processed and stored Pollinations image.");
-                }
-            } catch (pollErr) {
-                console.error("Pollinations fallback also failed:", pollErr);
-            }
-        }
+        // 4. Select initial image URL fast; storage proxying happens async after import
+        const stopwords = ["nach", "mit", "aus", "vom", "von", "zu", "für", "in", "an", "auf", "bei", "durch", "original", "originalrezept", "rezept", "klassisch", "traditionell", "einfach", "schnell", "lecker"];
+        const titleWords = (recipeData.title || "Delicious Food")
+            .toLowerCase()
+            .split(/\s+/)
+            .filter((word: string) => !stopwords.includes(word) && word.length > 2)
+            .slice(0, 3)
+            .join(" ");
+        const safeTitle = encodeURIComponent(titleWords || "Delicious Food");
+        const pollinationsUrl = `https://image.pollinations.ai/prompt/realistic%20food%20photography%20${safeTitle}?width=1024&height=1024&model=klein&nologo=true`;
+        const finalImageUrl = pageImageUrl || pollinationsUrl;
+        timer.mark("image_url_selected", { usedPageImage: !!pageImageUrl });
 
         // ============================================================
         // 5. Save Recipe (sourceUrl gesetzt = link_imports Counter!)
@@ -276,17 +247,14 @@ export const scrapeWebsite = action({
                 ingredients: recipeData.ingredients || [],
                 instructions: recipeData.instructions || [],
                 image: finalImageUrl,
-                imageStorageId: imageStorageId,
-                imageBlurhash: imageBlurhash,
-                imageWidth: imageWidth,
-                imageHeight: imageHeight,
-                imageAspectRatio: imageAspectRatio,
-                sourceImageUrl: pageImageUrl,
+                sourceImageUrl: finalImageUrl,
                 sourceUrl: args.url,
                 imageAlt: recipeData.title,
                 isFavorite: false,
             });
 
+            timer.mark("recipe_created", { recipeId: newRecipeId });
+            timer.summary({ result: "created" });
             return newRecipeId;
 
         } catch (createError) {
@@ -300,67 +268,3 @@ export const scrapeWebsite = action({
         }
     },
 });
-
-import { ActionCtx } from "./_generated/server";
-
-/**
- * Zieht das Bild, skaliert es auf max 1200px, konvertiert zu WebP 
- * und generiert einen Blurhash.
- */
-async function processAndUploadImage(
-  ctx: ActionCtx,
-  imageUrl: string
-): Promise<{ storageId: Id<"_storage">; blurhash?: string; width: number; height: number; aspectRatio: number } | null> {
-    try {
-        const res = await fetch(imageUrl, { signal: AbortSignal.timeout(10000) });
-        if (!res.ok) return null;
-
-        const arrayBuffer = await res.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-
-        // 1. Jimp Image laden
-        const image = (await Jimp.read(buffer)) as any;
-        
-        // 2. Resize (max 1200px Breite/Höhe)
-        if (image.width > 1200 || image.height > 1200) {
-            image.scaleToFit({ w: 1200, h: 1200 });
-        }
-
-        // 3. Optimiertes Bild (JPEG 80%)
-        // Hinweis: In Jimp 1.6.0 wird die Qualität oft direkt im getBuffer-Options-Objekt übergeben
-        const processedBuffer = await image.getBuffer("image/jpeg", { quality: 80 });
-
-        // 4. Generate Blurhash (aus einem 32x32 Thumbnail)
-        let blurhashStr: string | undefined;
-        try {
-            const thumbnail = image.clone().resize({ w: 32, h: 32 });
-            const { data, width, height } = thumbnail.bitmap;
-            // Jimp nutzt RGBA Buffer, Blurhash erwartet Uint8ClampedArray
-            blurhashStr = encode(new Uint8ClampedArray(data), width, height, 4, 4);
-        } catch (bErr) {
-            console.warn("Blurhash generation failed, continuing without it.", bErr);
-        }
-
-        // 5. Upload to Convex Storage
-        const uploadUrl = await ctx.runMutation(api.recipes.generateImageUploadUrl);
-        const uploadRes = await fetch(uploadUrl, {
-            method: "POST",
-            headers: { "Content-Type": "image/jpeg" },
-            body: new Uint8Array(processedBuffer),
-        });
-
-        if (uploadRes.ok) {
-            const { storageId } = await uploadRes.json();
-            return {
-              storageId,
-              blurhash: blurhashStr,
-              width: image.width,
-              height: image.height,
-              aspectRatio: image.width / image.height,
-            };
-        }
-    } catch (err) {
-        console.error("Image processing/upload failed:", err);
-    }
-    return null;
-}

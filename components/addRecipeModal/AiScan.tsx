@@ -65,7 +65,7 @@ export const AI_SCAN_PROMPT_FIXED = `
 export const createGeminiClient = (apiKey: string) => {
   if (!apiKey) throw new Error("VITE_GEMINI_API_KEY fehlt in der .env Datei");
   const ai = new GoogleGenAI({ apiKey });
-  const model = "gemini-3-flash-preview";
+  const model = "gemini-3.1-flash-lite-preview";
   return { ai, model };
 };
 

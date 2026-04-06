@@ -9,7 +9,6 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { Recipe } from "../types";
-import ImageWithBlurhash from "./ImageWithBlurhash";
 import { useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 
@@ -92,22 +91,6 @@ const IconButton = memo(
 );
 
 IconButton.displayName = "IconButton";
-
-// Pre-computed eased mask gradient for smooth image fade-out
-// This is computed once at module load time, not on every render
-const EASED_MASK_GRADIENT = (() => {
-  const start = 90;
-  const steps = 100;
-  const points = [`rgba(0,0,0,1) 0%`, `rgba(0,0,0,1) ${start}%`];
-
-  for (let i = 1; i <= steps; i++) {
-    const progress = i / steps;
-    const pos = start + progress * (100 - start);
-    const alpha = Math.max(0, 1 - Math.pow(progress, 1)).toFixed(30);
-    points.push(`rgba(0,0,0,${alpha}) ${pos.toFixed(2)}%`);
-  }
-  return `linear-gradient(to bottom, ${points.join(", ")})`;
-})();
 
 const RecipeHero: React.FC<RecipeHeroProps> = ({
   recipe,
@@ -194,10 +177,6 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
     };
   }, []);
 
-  const heroAspectRatio =
-    recipe.imageAspectRatio && recipe.imageAspectRatio > 0.4 && recipe.imageAspectRatio < 3.5
-      ? recipe.imageAspectRatio
-      : 1.5;
   const heroImageSrc = recipe.image || recipe.sourceImageUrl || "";
 
   return (
@@ -294,34 +273,29 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
 
       {/* Hero Image Container */}
       <div
-        className="relative w-full overflow-hidden bg-gray-100"
-        style={{
-          aspectRatio: `${heroAspectRatio}`,
-          minHeight: "20vh",
-          maxHeight: "75vh",
-          maskImage: EASED_MASK_GRADIENT,
-          WebkitMaskImage: EASED_MASK_GRADIENT,
-        }}
+        className="relative w-full bg-white overflow-hidden cursor-zoom-in active:scale-[0.99] transition-transform duration-300"
+        style={{ maxHeight: "70vh" }}
+        onClick={() => setIsZoomOpen(true)}
       >
-        <div
-          className="absolute inset-0 w-full h-full cursor-zoom-in active:scale-[0.99] transition-transform duration-300"
-          onClick={() => setIsZoomOpen(true)}
-        >
-          <ImageWithBlurhash
-            className="w-full h-full object-contain object-center"
-            alt={recipe.imageAlt || recipe.title || "Rezeptbild"}
+        {heroImageSrc ? (
+          <img
             src={heroImageSrc}
-            blurhash={recipe.imageBlurhash}
-            forceLoad={true}
+            alt={recipe.imageAlt || recipe.title || "Rezeptbild"}
+            referrerPolicy="no-referrer"
+            loading="eager"
             fetchPriority="high"
+            className="block w-full h-auto"
           />
-          {/* Subtle hint for zoom */}
-          <div className="absolute inset-0 bg-black/0 group-hover/hero:bg-black/10 transition-colors flex items-center justify-center">
-            <span className="material-symbols-outlined text-white opacity-0 group-hover/hero:opacity-100 transition-opacity !text-4xl scale-75 group-hover/hero:scale-100 duration-300">
-              zoom_in
-            </span>
-          </div>
+        ) : (
+          <div className="w-full h-56 bg-gray-200" />
+        )}
+        {/* Subtle hint for zoom */}
+        <div className="absolute inset-0 bg-black/0 group-hover/hero:bg-black/10 transition-colors flex items-center justify-center pointer-events-none">
+          <span className="material-symbols-outlined text-white opacity-0 group-hover/hero:opacity-100 transition-opacity !text-4xl scale-75 group-hover/hero:scale-100 duration-300">
+            zoom_in
+          </span>
         </div>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-b from-transparent to-white" />
       </div>
 
       <Suspense fallback={null}>

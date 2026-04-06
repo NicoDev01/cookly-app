@@ -21,6 +21,7 @@ interface ImageWithBlurhashProps extends React.ImgHTMLAttributes<HTMLImageElemen
   blurhash?: string | null;
   alt: string;
   className?: string;
+  fit?: 'cover' | 'contain';
   forceLoad?: boolean; // For modal images - load even if off-screen
 }
 
@@ -29,6 +30,7 @@ const ImageWithBlurhash: React.FC<ImageWithBlurhashProps> = ({
   blurhash,
   alt,
   className,
+  fit = 'cover',
   forceLoad = false,
   ...props
 }) => {
@@ -123,7 +125,7 @@ const ImageWithBlurhash: React.FC<ImageWithBlurhashProps> = ({
         alt={alt}
         referrerPolicy="no-referrer"
         loading={forceLoad ? 'eager' : 'lazy'}
-        className={`w-full h-full object-cover ${shouldInstantRender ? 'opacity-100 transition-none' : `transition-opacity duration-150 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}`}
+        className={`w-full h-full ${fit === 'contain' ? 'object-contain' : 'object-cover'} ${shouldInstantRender ? 'opacity-100 transition-none' : `transition-opacity duration-150 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}`}
         onLoad={() => {
           rememberLoadedImage(src);
           setIsLoaded(true);

@@ -13,6 +13,7 @@ import type * as categories from "../categories.js";
 import type * as constants from "../constants.js";
 import type * as facebook from "../facebook.js";
 import type * as http from "../http.js";
+import type * as importTiming from "../importTiming.js";
 import type * as instagram from "../instagram.js";
 import type * as migrateUserStats from "../migrateUserStats.js";
 import type * as pollinationsHelper from "../pollinationsHelper.js";
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   constants: typeof constants;
   facebook: typeof facebook;
   http: typeof http;
+  importTiming: typeof importTiming;
   instagram: typeof instagram;
   migrateUserStats: typeof migrateUserStats;
   pollinationsHelper: typeof pollinationsHelper;
