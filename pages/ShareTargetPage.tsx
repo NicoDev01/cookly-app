@@ -34,6 +34,27 @@ const ShareTargetPage: React.FC = () => {
     // Global Toast aus NotificationContext
     const { showImportToast } = useNotification();
 
+    const runWithReconnectRetry = useCallback(async (run: () => Promise<string>) => {
+        const startedAt = Date.now();
+        try {
+            return await run();
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err ?? "");
+            if (!msg.includes("Connection lost while action was in flight")) {
+                throw err;
+            }
+
+            const elapsedMs = Date.now() - startedAt;
+            // Avoid silently doubling long imports (e.g. 45s + 45s) on flaky mobile connections.
+            if (elapsedMs > 7000) {
+                throw err;
+            }
+
+            console.warn("[ShareTarget] transient early connection loss, retrying action once", { elapsedMs });
+            return await run();
+        }
+    }, []);
+
     // Kategorien & Update-Mutation
     const categories = useQuery(api.categories.list);
     const updateRecipe = useMutation(api.recipes.updateRecipe);
@@ -94,13 +115,13 @@ const ShareTargetPage: React.FC = () => {
 
             const combinedText = `${title || ''} ${text || ''} ${urlParam || ''}`;
             console.log(`[ShareTarget] #${shareRunId} params`, { title, text, urlParam });
-            const instagramMatch = combinedText.match(/instagram\.com\/(p|reel)\/([A-Za-z0-9_-]+)/);
-            const facebookMatch = combinedText.match(/https?:\/\/(?:www\.)?(?:facebook\.com|fb\.watch)\/[^\s]+/i);
+            const instagramMatch = combinedText.match(/https?:\/\/(?:(?:www|m)\.)?instagram\.com\/(?:p\/[A-Za-z0-9_-]+|reel\/[A-Za-z0-9_-]+|share\/(?:p|reel)\/[A-Za-z0-9_-]+)(?:[^\s]*)/i);
+            const facebookMatch = combinedText.match(/https?:\/\/(?:(?:www|m)\.)?(?:facebook\.com|fb\.watch)\/[^\s]+/i);
             const genericUrlMatch = combinedText.match(/(https?:\/\/[^\s]+)/);
 
             try {
                 if (instagramMatch) {
-                    const postUrl = `https://www.instagram.com/${instagramMatch[1]}/${instagramMatch[2]}/`;
+                    const postUrl = instagramMatch[0];
                     console.log(`[ShareTarget] #${shareRunId} instagramMatch`, { postUrl });
                     setStatus('analyzing');
                     const startedAt = Date.now();
@@ -111,7 +132,7 @@ const ShareTargetPage: React.FC = () => {
                     // Phase 2: Extrahieren
                     setPhase('extrahieren');
 
-                    const recipeId = await scrapePost({ url: postUrl });
+                    const recipeId = await runWithReconnectRetry(() => scrapePost({ url: postUrl }));
                     console.log(`[ShareTarget] #${shareRunId} scrapePost result`, { recipeId });
 
                     // Phase 3: Importieren
@@ -145,7 +166,7 @@ const ShareTargetPage: React.FC = () => {
                     // Phase 2: Extrahieren
                     setPhase('extrahieren');
 
-                    const recipeId = await scrapeFacebookPost({ url: postUrl });
+                    const recipeId = await runWithReconnectRetry(() => scrapeFacebookPost({ url: postUrl }));
                     console.log(`[ShareTarget] #${shareRunId} scrapeFacebookPost result`, { recipeId });
 
                     // Phase 3: Importieren
@@ -179,7 +200,7 @@ const ShareTargetPage: React.FC = () => {
                     // Phase 2: Extrahieren
                     setPhase('extrahieren');
 
-                    const recipeId = await scrapeWebsite({ url: websiteUrl });
+                    const recipeId = await runWithReconnectRetry(() => scrapeWebsite({ url: websiteUrl }));
                     console.log(`[ShareTarget] #${shareRunId} scrapeWebsite result`, { recipeId });
 
                     // Phase 3: Importieren
@@ -227,6 +248,12 @@ const ShareTargetPage: React.FC = () => {
                     } else if (errorData.type === "API_UNAVAILABLE") {
                         setError(errorData.message || "Der Service ist gerade nicht verfügbar.");
                         setStatus('error');
+                    } else if (errorData.type === "NO_RECIPE_CONTENT") {
+                        setError(errorData.message || "Im geteilten Inhalt wurde kein vollständiges Rezept gefunden.");
+                        setStatus('error');
+                    } else if (msg.includes("Connection lost while action was in flight")) {
+                        setError("Die Verbindung wurde kurz unterbrochen. Bitte versuche den Import erneut.");
+                        setStatus('error');
                     } else {
                         setError(msg || "Ein unerwarteter Fehler ist aufgetreten.");
                         setStatus('error');
@@ -235,6 +262,9 @@ const ShareTargetPage: React.FC = () => {
                     // Fallback to string-based error detection
                     if (msg.includes("No data found") || msg.includes("parse recipe data")) {
                         setError("Kein Rezept gefunden 😕");
+                        setStatus('error');
+                    } else if (msg.includes("Connection lost while action was in flight")) {
+                        setError("Die Verbindung wurde kurz unterbrochen. Bitte versuche den Import erneut.");
                         setStatus('error');
                     } else if (msg.includes("Jina AI request failed")) {
                         setError("Website konnte nicht geladen werden.");
@@ -253,7 +283,7 @@ const ShareTargetPage: React.FC = () => {
         if (status === 'idle') {
             handleShare();
         }
-    }, [searchParams, scrapePost, scrapeFacebookPost, scrapeWebsite, proxyExternalImage, status]);
+    }, [searchParams, scrapePost, scrapeFacebookPost, scrapeWebsite, proxyExternalImage, runWithReconnectRetry, status]);
 
     // Native Back Button Handler - führt zu Instagram zurück während des Imports
     useEffect(() => {

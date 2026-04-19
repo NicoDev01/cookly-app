@@ -1,6 +1,26 @@
 {
   "version": 1,
   "skills": {
+    "apify-actor-development": {
+      "source": "apify/agent-skills",
+      "sourceType": "github",
+      "computedHash": "837efac840b0f3ebfada811e8b20074cfaf07e4a17c709b65f07551863c4acb8"
+    },
+    "apify-actorization": {
+      "source": "apify/agent-skills",
+      "sourceType": "github",
+      "computedHash": "e643b3350c9629e67e193402fc972b574957b3f8c4314fbd98c745594c496c70"
+    },
+    "apify-generate-output-schema": {
+      "source": "apify/agent-skills",
+      "sourceType": "github",
+      "computedHash": "70a40736ebf5cd7a73d90094400fa33cc66b07ceea629707200958e0b019a575"
+    },
+    "apify-ultimate-scraper": {
+      "source": "apify/agent-skills",
+      "sourceType": "github",
+      "computedHash": "4cba41db3e691cd6b00beb95990b3c852e2854f0b5a6d77e7b8667db3c64818a"
+    },
     "clerk": {
       "source": "clerk/skills",
       "sourceType": "github",
