@@ -1,23 +1,30 @@
 import React from 'react';
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
+import { Id } from "../convex/_generated/dataModel";
 import { Link } from 'react-router-dom';
 import { IconButton } from '../components/ui/cookly/IconButton';
+import {
+  formatShoppingItemLabel,
+  groupShoppingItemsByRecipe,
+  groupShoppingItemsBySupermarketSection,
+  ShoppingListViewItem,
+} from '../utils/shoppingListView';
 
 const getColorClass = (index: number) => {
-  const colorIndex = (index % 6) + 1;
+  const colorIndex = (index % 10) + 1;
   return `bg-ingredient-${colorIndex}-bg`;
 };
 
 const ShoppingPage: React.FC = () => {
   const items = useQuery(api.shopping.getShoppingList);
-  const toggleItem = useMutation(api.shopping.toggleShoppingItemByDetails).withOptimisticUpdate((localStore, args) => {
-    const { name, amount } = args;
+  const [isSupermarketMode, setIsSupermarketMode] = React.useState(false);
+  const toggleItem = useMutation(api.shopping.toggleShoppingItem).withOptimisticUpdate((localStore, args) => {
     const currentList = localStore.getQuery(api.shopping.getShoppingList);
     if (currentList) {
-      const key = `${name.toLowerCase().trim().replace(/\s+/g, ' ')}|${amount ? amount.toLowerCase().trim().replace(/\s+/g, ' ') : ''}`;
-      // Optimistically remove the item (toggle removes from shopping list)
-      localStore.setQuery(api.shopping.getShoppingList, {}, currentList.filter(item => item.key !== key));
+      localStore.setQuery(api.shopping.getShoppingList, {}, currentList.map((item) => (
+        item._id === args.id ? { ...item, checked: !item.checked } : item
+      )));
     }
   });
   const clearShoppingList = useMutation(api.shopping.clearShoppingList);
@@ -33,6 +40,13 @@ const ShoppingPage: React.FC = () => {
     }
   };
 
+  const groupedItems = React.useMemo(() => {
+    const list = (items ?? []) as ShoppingListViewItem[];
+    return isSupermarketMode
+      ? groupShoppingItemsBySupermarketSection(list)
+      : groupShoppingItemsByRecipe(list);
+  }, [items, isSupermarketMode]);
+
   return (
     <div className="page-enter relative flex w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark font-display">
       <div className="flex flex-col flex-1">
@@ -45,14 +59,30 @@ const ShoppingPage: React.FC = () => {
             </h1>
           </div>
 
-          <IconButton
-            icon="delete_sweep"
-            onClick={handleClear}
-            disabled={!items || items.length === 0}
-            className="bg-card-light dark:bg-card-dark text-text-primary-light dark:text-text-primary-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave !rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Alle entfernen"
-            aria-label="Einkaufsliste leeren"
-          />
+          <div className="flex items-center gap-2">
+            <IconButton
+              icon="local_grocery_store"
+              onClick={() => setIsSupermarketMode((value) => !value)}
+              disabled={!items || items.length === 0}
+              active={isSupermarketMode}
+              className={`shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave !rounded-full disabled:opacity-50 disabled:cursor-not-allowed ${
+                isSupermarketMode
+                  ? '!bg-primary !text-white hover:!bg-primary hover:!text-white'
+                  : '!bg-card-light dark:!bg-card-dark !text-text-primary-light dark:!text-text-primary-dark'
+              }`}
+              title="Supermarktmodus"
+              aria-label="Supermarktmodus umschalten"
+              aria-pressed={isSupermarketMode}
+            />
+            <IconButton
+              icon="delete_sweep"
+              onClick={handleClear}
+              disabled={!items || items.length === 0}
+              className="bg-card-light dark:bg-card-dark text-text-primary-light dark:text-text-primary-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave !rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Alle entfernen"
+              aria-label="Einkaufsliste leeren"
+            />
+          </div>
         </div>
 
         {/* Content */}
@@ -87,21 +117,33 @@ const ShoppingPage: React.FC = () => {
               </Link>
             </div>
           ) : (
-            <div className="flex flex-wrap gap-2.5">
-              {(items ?? []).map((item, index) => (
-                <button
-                  key={item._id}
-                  onClick={() => toggleItem({ name: item.name, amount: item.amount })}
-                  className={
-                    `stagger-item touch-btn relative cursor-pointer select-none ` +
-                    `px-3.5 py-2 rounded-full text-body-sm font-medium ${getColorClass(index)} ` +
-                    `text-black dark:text-white elevation-1`
-                  }
-                  title="Klicken zum Entfernen"
-                >
-                  {item.amount ? <span>{item.amount} </span> : null}
-                  {item.name}
-                </button>
+            <div className="flex flex-col gap-5">
+              {groupedItems.map((group) => (
+                <section key={group.key} className="space-y-2">
+                  {group.title ? (
+                    <h2 className="text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">
+                      {group.title}
+                    </h2>
+                  ) : null}
+                  <div className="flex flex-wrap gap-2.5">
+                    {group.items.map((item, index) => (
+                      <button
+                        key={item._id}
+                        onClick={() => toggleItem({ id: item._id as Id<"shoppingItems"> })}
+                        className={
+                          `relative cursor-pointer select-none appearance-none border-0 transition-all duration-300 ease-out active:scale-95 ` +
+                          `px-3 py-1.5 rounded-full text-sm font-medium ${getColorClass(index)} ` +
+                          `text-black dark:text-white shadow-neomorphism-pill dark:shadow-dark-neomorphism-pill ` +
+                          `${item.checked ? 'opacity-45 line-through decoration-2' : 'opacity-100 no-underline'}`
+                        }
+                        title="Klicken zum Markieren"
+                        aria-pressed={item.checked}
+                      >
+                        {formatShoppingItemLabel(item)}
+                      </button>
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
           )}

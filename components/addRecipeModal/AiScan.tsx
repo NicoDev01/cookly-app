@@ -1,194 +1,4 @@
 import React from "react";
-import { GoogleGenAI } from "@google/genai";
-import { sanitizeInstructionsIcons } from "../../utils/iconUtils";
-import { RECIPE_CATEGORIES } from "../../convex/constants";
-
-// Inlined: Pollinations URL builder for AI scan fallback images
-function buildAiScanImageUrl(keywords: string, seed?: number): string {
-  const cleaned = keywords
-    .toLowerCase()
-    .replace(/ä/g, 'ae')
-    .replace(/ö/g, 'oe')
-    .replace(/ü/g, 'ue')
-    .replace(/ß/g, 'ss')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  const encoded = encodeURIComponent(`realistic food photography ${cleaned}`);
-  const seedParam = seed ?? Math.floor(Math.random() * 1000000000);
-
-  return `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&model=klein&nologo=true&seed=${seedParam}`;
-}
-
-export type AiScanFallback = {
-  title: string;
-  category: string;
-  prepTimeMinutes: number;
-  difficulty: string;
-  portions: number;
-  image: string;
-  imageAlt: string;
-};
-
-export type AiScanDoc = {
-  title: string;
-  category: string;
-  prepTimeMinutes: number;
-  difficulty: string;
-  portions: number;
-  ingredients: Array<{ name: string; amount?: string }>;
-  instructions: Array<{ text: string; icon?: string }>;
-  image: string;
-  imageAlt: string;
-};
-
-export const AI_SCAN_PROMPT_FIXED = `
-  Analysiere dieses Rezeptbild. Extrahiere die Daten und gib sie als JSON zurück.
-  Format:
-  {
-    "title": "Name des Gerichts",
-    "category": "Eine der folgenden Kategorien (NUR eine davon wählen): Pasta, Salat, Suppe, Fleisch, Fisch, Vegetarisch, Vegan, Backen, Dessert, Frühstück, Snack, Beilage, Getränke, Sonstiges",
-    "prepTimeMinutes": Zahl (geschätzt oder gelesen),
-    "difficulty": "Einfach" | "Mittel" | "Schwer",
-    "portions": Zahl,
-    "ingredients": [{"name": "Zutat", "amount": "Menge"}],
-    "instructions": [{"text": "Schrittbeschreibung", "icon": "passendes Material Symbol Icon (snake_case)"}],
-    "imageKeywords": "Kurze englische Beschreibung für Bildsuche (z.B. 'spaghetti bolognese', 'chocolate cake')"
-  }
-  Wähle für die Icons passende Material Symbols aus, z.B.:
-  outdoor_grill, local_fire_department, water_drop, timer, restaurant, blender, oven_gen, skillet, grid_on, cookie, cake, local_pizza, set_meal, soup_kitchen, flatware, egg, breakfast_dining, brunch_dining, dinner_dining, lunch_dining, ramen_dining, bakery_dining, kitchen, microwave.
-  Nutze NUR Icons, die in Material Symbols (Outlined) existieren und am besten aus der obigen Liste. Wenn unsicher, lass "icon" weg.
-  Antworte NUR mit dem JSON.
-`;
-
-export const createGeminiClient = (apiKey: string) => {
-  if (!apiKey) throw new Error("VITE_GEMINI_API_KEY fehlt in der .env Datei");
-  const ai = new GoogleGenAI({ apiKey });
-  const model = "gemini-3.1-flash-lite-preview";
-  return { ai, model };
-};
-
-const compressImageForAi = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        let { width, height } = img;
-        const maxDim = 2048; // Safe limit for OCR (keeps text readable)
-
-        if (width > maxDim || height > maxDim) {
-          const scale = maxDim / Math.max(width, height);
-          width *= scale;
-          height *= scale;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          resolve(reader.result as string);
-          return;
-        }
-
-        // White background for transparent PNGs
-        ctx.fillStyle = "#FFFFFF";
-        ctx.fillRect(0, 0, width, height);
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // JPEG 0.90 is safe for text, reduces size significantly
-        resolve(canvas.toDataURL("image/jpeg", 0.90));
-      };
-      img.onerror = reject;
-      img.src = e.target?.result as string;
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-};
-
-const parseGeminiJson = (text?: string) => {
-  const jsonStr = text?.replace(/```json/g, "").replace(/```/g, "").trim();
-  if (!jsonStr) throw new Error("Leere Antwort von Gemini");
-  return JSON.parse(jsonStr);
-};
-
-const cleanIngredients = (
-  value: Array<{ name?: string; amount?: string }> | undefined
-): Array<{ name: string; amount?: string }> => {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((i) => ({
-      name: String(i?.name ?? "").trim(),
-      amount: String(i?.amount ?? "").trim() || undefined,
-    }))
-    .filter((i) => i.name.length > 0);
-};
-
-const cleanInstructions = (
-  value: Array<{ text?: string; icon?: string }> | undefined
-): Array<{ text: string; icon?: string }> => {
-  if (!Array.isArray(value)) return [];
-  const normalized = value
-    .map((s) => ({
-      text: String(s?.text ?? "").trim(),
-      icon: String(s?.icon ?? "").trim() || undefined,
-    }))
-    .filter((s) => s.text.length > 0);
-  return sanitizeInstructionsIcons(normalized);
-};
-
-export const analyzeRecipePhoto = async (args: {
-  ai: GoogleGenAI;
-  model: string;
-  file: File;
-  fallback: AiScanFallback;
-  prompt?: string;
-}): Promise<{ base64: string; doc: AiScanDoc }> => {
-  const { ai, model, file, fallback } = args;
-  const prompt = (args.prompt ?? AI_SCAN_PROMPT_FIXED).trim();
-
-  const base64 = await compressImageForAi(file);
-  const base64Data = base64.split(",")[1];
-  const mimeType = "image/jpeg";
-
-  const response = await ai.models.generateContent({
-    model,
-    contents: {
-      parts: [{ inlineData: { mimeType, data: base64Data } }, { text: prompt }],
-    },
-  });
-
-  const data = parseGeminiJson(response.text);
-
-  const nextImage = data.imageKeywords
-    ? buildAiScanImageUrl(String(data.imageKeywords))
-    : fallback.image;
-
-  const title = (data.title ?? "").trim() || fallback.title;
-
-  const rawCategory = (data.category ?? "").trim();
-  const validatedCategory = (RECIPE_CATEGORIES as readonly string[]).includes(rawCategory)
-    ? rawCategory
-    : fallback.category;
-
-  return {
-    base64,
-    doc: {
-      title,
-      category: validatedCategory,
-      prepTimeMinutes: Number(data.prepTimeMinutes) || fallback.prepTimeMinutes,
-      difficulty: data.difficulty || fallback.difficulty,
-      portions: Number(data.portions) || fallback.portions,
-      ingredients: cleanIngredients(data.ingredients),
-      instructions: cleanInstructions(data.instructions),
-      image: nextImage,
-      imageAlt: title || fallback.imageAlt,
-    },
-  };
-};
 
 type AiScanPanelProps = {
   editAfterScan: boolean;
@@ -202,12 +12,12 @@ type AiScanPanelProps = {
   isAnalyzing: boolean;
 
   // New: Progress states
-  analysisStage: 'idle' | 'uploading' | 'analyzing' | 'processing' | 'complete';
+  analysisStage: 'idle' | 'uploading' | 'analyzing' | 'retrying' | 'processing' | 'complete';
   analysisProgress: number;
 
   sourceImageUrl: string;
 
-  fileInputRef: React.RefObject<HTMLInputElement>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 };
 
@@ -240,8 +50,14 @@ export const AiScanPanel: React.FC<AiScanPanelProps> = ({
       </label>
 
       <div
-        onClick={() => fileInputRef.current?.click()}
-        className="w-full max-w-sm aspect-video border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all group"
+        onClick={() => {
+          if (!isBusy) fileInputRef.current?.click();
+        }}
+        className={`w-full max-w-sm aspect-video border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center transition-all group ${
+          isBusy
+            ? 'cursor-not-allowed opacity-70'
+            : 'cursor-pointer hover:border-primary hover:bg-primary/5'
+        }`}
       >
         {sourceImageUrl ? (
           <img src={sourceImageUrl} alt="Hochgeladenes Rezeptfoto" className="w-full h-full object-cover rounded-xl" />
@@ -259,6 +75,7 @@ export const AiScanPanel: React.FC<AiScanPanelProps> = ({
           className="hidden"
           accept="image/*"
           multiple
+          disabled={isBusy}
           onChange={onFileChange}
         />
       </div>
@@ -299,6 +116,7 @@ export const AiScanPanel: React.FC<AiScanPanelProps> = ({
           <p className="text-sm text-gray-600 dark:text-gray-400 text-center">
             {analysisStage === 'uploading' && '📤 Bild wird vorbereitet...'}
             {analysisStage === 'analyzing' && '🤖 KI analysiert Rezept...'}
+            {analysisStage === 'retrying' && 'KI ist ausgelastet. Neuer Versuch läuft...'}
             {analysisStage === 'processing' && '⚙️ Rezept wird erstellt...'}
             {analysisStage === 'complete' && '✅ Fertig!'}
           </p>
@@ -307,6 +125,9 @@ export const AiScanPanel: React.FC<AiScanPanelProps> = ({
           <div className="flex justify-center">
             {analysisStage === 'analyzing' && (
               <div className="animate-pulse text-3xl">🧠</div>
+            )}
+            {analysisStage === 'retrying' && (
+              <span className="material-symbols-outlined animate-spin text-3xl text-primary">sync</span>
             )}
             {analysisStage === 'uploading' && (
               <div className="animate-bounce text-3xl">📷</div>

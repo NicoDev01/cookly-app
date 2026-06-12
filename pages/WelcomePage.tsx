@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { useConvexAuth } from 'convex/react';
 import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 import { Button } from '../components/ui/cookly';
 import BottomSheet from '../components/BottomSheet';
 

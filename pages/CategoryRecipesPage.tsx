@@ -8,11 +8,14 @@ import { Id } from "../convex/_generated/dataModel";
 import ImageWithBlurhash from '../components/ImageWithBlurhash';
 import { IconButton } from '../components/ui/cookly/IconButton';
 import { prefetchRecipePage } from '../prefetch';
+import type { Recipe } from '../types';
 
 
 interface CategoryRecipesPageProps {
   category?: string;
 }
+
+type RecipeListItem = Omit<Recipe, "ingredients"> & { ingredients?: undefined };
 
 const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: propCategory }) => {
   const { category: paramCategory } = useParams<{ category: string }>();
@@ -52,7 +55,7 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
 
   // PERFORMANCE: Use cached query for instant navigation (eliminates spinner)
   const cacheKey = isAll ? 'category-all-recipes' : `category-${category}`;
-  const { data: rawRecipes } = useCachedQuery(
+  const { data: rawRecipes } = useCachedQuery<RecipeListItem[]>(
     api.recipes.list,
     listArgs === "skip" ? {} : listArgs,
     cacheKey

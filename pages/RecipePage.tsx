@@ -16,11 +16,11 @@ const AddRecipeModal = React.lazy(() => import('../components/AddRecipeModal'));
 
 type RecipeNavState = {
   nav?: {
-    ids: string[];
+    ids: Id<"recipes">[];
     index?: number;
   };
   heroPreview?: {
-    id: string;
+    id: Id<"recipes">;
     image?: string;
     imageBlurhash?: string;
     imageWidth?: number;
@@ -50,7 +50,7 @@ const RecipeSlideContent = React.memo(({
   onDelete: (id: Id<"recipes">) => void;
   onSidebarToggle: () => void;
 }) => {
-  const { data: recipe } = useCachedQuery(
+  const { data: recipe } = useCachedQuery<Recipe | null>(
     api.recipes.get,
     { id: recipeId },
     `recipe-${recipeId}`,
@@ -98,7 +98,7 @@ const RecipeSlideContent = React.memo(({
       />
       <div className="relative z-20 -mt-3 mb-6 mx-2 p-6 rounded-3xl glassmorphism bg-white/60 backdrop-blur-xl shadow-neo-light-convex border border-gray-100 md:mx-auto md:max-w-2xl lg:max-w-3xl">
         <RecipeMeta recipe={recipe} />
-        <Ingredients ingredients={recipe.ingredients} />
+        <Ingredients ingredients={recipe.ingredients} recipeId={recipe._id} recipeTitle={recipe.title} />
         <Instructions instructions={recipe.instructions} ingredients={recipe.ingredients} />
       </div>
     </main>
@@ -169,6 +169,7 @@ const RecipeSlideWrapper = ({
 
 const RecipePage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const routeRecipeId = id as Id<"recipes"> | undefined;
   const navigate = useNavigate();
   const location = useLocation();
   const handleBack = useBackNavigation();
@@ -216,21 +217,22 @@ const RecipePage: React.FC = () => {
   const heroPreview = (location.state as RecipeNavState | null)?.heroPreview;
 
   // Determine the list of IDs to show
-  const recipeIds = useMemo(() => {
+  const recipeIds = useMemo<Id<"recipes">[] | undefined>(() => {
     const navState = location.state as RecipeNavState | null;
-    if (navState?.nav?.ids) return navState.nav.ids;
+    const ids = navState?.nav?.ids
+      ?? (isFavoritesMode ? favoriteRecipeIds : undefined)
+      ?? (isWeeklyMode ? weeklyRecipeIds : undefined)
+      ?? allRecipeIds;
 
-    if (isFavoritesMode) return favoriteRecipeIds;
-    if (isWeeklyMode) return weeklyRecipeIds;
-    return allRecipeIds;
+    return ids?.map((recipeId) => recipeId as Id<"recipes">);
   }, [location.state, isFavoritesMode, isWeeklyMode, favoriteRecipeIds, weeklyRecipeIds, allRecipeIds]);
 
   // Find the index of the currently requested recipe
   const initialIndex = useMemo(() => {
-    if (!id || !recipeIds || recipeIds.length === 0) return 0;
-    const idx = recipeIds.findIndex((rId) => rId === id);
+    if (!routeRecipeId || !recipeIds || recipeIds.length === 0) return 0;
+    const idx = recipeIds.findIndex((rId) => rId === routeRecipeId);
     return idx >= 0 ? idx : 0;
-  }, [id, recipeIds]);
+  }, [routeRecipeId, recipeIds]);
 
   // Initialize Embla Carousel
   const [emblaRef, emblaApi] = useEmblaCarousel({
@@ -244,14 +246,14 @@ const RecipePage: React.FC = () => {
 
   // Ensure we jump to the correct slide when data loads
   useEffect(() => {
-    if (emblaApi && recipeIds && id) {
-      const idx = recipeIds.findIndex((rId) => rId === id);
+    if (emblaApi && recipeIds && routeRecipeId) {
+      const idx = recipeIds.findIndex((rId) => rId === routeRecipeId);
       if (idx >= 0 && emblaApi.selectedScrollSnap() !== idx) {
         emblaApi.scrollTo(idx, true);
         setCurrentIndex(idx);
       }
     }
-  }, [emblaApi, recipeIds, id]);
+  }, [emblaApi, recipeIds, routeRecipeId]);
 
   // Sync URL when user swipes (Silent Update)
   useEffect(() => {
@@ -264,7 +266,7 @@ const RecipePage: React.FC = () => {
       
       // Only update URL if we are on a different recipe than the URL says.
       // We use replaceState to avoid cluttering the history stack with every swipe.
-      if (recipeId && recipeId !== id) {
+      if (recipeId && recipeId !== routeRecipeId) {
         // Preserve the state (e.g. from: 'favorites') when updating the URL
         window.history.replaceState(
           { 
@@ -287,7 +289,7 @@ const RecipePage: React.FC = () => {
     return () => {
       emblaApi.off('select', onSelect);
     };
-  }, [emblaApi, recipeIds, id, isFavoritesMode, isWeeklyMode]);
+  }, [emblaApi, recipeIds, routeRecipeId, isFavoritesMode, isWeeklyMode]);
 
   // Handle external navigation (e.g. clicking a link to another recipe)
   // This ensures the carousel jumps to the correct slide if the ID changes via props/router.

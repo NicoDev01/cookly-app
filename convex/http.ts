@@ -1,8 +1,8 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
+import { internal } from "./_generated/api";
 import Stripe from "stripe";
 import { auth } from "./auth";
-import { clearWebhookEventRecord, recordWebhookEventIfNew } from "./stripeInternal";
 
 const http = httpRouter();
 let stripeWebhookClient: Stripe | null = null;
@@ -63,14 +63,13 @@ const stripeWebhookHandler = httpAction(async (ctx, request) => {
     }
 
     try {
-      const { internal } = await import("./_generated/api");
       const cleanupArgs = {
         olderThanMs:
           Date.now() - STRIPE_WEBHOOK_RETENTION_DAYS * 24 * 60 * 60 * 1000,
         batchSize: STRIPE_WEBHOOK_CLEANUP_BATCH_SIZE,
       };
 
-      const isNewEvent = await ctx.runMutation(recordWebhookEventIfNew, {
+      const isNewEvent = await ctx.runMutation(internal.stripeInternal.recordWebhookEventIfNew, {
         eventId: event.id,
         eventType: event.type,
       });
@@ -88,7 +87,7 @@ const stripeWebhookHandler = httpAction(async (ctx, request) => {
       return new Response("Webhook processed", { status: 200 });
     } catch (error) {
       try {
-        await ctx.runMutation(clearWebhookEventRecord, { eventId: event.id });
+        await ctx.runMutation(internal.stripeInternal.clearWebhookEventRecord, { eventId: event.id });
       } catch {
         // ignore rollback cleanup errors
       }

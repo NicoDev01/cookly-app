@@ -85,6 +85,17 @@ function getStripe(): Stripe {
 
 type InternalSubscriptionPlan = "pro_monthly" | "pro_yearly";
 type InternalSubscriptionStatus = "active" | "canceled" | "past_due";
+type WebhookResolvedSubscription = {
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  subscription: InternalSubscriptionPlan;
+  subscriptionStatus: InternalSubscriptionStatus;
+  subscriptionStartDate?: number;
+  subscriptionEndDate?: number;
+};
+type InvoiceWithSubscription = Stripe.Invoice & {
+  subscription?: string | Stripe.Subscription | null;
+};
 const BLOCKING_SUBSCRIPTION_STATUSES = new Set([
   "active",
   "trialing",
@@ -399,7 +410,7 @@ export const handleWebhookEvent = internalAction({
         const stripeSubscriptionId = toSubscriptionId(session.subscription);
         const stripeCustomerIdFromSession = toCustomerId(session.customer);
 
-        let resolved = {
+        let resolved: WebhookResolvedSubscription = {
           stripeCustomerId: stripeCustomerIdFromSession,
           stripeSubscriptionId: stripeSubscriptionId,
           subscription: (planId === "pro_yearly" ? "pro_yearly" : "pro_monthly") as InternalSubscriptionPlan,
@@ -538,9 +549,9 @@ export const handleWebhookEvent = internalAction({
       // INVOICE PAYMENT FAILED - Zahlung fehlgeschlagen
       // ============================================================
       case "invoice.payment_failed": {
-        const invoice = args.data as Stripe.Invoice;
+        const invoice = args.data as InvoiceWithSubscription;
         const stripeSubscriptionId = toSubscriptionId(
-          invoice.subscription as string | Stripe.Subscription | null | undefined
+          invoice.subscription
         );
         if (stripeSubscriptionId) {
           try {
@@ -566,9 +577,9 @@ export const handleWebhookEvent = internalAction({
       // INVOICE PAYMENT SUCCEEDED - Zahlung erfolgreich (Renewal)
       // ============================================================
       case "invoice.payment_succeeded": {
-        const invoice = args.data as Stripe.Invoice;
+        const invoice = args.data as InvoiceWithSubscription;
         const stripeSubscriptionId = toSubscriptionId(
-          invoice.subscription as string | Stripe.Subscription | null | undefined
+          invoice.subscription
         );
         if (stripeSubscriptionId) {
           try {

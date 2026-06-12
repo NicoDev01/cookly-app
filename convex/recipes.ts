@@ -1,10 +1,15 @@
-import { query, mutation, action } from "./_generated/server";
+import { query, mutation, action, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { internal, api } from "./_generated/api";
 import { FREE_LIMITS } from "./constants";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { Id } from "./_generated/dataModel";
 import { createImportTimer } from "./importTiming";
+import {
+  buildRecipeImageUrl,
+  getConsistentSeed,
+  stripPollinationsApiKeyFromUrl,
+} from "./pollinationsHelper";
 
 // Helper: Authentifizierten User laden (wirft wenn nicht eingeloggt)
 async function getAuthenticatedUserId(ctx: any): Promise<Id<"users">> {
@@ -759,18 +764,32 @@ export const getStorageUrl = query({
 // Generate AI image URL
 export const generateAndStoreAiImage = action({
   args: { recipeTitle: v.string() },
-  handler: async (ctx, args): Promise<{ url: string }> => {
+  handler: async (ctx, args): Promise<{ url: string; storageId: Id<"_storage"> }> => {
     const authUserId = await getAuthUserId(ctx);
     if (!authUserId) throw new Error("Not authenticated");
 
-    const apiKey = process.env.POLLINATIONS_API_KEY || '';
-    if (!apiKey) throw new Error('POLLINATIONS_API_KEY not set.');
-
-    const { getConsistentSeed, buildRecipeImageUrl } = await import("./pollinationsHelper");
     const seed = getConsistentSeed(args.recipeTitle);
-    const pollinationsUrl = buildRecipeImageUrl(args.recipeTitle, seed, apiKey);
+    const pollinationsUrl = buildRecipeImageUrl(args.recipeTitle, seed);
 
-    return { url: pollinationsUrl };
+    const response = await fetch(pollinationsUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!response.ok) {
+      throw new Error(`AI image generation failed: ${response.status}`);
+    }
+
+    const contentType = response.headers.get("content-type") || "image/jpeg";
+    if (!contentType.startsWith("image/")) {
+      throw new Error("AI image generation did not return an image.");
+    }
+
+    const imageBuffer = await response.arrayBuffer();
+    const storageId = await ctx.storage.store(new Blob([imageBuffer], { type: contentType }));
+    const storageUrl = await ctx.storage.getUrl(storageId);
+    if (!storageUrl) throw new Error("Stored AI image URL could not be loaded.");
+
+    return { url: storageUrl, storageId };
   },
 });
 
@@ -794,11 +813,11 @@ export const proxyExternalImage = action({
     }
     let sourceImageUrl = recipe.sourceImageUrl;
     if (!sourceImageUrl) {
-      const { getConsistentSeed, buildRecipeImageUrl } = await import("./pollinationsHelper");
       const seed = getConsistentSeed(recipe.title || "Delicious Food");
-      sourceImageUrl = buildRecipeImageUrl(recipe.title || "Delicious Food", seed, process.env.POLLINATIONS_API_KEY || "");
+      sourceImageUrl = buildRecipeImageUrl(recipe.title || "Delicious Food", seed);
       timer.mark("fallback_image_generated");
     }
+    sourceImageUrl = stripPollinationsApiKeyFromUrl(sourceImageUrl) ?? sourceImageUrl;
 
     try {
       const response = await fetch(sourceImageUrl, {
@@ -814,16 +833,15 @@ export const proxyExternalImage = action({
       const storageId = await ctx.storage.store(blob);
       timer.mark("stored_in_convex");
 
+      const imageUrl = await ctx.storage.getUrl(storageId);
+      timer.mark("storage_url_loaded");
       await ctx.runMutation(api.recipes.update, {
         id: args.recipeId,
         imageStorageId: storageId,
-        image: sourceImageUrl,
+        image: imageUrl || sourceImageUrl,
         sourceImageUrl,
       });
       timer.mark("recipe_updated");
-
-      const imageUrl = await ctx.storage.getUrl(storageId);
-      timer.mark("storage_url_loaded");
       timer.summary({ result: "proxied" });
       return { success: true, imageStorageId: storageId, imageUrl: imageUrl || undefined };
 
@@ -832,6 +850,45 @@ export const proxyExternalImage = action({
       timer.summary({ result: "failed", error: error instanceof Error ? error.message : String(error) });
       return { success: false };
     }
+  },
+});
+
+export const cleanupPollinationsApiKeys = internalMutation({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    batchSize: v.optional(v.number()),
+  },
+  returns: v.object({
+    scanned: v.number(),
+    updated: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const dryRun = args.dryRun ?? true;
+    const batchSize = Math.min(Math.max(args.batchSize ?? 500, 1), 2000);
+    const recipes = await ctx.db.query("recipes").take(batchSize);
+    let updated = 0;
+
+    for (const recipe of recipes) {
+      const nextImage = stripPollinationsApiKeyFromUrl(recipe.image);
+      const nextSourceImageUrl = stripPollinationsApiKeyFromUrl(recipe.sourceImageUrl);
+      const patch: { image?: string; sourceImageUrl?: string } = {};
+
+      if (nextImage !== recipe.image && nextImage !== undefined) {
+        patch.image = nextImage;
+      }
+      if (nextSourceImageUrl !== recipe.sourceImageUrl && nextSourceImageUrl !== undefined) {
+        patch.sourceImageUrl = nextSourceImageUrl;
+      }
+
+      if (Object.keys(patch).length > 0) {
+        updated++;
+        if (!dryRun) {
+          await ctx.db.patch(recipe._id, patch);
+        }
+      }
+    }
+
+    return { scanned: recipes.length, updated };
   },
 });
 

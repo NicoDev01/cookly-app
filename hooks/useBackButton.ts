@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { App } from '@capacitor/app';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Capacitor } from '@capacitor/core';
+import { getActiveBackButtonOverride } from '../services/backButtonOverride';
 
 type NavState = {
   from?: 'favorites' | 'weekly';
@@ -65,6 +66,12 @@ export function useBackButton({
       const nav = navigateRef.current;
       const modalOpen = isAnyModalOpenRef.current;
       const closeModalsFn = closeModalsRef.current;
+      const override = getActiveBackButtonOverride();
+
+      if (override) {
+        void override();
+        return;
+      }
 
       // 1. HÖCHSTE PRIORITÄT: Modal schließen
       if (modalOpen) {

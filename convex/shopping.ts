@@ -1,14 +1,51 @@
 import { query, mutation } from "./_generated/server";
+import type { QueryCtx, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { Id } from "./_generated/dataModel";
 
-async function getAuthenticatedUserId(ctx: any): Promise<Id<"users">> {
+const normalizeShoppingText = (value: string) => value.toLowerCase().trim().replace(/\s+/g, " ");
+
+const buildShoppingItemKey = (name: string, recipeId?: Id<"recipes">) => {
+  const baseKey = normalizeShoppingText(name);
+  return recipeId ? `${baseKey}|recipe:${recipeId}` : baseKey;
+};
+
+const buildLegacyShoppingItemKeys = (name: string, amount?: string, recipeId?: Id<"recipes">) => {
+  const normalizedName = normalizeShoppingText(name);
+  const normalizedAmount = amount ? normalizeShoppingText(amount) : "";
+  return [
+    recipeId && normalizedAmount ? `${normalizedName}|${normalizedAmount}|recipe:${recipeId}` : undefined,
+    `${normalizedName}|${normalizedAmount}`,
+    normalizedName,
+  ].filter((key): key is string => Boolean(key));
+};
+
+const getRecipeIdFromShoppingKey = (key: string): Id<"recipes"> | undefined => {
+  const marker = "|recipe:";
+  const markerIndex = key.lastIndexOf(marker);
+  if (markerIndex === -1) return undefined;
+  return key.slice(markerIndex + marker.length) as Id<"recipes">;
+};
+
+const assertRecipeAccessible = async (
+  ctx: QueryCtx | MutationCtx,
+  recipeId: Id<"recipes">,
+  userId: Id<"users">,
+) => {
+  const recipe = await ctx.db.get(recipeId);
+  if (!recipe || (recipe.userId && recipe.userId !== userId)) {
+    throw new Error("Recipe not found or access denied");
+  }
+  return recipe;
+};
+
+async function getAuthenticatedUserId(ctx: QueryCtx | MutationCtx): Promise<Id<"users">> {
   const authUserId = await getAuthUserId(ctx);
   if (!authUserId) throw new Error("Not authenticated");
   const linkedUser = await ctx.db
     .query("users")
-    .withIndex("by_authUserId", (q: any) => q.eq("authUserId", authUserId.toString()))
+    .withIndex("by_authUserId", (q) => q.eq("authUserId", authUserId.toString()))
     .first();
   if (linkedUser) return linkedUser._id;
 
@@ -25,14 +62,46 @@ export const getShoppingList = query({
     if (!authUserId) return [];
     const user = await ctx.db
       .query("users")
-      .withIndex("by_authUserId", (q: any) => q.eq("authUserId", authUserId.toString()))
+      .withIndex("by_authUserId", (q) => q.eq("authUserId", authUserId.toString()))
       .first();
     if (!user) return [];
 
-    return await ctx.db
+    const items = await ctx.db
       .query("shoppingItems")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect();
+    const recipes = await ctx.db
+      .query("recipes")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+
+    return await Promise.all(items.map(async (item) => {
+      const keyRecipeId = getRecipeIdFromShoppingKey(item.key);
+      const recipeId = item.recipeId ?? keyRecipeId;
+
+      if (!recipeId) {
+        const matchingRecipes = recipes.filter((recipe) =>
+          recipe.ingredients.some((ingredient) =>
+            normalizeShoppingText(ingredient.name) === normalizeShoppingText(item.name)
+          )
+        );
+
+        if (matchingRecipes.length === 1) {
+          return {
+            ...item,
+            recipeTitle: matchingRecipes[0].title,
+          };
+        }
+
+        return item;
+      }
+      const recipe = await ctx.db.get(recipeId);
+      return {
+        ...item,
+        recipeId,
+        recipeTitle: recipe?.title,
+      };
+    }));
   },
 });
 
@@ -44,32 +113,45 @@ export const addShoppingItem = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthenticatedUserId(ctx);
+    let recipeTitle: string | undefined;
     if (args.recipeId) {
-      const recipe = await ctx.db.get(args.recipeId);
-      if (!recipe || recipe.userId !== userId) {
-        throw new Error("Recipe not found or access denied");
-      }
+      const recipe = await assertRecipeAccessible(ctx, args.recipeId, userId);
+      recipeTitle = recipe.title;
     }
 
     const normalizedName = args.name.toLowerCase().trim();
-    const normalizedAmount = args.amount?.toLowerCase().trim() || "";
-    const key = `${normalizedName}|${normalizedAmount}`;
+    const key = buildShoppingItemKey(args.name, args.recipeId);
+    const candidateKeys = [key, ...buildLegacyShoppingItemKeys(args.name, args.amount, args.recipeId)];
 
-    const existing = await ctx.db
+    const userItems = await ctx.db
       .query("shoppingItems")
-      .withIndex("by_user_key", (q) => q.eq("userId", userId).eq("key", key))
-      .first();
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    const exactExisting = userItems.find((item) => item.key === key);
+    if (exactExisting) return exactExisting._id;
 
-    if (existing) return existing._id;
+    const legacyExisting = userItems.find((item) => item.key !== key && candidateKeys.includes(item.key));
+    if (legacyExisting && args.recipeId) {
+      await ctx.db.patch(legacyExisting._id, {
+        key,
+        recipeId: args.recipeId,
+        recipeTitle,
+        amount: args.amount,
+      });
+      return legacyExisting._id;
+    }
+
+    if (legacyExisting) return legacyExisting._id;
 
     return await ctx.db.insert("shoppingItems", {
       userId,
       name: args.name,
-      amount: args.amount,
       normalizedName,
+      amount: args.amount,
       key,
       checked: false,
       recipeId: args.recipeId,
+      recipeTitle,
       createdAt: Date.now(),
     });
   },
@@ -83,38 +165,63 @@ export const toggleShoppingItemByDetails = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthenticatedUserId(ctx);
+    let recipeTitle: string | undefined;
     if (args.recipeId) {
-      const recipe = await ctx.db.get(args.recipeId);
-      if (!recipe || recipe.userId !== userId) {
-        throw new Error("Recipe not found or access denied");
-      }
+      const recipe = await assertRecipeAccessible(ctx, args.recipeId, userId);
+      recipeTitle = recipe.title;
     }
 
     const normalizedName = args.name.toLowerCase().trim();
-    const normalizedAmount = args.amount?.toLowerCase().trim() || "";
-    const key = `${normalizedName}|${normalizedAmount}`;
+    const key = buildShoppingItemKey(args.name, args.recipeId);
+    const candidateKeys = [key, ...buildLegacyShoppingItemKeys(args.name, args.amount, args.recipeId)];
 
-    const existing = await ctx.db
+    const userItems = await ctx.db
       .query("shoppingItems")
-      .withIndex("by_user_key", (q) => q.eq("userId", userId).eq("key", key))
-      .first();
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    const exactExisting = userItems.find((item) => item.key === key);
 
-    if (existing) {
-      await ctx.db.delete(existing._id);
-      return { action: "removed", id: existing._id };
-    } else {
-      const itemId = await ctx.db.insert("shoppingItems", {
-        userId,
-        name: args.name,
-        amount: args.amount,
-        normalizedName,
-        key,
-        checked: false,
-        recipeId: args.recipeId,
-        createdAt: Date.now(),
-      });
-      return { action: "added", id: itemId };
+    if (exactExisting) {
+      await ctx.db.delete(exactExisting._id);
+      return { action: "removed", id: exactExisting._id };
     }
+
+    const recipeLegacyExisting = args.recipeId
+      ? userItems.find((item) => item.key !== key && item.key.endsWith(`|recipe:${args.recipeId}`) && candidateKeys.includes(item.key))
+      : undefined;
+    if (recipeLegacyExisting) {
+      await ctx.db.delete(recipeLegacyExisting._id);
+      return { action: "removed", id: recipeLegacyExisting._id };
+    }
+
+    const legacyExisting = userItems.find((item) => item.key !== key && candidateKeys.includes(item.key));
+    if (legacyExisting && args.recipeId) {
+      await ctx.db.patch(legacyExisting._id, {
+        key,
+        recipeId: args.recipeId,
+        recipeTitle,
+        amount: args.amount,
+      });
+      return { action: "added", id: legacyExisting._id };
+    }
+
+    if (legacyExisting) {
+      await ctx.db.delete(legacyExisting._id);
+      return { action: "removed", id: legacyExisting._id };
+    }
+
+    const itemId = await ctx.db.insert("shoppingItems", {
+      userId,
+      name: args.name,
+      normalizedName,
+      amount: args.amount,
+      key,
+      checked: false,
+      recipeId: args.recipeId,
+      recipeTitle,
+      createdAt: Date.now(),
+    });
+    return { action: "added", id: itemId };
   },
 });
 

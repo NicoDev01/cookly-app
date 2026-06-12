@@ -8,6 +8,7 @@ import { App as CapacitorApp } from '@capacitor/app';
 import UpgradeModal from '../components/UpgradeModal';
 import { showSimpleImportNotification } from '../utils/notifications';
 import { useNotification } from '../contexts/NotificationContext';
+import { registerBackButtonOverride } from '../services/backButtonOverride';
 
 type ProcessingPhase = 'analyzing' | 'extrahieren' | 'importieren';
 
@@ -29,7 +30,6 @@ const ShareTargetPage: React.FC = () => {
     const dropdownRef = useRef<HTMLDivElement>(null);
     const processingRef = useRef(false);
     const shareInvocationRef = useRef(0);
-    const backButtonHandlerRef = useRef<Promise<{ remove: () => void }> | null>(null);
     
     // Global Toast aus NotificationContext
     const { showImportToast } = useNotification();
@@ -285,21 +285,12 @@ const ShareTargetPage: React.FC = () => {
         }
     }, [searchParams, scrapePost, scrapeFacebookPost, scrapeWebsite, proxyExternalImage, runWithReconnectRetry, status]);
 
-    // Native Back Button Handler - führt zu Instagram zurück während des Imports
+    // Native Back Button Override: the global handler remains the single Capacitor listener.
     useEffect(() => {
         if (status !== 'analyzing') return;
         if (!Capacitor.isNativePlatform()) return;
 
-        const setupBackButton = async () => {
-            const handler = await CapacitorApp.addListener('backButton', handleClose);
-            backButtonHandlerRef.current = Promise.resolve(handler);
-        };
-
-        setupBackButton();
-
-        return () => {
-            backButtonHandlerRef.current?.then(h => h.remove());
-        };
+        return registerBackButtonOverride(handleClose);
     }, [status, handleClose]);
 
     // Click outside to close dropdown - Mobile UX best practice

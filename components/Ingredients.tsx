@@ -1,39 +1,56 @@
 import React from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
+import { Id } from '../convex/_generated/dataModel';
 import { Ingredient } from '../types';
+import { buildLegacyShoppingItemKeys, buildShoppingItemKey } from '../utils/shoppingListView';
 
 interface IngredientsProps {
   ingredients: Ingredient[];
   highlightedIndex?: number | null;
+  recipeId?: Id<"recipes">;
+  recipeTitle?: string;
 }
 
-const Ingredients: React.FC<IngredientsProps> = ({ ingredients, highlightedIndex }) => {
+const Ingredients: React.FC<IngredientsProps> = ({ ingredients, highlightedIndex, recipeId, recipeTitle }) => {
   const shoppingItems = useQuery(api.shopping.getShoppingList);
   const toggleShoppingItem = useMutation(api.shopping.toggleShoppingItemByDetails).withOptimisticUpdate((localStore, args) => {
     const { name, amount } = args;
     const currentList = localStore.getQuery(api.shopping.getShoppingList);
     if (currentList) {
-      const key = `${name.toLowerCase().trim().replace(/\s+/g, ' ')}|${amount ? amount.toLowerCase().trim().replace(/\s+/g, ' ') : ''}`;
-      const exists = currentList.find(item => item.key === key);
-      if (exists) {
+      const key = buildShoppingItemKey(name, amount, recipeId);
+      const candidateKeys = new Set([key, ...buildLegacyShoppingItemKeys(name, amount, recipeId)]);
+      const exactExists = currentList.find(item => item.key === key);
+      const legacyExists = currentList.find(item => item.key !== key && candidateKeys.has(item.key));
+      if (exactExists) {
         // Remove optimistically
         localStore.setQuery(api.shopping.getShoppingList, {}, currentList.filter(item => item.key !== key));
+      } else if (legacyExists && recipeId) {
+        localStore.setQuery(api.shopping.getShoppingList, {}, currentList.map((item) => (
+          item._id === legacyExists._id
+            ? { ...item, key, recipeId, recipeTitle, amount }
+            : item
+        )));
+      } else if (legacyExists) {
+        localStore.setQuery(api.shopping.getShoppingList, {}, currentList.filter(item => item._id !== legacyExists._id));
       } else {
+        const createdAt = currentList.reduce((latest, item) => Math.max(latest, item.createdAt), 0) + 1;
         // Add optimistically
         localStore.setQuery(api.shopping.getShoppingList, {}, [...currentList, {
-          _id: `optimistic-${Date.now()}` as any,
+          _id: `optimistic-${key}` as Id<"shoppingItems">,
+          _creationTime: createdAt,
           key,
           name,
+          normalizedName: name.toLowerCase().trim(),
           amount,
-          checked: false
+          checked: false,
+          recipeId,
+          recipeTitle,
+          createdAt,
         }]);
       }
     }
   });
-
-  const normalize = (value: string) => value.toLowerCase().trim().replace(/\s+/g, ' ');
-  const buildKey = (name: string, amount?: string) => `${normalize(name)}|${amount ? normalize(amount) : ''}`;
 
   const shoppingKeySet = React.useMemo(() => {
     if (!shoppingItems) return new Set<string>();
@@ -71,13 +88,16 @@ const Ingredients: React.FC<IngredientsProps> = ({ ingredients, highlightedIndex
             ? ing.amount 
             : undefined;
           
-          const isInShoppingList = shoppingKeySet.has(buildKey(ingName, ingAmount));
+          const itemKey = buildShoppingItemKey(ingName, ingAmount, recipeId);
+          const isInShoppingList = recipeId
+            ? shoppingKeySet.has(itemKey) || buildLegacyShoppingItemKeys(ingName, ingAmount, recipeId).some((key) => shoppingKeySet.has(key))
+            : shoppingKeySet.has(itemKey) || buildLegacyShoppingItemKeys(ingName, ingAmount).some((key) => shoppingKeySet.has(key));
           const isHighlighted = highlightedIndex === index;
 
           return (
             <div 
               key={`${ingName}-${index}`}
-              onClick={() => toggleShoppingItem({ name: ingName, amount: ingAmount })}
+              onClick={() => toggleShoppingItem({ name: ingName, amount: ingAmount, recipeId })}
               className={`
                 relative group cursor-pointer select-none transition-all duration-300 ease-out active:scale-95
                 px-3 py-1.5 rounded-full text-sm font-medium 

@@ -1,5 +1,9 @@
 # iOS Implementation Guide for Cookly
 
+> ⚠️ **VERALTET (Juni 2026):** Dieser Guide referenziert noch Clerk (Auth läuft heute über
+> `@convex-dev/auth`) und ignoriert die Payment-Compliance-Frage.
+> **Aktueller Guide:** [audit-2026-06/04-ios-port-guide.md](audit-2026-06/04-ios-port-guide.md)
+
 This guide outlines the steps required to make the Cookly Vite + Capacitor app available on iOS and the Apple App Store.
 
 ## 1. Prerequisites

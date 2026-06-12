@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Input, IconButton } from '../components/ui/cookly';
 import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
+import { getPasswordSignInErrorMessage } from '../utils/authErrors';
 
 export const SignInPage: React.FC = () => {
   const { signIn } = useAuthActions();
@@ -60,11 +61,7 @@ export const SignInPage: React.FC = () => {
       navigate('/tabs/categories', { replace: true });
     } catch (err: unknown) {
       console.error('SignIn Error:', err);
-      let errorMessage = 'Anmeldung fehlgeschlagen. Bitte versuche es erneut.';
-      if (err instanceof Error) {
-        errorMessage = err.message;
-      }
-      setError(errorMessage);
+      setError(getPasswordSignInErrorMessage(err));
     } finally {
       setLoading(false);
     }

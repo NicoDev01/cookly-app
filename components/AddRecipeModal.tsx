@@ -5,7 +5,7 @@ import { Recipe } from '../types';
 import { Id } from "../convex/_generated/dataModel";
 import { useNavigate } from 'react-router-dom';
 import { sanitizeInstructionsIcons } from '../utils/iconUtils';
-import { AI_SCAN_PROMPT_FIXED, analyzeRecipePhoto, createGeminiClient, AiScanPanel } from './addRecipeModal/AiScan.tsx';
+import { AiScanPanel } from './addRecipeModal/AiScan.tsx';
 import {
   compressImage,
   uploadJpegToConvexStorage,
@@ -14,7 +14,8 @@ import {
   type ImageDimensions,
 } from './addRecipeModal/recipeImage';
 import { encodeImageToBlurhash } from '../utils/blurhash';
-import ManualRecipeForm from './addRecipeModal/ManualRecipeForm';
+import { getAiScanErrorMessage } from '../utils/geminiRetry';
+import ManualRecipeForm, { type ManualFormData } from './addRecipeModal/ManualRecipeForm';
 import UpgradeModal from './UpgradeModal';
 import { useModal } from '../contexts/ModalContext';
 
@@ -23,6 +24,33 @@ interface AddRecipeModalProps {
   onClose: () => void;
   initialData?: Recipe | null; // Optional: Wenn gesetzt, sind wir im Edit-Mode
 }
+
+type UpgradeFeature = 'manual_recipes' | 'link_imports' | 'photo_scans';
+
+const getErrorMessage = (err: unknown): string => {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  return String(err);
+};
+
+const parseStructuredError = (err: unknown): {
+  type?: string;
+  feature?: UpgradeFeature;
+  current?: number;
+  limit?: number;
+  message?: string;
+} | null => {
+  const message = getErrorMessage(err);
+  const start = message.indexOf('{');
+  const end = message.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+
+  try {
+    return JSON.parse(message.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+};
 
 const PLACEHOLDER_RECIPE_IMAGE = 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?q=80&w=2626&auto=format&fit=crop';
 
@@ -33,6 +61,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
   const updateRecipe = useMutation(api.recipes.updateRecipe);
   const generateImageUploadUrl = useMutation(api.recipes.generateImageUploadUrl);
   const generateAndStoreAiImage = useAction(api.recipes.generateAndStoreAiImage);
+  const scanRecipePhoto = useAction(api.photoScan.scanRecipePhoto);
   const categoryStats = useQuery(api.recipes.getCategories);
   const existingCategories = categoryStats?.categories?.map(c => c.name) || [];
 
@@ -45,7 +74,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
 
   const [showUpgradeModal, setShowUpgradeModal] = useState<{
     isOpen: boolean;
-    feature: 'manual_recipes' | 'link_imports' | 'photo_scans';
+    feature: UpgradeFeature;
     current: number;
     limit: number;
   }>({
@@ -59,7 +88,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   // AI Analysis Progress States
-  const [analysisStage, setAnalysisStage] = useState<'idle' | 'uploading' | 'analyzing' | 'processing' | 'complete'>('idle');
+  const [analysisStage, setAnalysisStage] = useState<'idle' | 'uploading' | 'analyzing' | 'retrying' | 'processing' | 'complete'>('idle');
   const [analysisProgress, setAnalysisProgress] = useState(0);
 
   const [isUploadingRecipeImage, setIsUploadingRecipeImage] = useState(false);
@@ -73,9 +102,9 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
   const [isBulkAnalyzing, setIsBulkAnalyzing] = useState(false);
   const [bulkTotal, setBulkTotal] = useState(0);
   const [bulkProcessed, setBulkProcessed] = useState(0);
-  const [bulkCreatedIds, setBulkCreatedIds] = useState<Id<"recipes">[]>([]);
   const [bulkErrors, setBulkErrors] = useState(0);
   const cancelBulkRef = useRef(false);
+  const aiScanInFlightRef = useRef(false);
 
   const [isImageActionMenuOpen, setIsImageActionMenuOpen] = useState(false);
   const imageActionMenuRef = useRef<HTMLDivElement>(null);
@@ -138,7 +167,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
     try {
       const base = (formData.title || initialData?.title || formData.category || 'recipe').trim();
 
-      // Generate Pollinations URL (no download, URL works directly)
+      // Generate and store image server-side so provider URLs and keys never reach the client.
       setAiImageGenerationStage('generating');
       const result = await generateAndStoreAiImage({ recipeTitle: base });
       setAiImageGenerationStage('loading');
@@ -156,8 +185,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         URL.revokeObjectURL(recipeImagePreviewUrl);
       }
 
-      // Pollinations URL: No storage needed, URL works directly
-      setRecipeImageStorageId(null);
+      setRecipeImageStorageId(result.storageId);
       setPendingImageBlob(null);
       setRecipeImagePreviewUrl(result.url);
       setRecipeImageMeta(nextMeta);
@@ -165,7 +193,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
 
       setFormData(prev => ({
         ...prev,
-        image: result.url, // Use Pollinations URL directly
+        image: result.url,
         imageAlt: prev.imageAlt || prev.title || base,
       }));
 
@@ -177,9 +205,9 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         navigator.vibrate([20, 30, 20]);
       }
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('AI image generation error:', err);
-      setError('Fehler beim Bild erzeugen: ' + (err?.message ?? String(err)));
+      setError('Fehler beim Bild erzeugen: ' + getErrorMessage(err));
     } finally {
       setAiImageGenerationStage('idle');
       setIsGeneratingAiImage(false);
@@ -196,7 +224,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
   }, [recipeImagePreviewUrl]);
 
   // Form State
-  const [formData, setFormData] = useState(() => {
+  const [formData, setFormData] = useState<ManualFormData>(() => {
     if (initialData) {
       return {
         title: initialData.title,
@@ -214,7 +242,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
 
     return {
       title: '',
-      category: 'Hauptgericht',
+      category: 'Sonstiges',
       prepTimeMinutes: 30,
       difficulty: 'Mittel' as 'Einfach' | 'Mittel' | 'Schwer',
       portions: 4,
@@ -274,7 +302,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
       // Reset für "Neues Rezept"
       setFormData({
         title: '',
-        category: 'Hauptgericht',
+        category: 'Sonstiges',
         prepTimeMinutes: 30,
         difficulty: 'Mittel',
         portions: 4,
@@ -307,25 +335,68 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
       setIsBulkAnalyzing(false);
       setBulkTotal(0);
       setBulkProcessed(0);
-      setBulkCreatedIds([]);
       setBulkErrors(0);
       cancelBulkRef.current = false;
     }
-  }, [initialData, isOpen]);
+  }, [initialData, isOpen, addModalImportUrl, addModalInitialTab]);
 
   if (!isOpen) return null;
 
   // --- KI LOGIK ---
+
+  const getAiScanFallback = () => ({
+    title: formData.title,
+    category: formData.category,
+    prepTimeMinutes: formData.prepTimeMinutes,
+    difficulty: formData.difficulty,
+    portions: formData.portions,
+    image: formData.image,
+    imageAlt: formData.imageAlt,
+  });
+
+  const uploadPhotoForScan = async (file: File): Promise<Id<"_storage">> => {
+    const compressed = await compressImage(file, 2048, 0.9, 'image/jpeg');
+    const uploadUrl = await generateImageUploadUrl({});
+    const json = await uploadJpegToConvexStorage(uploadUrl, compressed);
+    return json.storageId as Id<"_storage">;
+  };
+
+  const handleAiScanFailure = (err: unknown) => {
+    const errorData = parseStructuredError(err);
+
+    if (
+      errorData?.type === "LIMIT_REACHED" &&
+      errorData.feature &&
+      typeof errorData.current === "number" &&
+      typeof errorData.limit === "number"
+    ) {
+      setShowUpgradeModal({
+        isOpen: true,
+        feature: errorData.feature,
+        current: errorData.current,
+        limit: errorData.limit,
+      });
+      return;
+    }
+
+    if (errorData?.type === "RATE_LIMIT_EXCEEDED") {
+      setError("Zu viele Foto-Scans. Bitte warte einen Moment.");
+      return;
+    }
+
+    setError(getAiScanErrorMessage(err));
+  };
 
   const handleSingleImageUpload = async (file: File) => {
     setIsAnalyzing(true);
     setAnalysisStage('uploading');
     setAnalysisProgress(10);
     setError(null);
+    let progressInterval: ReturnType<typeof setInterval> | undefined;
 
     try {
       // Phase 1: Upload preparation
-      await new Promise(resolve => setTimeout(resolve, 300));
+      const storageId = await uploadPhotoForScan(file);
       setAnalysisProgress(20);
 
       // Phase 2: Prepare AI analysis
@@ -333,36 +404,23 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
       setAnalysisProgress(30);
       await new Promise(resolve => setTimeout(resolve, 200));
 
-      const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
-      const { ai, model } = createGeminiClient(apiKey);
-
       // Phase 3: Analyze with progress simulation
       setAnalysisProgress(50);
 
-      const progressInterval = setInterval(() => {
+      progressInterval = setInterval(() => {
         setAnalysisProgress(prev => {
           if (prev < 80) return prev + 5;
           return prev;
         });
       }, 500);
 
-      const { base64, doc } = await analyzeRecipePhoto({
-        ai,
-        model,
-        file,
-        fallback: {
-          title: formData.title,
-          category: formData.category,
-          prepTimeMinutes: formData.prepTimeMinutes,
-          difficulty: formData.difficulty,
-          portions: formData.portions,
-          image: formData.image,
-          imageAlt: formData.imageAlt,
-        },
-        prompt: AI_SCAN_PROMPT_FIXED,
+      const { doc } = await scanRecipePhoto({
+        storageId,
+        fallback: getAiScanFallback(),
       });
 
       clearInterval(progressInterval);
+      progressInterval = undefined;
       setAnalysisStage('processing');
       setAnalysisProgress(90);
       await new Promise(resolve => setTimeout(resolve, 200));
@@ -415,10 +473,9 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
           imageWidth: aiImageMeta?.width,
           imageHeight: aiImageMeta?.height,
           imageAspectRatio: aiImageMeta?.aspectRatio,
-          // WICHTIG: sourceImageUrl wird gesetzt durch setFormData oben (base64)
-          // Das signalisiert recipes.ts, dass es ein Foto-Scan ist (photo_scans Counter)
+          // WICHTIG: Der Marker signalisiert recipes.ts, dass es ein Foto-Scan ist.
+          sourceImageUrl: '__AI_SCAN__',
           isFavorite: false,
-          isInWeeklyList: false,
         });
         onClose();
         navigate(`/recipe/${id}`);
@@ -427,12 +484,13 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         setAnalysisStage('idle');
         setAnalysisProgress(0);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("AI Error:", err);
-      setError("Fehler bei der KI-Analyse: " + (err?.message ?? String(err)));
+      handleAiScanFailure(err);
       setAnalysisStage('idle');
       setAnalysisProgress(0);
     } finally {
+      if (progressInterval) clearInterval(progressInterval);
       setIsAnalyzing(false);
     }
   };
@@ -442,14 +500,10 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
     setIsBulkAnalyzing(true);
     setBulkTotal(files.length);
     setBulkProcessed(0);
-    setBulkCreatedIds([]);
     setBulkErrors(0);
     cancelBulkRef.current = false;
 
     try {
-      const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
-      const { ai, model } = createGeminiClient(apiKey);
-
       // Shared state for concurrent processing
       const createdIds: Id<"recipes">[] = [];
       let errorCount = 0;
@@ -457,21 +511,11 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
       const processFile = async (file: File) => {
         if (cancelBulkRef.current) return;
         try {
-          // 1. Start Gemini Analysis
-          const { base64, doc } = await analyzeRecipePhoto({
-            ai,
-            model,
-            file,
-            fallback: {
-              title: formData.title,
-              category: formData.category,
-              prepTimeMinutes: formData.prepTimeMinutes,
-              difficulty: formData.difficulty,
-              portions: formData.portions,
-              image: formData.image,
-              imageAlt: formData.imageAlt,
-            },
-            prompt: AI_SCAN_PROMPT_FIXED,
+          // 1. Upload compressed image and start server-side analysis
+          const storageId = await uploadPhotoForScan(file);
+          const { doc } = await scanRecipePhoto({
+            storageId,
+            fallback: getAiScanFallback(),
           });
 
           if (cancelBulkRef.current) return;
@@ -502,15 +546,14 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
             difficulty: doc.difficulty,
             portions: doc.portions,
             isFavorite: false,
-            isInWeeklyList: false,
             ingredients: doc.ingredients,
             instructions: doc.instructions,
           });
 
           createdIds.push(id);
-          setBulkCreatedIds([...createdIds]);
         } catch (err) {
           console.error('Bulk AI processing error:', err);
+          handleAiScanFailure(err);
           errorCount++;
           setBulkErrors(errorCount);
         } finally {
@@ -518,8 +561,8 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         }
       };
 
-      // Concurrent processing with limit of 3
-      const CONCURRENCY_LIMIT = 3;
+      // Process sequentially to avoid avoidable provider-side load spikes.
+      const CONCURRENCY_LIMIT = 1;
       const queue = [...files];
       const activePromises = new Set<Promise<void>>();
 
@@ -567,13 +610,26 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
   };
 
   const handleAiFileSelection = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files: File[] = e.target.files ? Array.from(e.target.files) : [];
-    if (files.length === 0) return;
-    if (files.length === 1) {
-      await handleSingleImageUpload(files[0]);
+    const input = e.currentTarget;
+    if (aiScanInFlightRef.current || isBusy) {
+      input.value = '';
       return;
     }
-    await handleBulkImageUpload(files);
+
+    const files: File[] = e.target.files ? Array.from(e.target.files) : [];
+    if (files.length === 0) return;
+
+    aiScanInFlightRef.current = true;
+    try {
+      if (files.length === 1) {
+        await handleSingleImageUpload(files[0]);
+        return;
+      }
+      await handleBulkImageUpload(files);
+    } finally {
+      aiScanInFlightRef.current = false;
+      input.value = '';
+    }
   };
 
   const isBusy = isAnalyzing || isSaving || isUploadingRecipeImage || isGeneratingAiImage || isBulkAnalyzing;
@@ -613,10 +669,10 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
       } catch (hashErr) {
         console.warn('Failed to generate blurhash:', hashErr);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Image processing error:', err);
       setRecipeImageMeta(null);
-      setError('Fehler bei der Bildverarbeitung: ' + err.message);
+      setError('Fehler bei der Bildverarbeitung: ' + getErrorMessage(err));
     } finally {
       setIsUploadingRecipeImage(false);
     }
@@ -661,10 +717,10 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
       // ImageEditor schließen
       setIsImageEditorOpen(false);
       setError(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Image editor apply error:', err);
       setRecipeImageMeta(null);
-      setError('Fehler beim Speichern des bearbeiteten Bildes: ' + err.message);
+      setError('Fehler beim Speichern des bearbeiteten Bildes: ' + getErrorMessage(err));
     } finally {
       setIsUploadingRecipeImage(false);
     }
@@ -703,7 +759,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         let limitCheck;
 
         // Feature-Typ bestimmen
-        if (formData.sourceUrl) {
+        if (addModalImportUrl) {
           // URL Import (z.B. Share Target, Instagram, Website)
           limitCheck = canImportLink;
         } else if (activeTab === 'ai') {
@@ -715,7 +771,13 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         }
 
         // Prüfen ob Limit erreicht
-        if (limitCheck && !limitCheck.canProceed) {
+        if (
+          limitCheck &&
+          !limitCheck.canProceed &&
+          limitCheck.feature &&
+          typeof limitCheck.current === "number" &&
+          typeof limitCheck.limit === "number"
+        ) {
           setShowUpgradeModal({
             isOpen: true,
             feature: limitCheck.feature,
@@ -770,7 +832,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
 
       if (initialData) {
         // UPDATE - Bilddaten nur senden wenn sich geändert
-        const updateData: any = {
+        const updateData: Parameters<typeof updateRecipe>[0] = {
           id: initialData._id,
           title: formData.title,
           category: formData.category,
@@ -824,14 +886,26 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         URL.revokeObjectURL(recipeImagePreviewUrl);
       }
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       // ============================================================
       // STRUKTURIERTES ERROR HANDLING
       // ============================================================
+      const errorMessage = getErrorMessage(err);
       try {
-        const errorData = JSON.parse(err.message);
+        const errorData = JSON.parse(errorMessage) as {
+          type?: string;
+          feature?: UpgradeFeature;
+          current?: number;
+          limit?: number;
+          message?: string;
+        };
 
-        if (errorData.type === "LIMIT_REACHED") {
+        if (
+          errorData.type === "LIMIT_REACHED" &&
+          errorData.feature &&
+          typeof errorData.current === "number" &&
+          typeof errorData.limit === "number"
+        ) {
           setShowUpgradeModal({
             isOpen: true,
             feature: errorData.feature,
@@ -847,16 +921,16 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         }
 
         if (errorData.type === "API_UNAVAILABLE") {
-          setError(errorData.message);
+          setError(errorData.message ?? "Der Import-Service ist gerade nicht verfügbar.");
           return;
         }
 
         // Fallback: Normale Nachricht anzeigen
-        setError("Fehler beim Speichern: " + err.message);
+        setError("Fehler beim Speichern: " + errorMessage);
 
-      } catch (parseError) {
+      } catch {
         // Kein JSON-Error, normale Nachricht anzeigen
-        setError("Fehler beim Speichern: " + err.message);
+        setError("Fehler beim Speichern: " + errorMessage);
       }
     } finally {
       setIsSaving(false);
@@ -995,7 +1069,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         isOpen={showUpgradeModal.isOpen}
         onClose={() => setShowUpgradeModal({ ...showUpgradeModal, isOpen: false })}
         feature={showUpgradeModal.feature}
-        current={showUpgradeModal.current}
+        currentCount={showUpgradeModal.current}
         limit={showUpgradeModal.limit}
       />
     )}

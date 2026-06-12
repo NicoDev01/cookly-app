@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { getBackTarget } from '../services/backButtonHandler';
+import { getBackTarget } from '../services/backNavigation';
 
 type NavState = {
   from?: 'favorites' | 'weekly';

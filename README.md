@@ -65,7 +65,6 @@ Edit `.env` and add your credentials:
 ```env
 
 VITE_CONVEX_URL=https://your-project.convex.cloud
-VITE_GEMINI_API_KEY=AIza_your_key_here
 ```
 
 4. Start the development server:
@@ -161,7 +160,6 @@ npx cap open android
 ### Frontend (.env)
 
 - `VITE_CONVEX_URL` - Convex deployment URL
-- `VITE_GEMINI_API_KEY` - Google Gemini API key
 
 ### Convex (set via CLI)
 ```bash

@@ -24,6 +24,20 @@ allprojects {
     }
 }
 
+subprojects { subproject ->
+    subproject.afterEvaluate {
+        if (subproject.name == 'supernotes-capacitor-send-intent' &&
+            subproject.plugins.hasPlugin('com.android.library')) {
+            subproject.android {
+                compileSdk = rootProject.ext.compileSdkVersion
+                defaultConfig {
+                    targetSdk = rootProject.ext.targetSdkVersion
+                }
+            }
+        }
+    }
+}
+
 task clean(type: Delete) {
     delete rootProject.buildDir
 }

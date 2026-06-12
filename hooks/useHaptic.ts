@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
-import { Haptics, ImpactStyle } from '@capacitor/haptics';
+import { Capacitor } from '@capacitor/core';
+import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 
 type HapticStyle = 'light' | 'medium' | 'heavy';
 
@@ -10,7 +11,7 @@ type HapticStyle = 'light' | 'medium' | 'heavy';
 export const useHaptic = () => {
   const isNative = useCallback(() => {
     try {
-      return window.Capacitor?.isNativePlatform ?? false;
+      return Capacitor.isNativePlatform();
     } catch {
       return false;
     }
@@ -41,7 +42,7 @@ export const useHaptic = () => {
 
     try {
       await Haptics.notification({
-        type: 'SUCCESS',
+        type: NotificationType.Success,
       });
     } catch {
       // Fallback to medium impact
@@ -54,7 +55,7 @@ export const useHaptic = () => {
 
     try {
       await Haptics.notification({
-        type: 'WARNING',
+        type: NotificationType.Warning,
       });
     } catch {
       // Fallback to heavy impact
@@ -67,7 +68,7 @@ export const useHaptic = () => {
 
     try {
       await Haptics.notification({
-        type: 'ERROR',
+        type: NotificationType.Error,
       });
     } catch {
       // Fallback to heavy impact

@@ -135,6 +135,7 @@ export default defineSchema({
     key: v.string(), // normalizedName + "|" + amount
     checked: v.boolean(),
     recipeId: v.optional(v.id("recipes")), // Link to recipe
+    recipeTitle: v.optional(v.string()),
     createdAt: v.number(),
   })
   .index("by_user", ["userId"])

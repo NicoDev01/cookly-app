@@ -13,6 +13,7 @@ export const checkAndConsumeRateLimit = internalMutation({
       v.literal("website"),
       v.literal("instagram"),
       v.literal("facebook"),
+      v.literal("photo"),
     ),
   },
   returns: v.object({

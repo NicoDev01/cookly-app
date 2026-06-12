@@ -1,17 +1,79 @@
 import React, { useState, startTransition } from 'react';
-import { useQuery, useMutation } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
+import type { Doc } from "../convex/_generated/dataModel";
 import { Link, useSearchParams } from 'react-router-dom';
 import SafeImage from '../components/SafeImage';
 import EmptyState from '../components/EmptyState';
 import { prefetchCategoryRecipesPage, prefetchRecipePage } from '../prefetch';
 import { useDebounce } from 'use-debounce';
 import { useModal } from '../contexts/ModalContext';
+import { getCategoryPreviewImages } from '../utils/categoryPreviewImages';
 
 
 interface CategoryImageCache {
   [categoryName: string]: string | null | false; // null = loading, string = URL, false = failed (don't retry)
 }
+
+interface CategoryListItem {
+  name: string;
+  count: number;
+  image?: string;
+  recipeImages?: string[];
+}
+
+type RecipeWithIngredients = Doc<"recipes"> & {
+  ingredients?: Array<{ name: string }>;
+};
+
+const CategoryPreviewImage: React.FC<{
+  images: string[];
+  isLoading: boolean;
+  categoryName: string;
+}> = ({ images, isLoading, categoryName }) => {
+  if (images.length === 0) {
+    return isLoading ? (
+      <div className="h-full w-full bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center animate-pulse">
+        <span className="material-symbols-outlined text-gray-400 animate-spin">refresh</span>
+      </div>
+    ) : (
+      <div className="h-full w-full bg-gradient-to-br from-primary to-primary-dark rounded-lg flex items-center justify-center shadow-inner text-white">
+        <span className="material-symbols-outlined text-2xl drop-shadow-sm">image</span>
+      </div>
+    );
+  }
+
+  if (images.length === 1) {
+    return (
+      <SafeImage
+        alt={`${categoryName} icon`}
+        className="h-full w-full object-cover rounded-lg"
+        src={images[0]}
+        autoRetry={true}
+      />
+    );
+  }
+
+  const cells = Array.from({ length: 4 }, (_, index) => images[index]);
+
+  return (
+    <div className="grid h-full w-full grid-cols-2 grid-rows-2 gap-0.5 bg-card-light dark:bg-card-dark">
+      {cells.map((image, index) => (
+        image ? (
+          <SafeImage
+            key={`${image}-${index}`}
+            alt={`${categoryName} Rezept ${index + 1}`}
+            className="h-full w-full rounded-[4px]"
+            src={image}
+            autoRetry={true}
+          />
+        ) : (
+          <div key={`empty-${index}`} className="h-full w-full rounded-[4px] bg-gray-100 dark:bg-gray-800" />
+        )
+      ))}
+    </div>
+  );
+};
 
 const CategoriesPage: React.FC = () => {
   const { openAddModal } = useModal();
@@ -33,17 +95,6 @@ const CategoriesPage: React.FC = () => {
   // useCachedQuery würde alte Daten ohne Bilder zurückgeben
   const categoriesWithStats = useQuery(api.categories.getCategoriesWithStats, {});
   const categoriesLoading = categoriesWithStats === undefined;
-
-  // Migration: Backfill stats for existing users
-  const syncStats = useMutation(api.recipes.backfillCategoryStats);
-  React.useEffect(() => {
-    if (categoriesWithStats && categoriesWithStats.length > 0) {
-      const totalCount = categoriesWithStats.reduce((sum, c) => sum + c.count, 0);
-      if (totalCount === 0) {
-        syncStats();
-      }
-    }
-  }, [categoriesWithStats, syncStats]);
 
   const selectedIngredients = React.useMemo(() => {
     const raw = searchParams.get("ingredients");
@@ -97,14 +148,28 @@ const CategoriesPage: React.FC = () => {
     return allRecipes.filter(r => r.category === category).length;
   };
 
-  const categoriesList = React.useMemo(() => {
-    let list: any[] = [];
+  const categoriesList = React.useMemo<CategoryListItem[]>(() => {
+    let list: CategoryListItem[] = [];
     // stats ist jetzt ein Array von Kategorie-Objekten
     if (stats && Array.isArray(stats)) {
-      list = [...stats];
+      list = stats.map(({ name, count, image, recipeImages }) => ({
+        name,
+        count,
+        image: image ?? undefined,
+        recipeImages: recipeImages ?? undefined,
+      }));
     } else if (allRecipes) {
       const uniqueCats = Array.from(new Set(allRecipes.map(r => r.category))).sort();
-      list = uniqueCats.map(name => ({ name, count: 0, image: undefined as string | undefined }));
+      list = uniqueCats.map(name => ({
+        name,
+        count: 0,
+        image: undefined as string | undefined,
+        recipeImages: allRecipes
+          .filter(recipe => recipe.category === name)
+          .map(recipe => recipe.image)
+          .filter((image): image is string => typeof image === "string" && image.length > 0)
+          .slice(0, 4),
+      }));
     }
     
     // Total count calculation
@@ -123,16 +188,16 @@ const CategoriesPage: React.FC = () => {
 
   const filteredRecipes = React.useMemo(() => {
     if (!allRecipes) return [];
-    let result = allRecipes as any[];
+    let result = allRecipes as RecipeWithIngredients[];
     if (selectedIngredients.length > 0) {
       result = result.filter(r =>
         selectedIngredients.every(filterIng =>
-          r.ingredients?.some((rIng: any) => rIng.name.toLowerCase().includes(filterIng.toLowerCase())) ?? false
+          r.ingredients?.some((rIng) => rIng.name.toLowerCase().includes(filterIng.toLowerCase())) ?? false
         )
       );
     }
     return result;
-  }, [allRecipes, searchQuery, selectedIngredients]);
+  }, [allRecipes, selectedIngredients]);
 
   const filteredIds = React.useMemo(() => {
     return filteredRecipes.map((r) => r._id);
@@ -367,17 +432,10 @@ const CategoriesPage: React.FC = () => {
                           onPointerEnter={() => { void prefetchCategoryRecipesPage(); }}
                           onFocus={() => { void prefetchCategoryRecipesPage(); }}
                           onTouchStart={() => { void prefetchCategoryRecipesPage(); }}
-                          className="flex items-center gap-4 rounded-xl bg-card-light p-3 shadow-neo-light-convex dark:bg-card-dark dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all cursor-pointer group"
+                          className="flex min-h-[5.5rem] items-center gap-4 rounded-xl bg-card-light px-4 py-4 shadow-neo-light-convex dark:bg-card-dark dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all cursor-pointer group"
                         >
-                          <div className="h-16 w-16 flex-shrink-0 rounded-lg overflow-hidden shadow-inner bg-gray-100 dark:bg-gray-800">
-                            <img 
-                              src="/alle-rezepte1.webp" 
-                              alt="Alle Rezepte" 
-                              className="h-full w-full object-cover"
-                            />
-                          </div>
                           <div className="flex-grow">
-                            <p className="text-body font-bold text-text-primary-light dark:text-text-primary-dark group-hover:text-primary transition-colors">Alle Rezepte</p>
+                            <p className="text-title font-bold text-text-primary-light dark:text-text-primary-dark group-hover:text-primary transition-colors">Alle Rezepte</p>
                             <p className="text-body-sm text-text-secondary-light dark:text-text-secondary-dark">
                               {category.count} Rezepte
                             </p>
@@ -390,6 +448,7 @@ const CategoriesPage: React.FC = () => {
                     const cachedImage = categoryImageCache[category.name] || category.image;
                     const isLoading = categoryImageCache[category.name] === null;
                     const hasFailed = categoryImageCache[category.name] === false;
+                    const previewImages = getCategoryPreviewImages(category.recipeImages, cachedImage);
 
                     return (
                       <Link
@@ -401,22 +460,11 @@ const CategoriesPage: React.FC = () => {
                         className="flex items-center gap-4 rounded-xl bg-card-light p-3 shadow-neo-light-convex dark:bg-card-dark dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all cursor-pointer group"
                       >
                         <div className="h-16 w-16 flex-shrink-0 overflow-hidden relative rounded-lg">
-                          {cachedImage ? (
-                            <SafeImage
-                              alt={`${category.name} icon`}
-                              className="h-full w-full object-cover rounded-lg"
-                              src={cachedImage}
-                              autoRetry={true}
-                            />
-                          ) : isLoading ? (
-                            <div className="h-full w-full bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center animate-pulse">
-                              <span className="material-symbols-outlined text-gray-400 animate-spin">refresh</span>
-                            </div>
-                          ) : (
-                            <div className="h-full w-full bg-gradient-to-br from-primary to-primary-dark rounded-lg flex items-center justify-center shadow-inner text-white">
-                              <span className="material-symbols-outlined text-2xl drop-shadow-sm">image</span>
-                            </div>
-                          )}
+                          <CategoryPreviewImage
+                            images={previewImages}
+                            isLoading={isLoading}
+                            categoryName={category.name}
+                          />
                         </div>
                         <div className="flex-grow">
                           <p className="text-body font-bold text-text-primary-light dark:text-text-primary-dark group-hover:text-primary transition-colors">

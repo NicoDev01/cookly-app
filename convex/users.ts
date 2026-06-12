@@ -1,4 +1,4 @@
-import { query, mutation, internalMutation } from "./_generated/server";
+import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { FREE_LIMITS } from "./constants";
@@ -20,6 +20,16 @@ async function getCurrentUserFromCtx(ctx: QueryCtx | MutationCtx) {
   const linkedUser = await ctx.db
     .query("users")
     .withIndex("by_authUserId", (q) => q.eq("authUserId", authUserId.toString()))
+    .first();
+  if (linkedUser) return linkedUser;
+
+  return await ctx.db.get(authUserId as Id<"users">);
+}
+
+async function getUserByAuthUserId(ctx: QueryCtx | MutationCtx, authUserId: string) {
+  const linkedUser = await ctx.db
+    .query("users")
+    .withIndex("by_authUserId", (q) => q.eq("authUserId", authUserId))
     .first();
   if (linkedUser) return linkedUser;
 
@@ -504,6 +514,40 @@ export const incrementUsageCounter = internalMutation({
   },
 });
 
+export const getPhotoScanLimitStatusByAuthUserId = internalQuery({
+  args: { authUserId: v.string() },
+  handler: async (ctx, args) => {
+    const user = await getUserByAuthUserId(ctx, args.authUserId);
+    if (!user) throw new Error("NOT_AUTHENTICATED");
+
+    const subscription = user.subscription ?? "free";
+    const current = user.usageStats?.photoScans || 0;
+    const limit = FREE_LIMITS.PHOTO_SCANS;
+
+    if (subscription !== "free") {
+      return {
+        canProceed: true,
+        isPro: true,
+        subscription,
+        current,
+        limit,
+        remaining: Number.MAX_SAFE_INTEGER,
+        feature: "photo_scans" as const,
+      };
+    }
+
+    return {
+      canProceed: current < limit,
+      isPro: false,
+      subscription: "free" as const,
+      current,
+      limit,
+      remaining: Math.max(0, limit - current),
+      feature: "photo_scans" as const,
+    };
+  },
+});
+
 /**
  * Setzt alle Counter auf 0 (bei Downgrade Pro→Free)
  */
@@ -659,7 +703,7 @@ export const updateSubscriptionByConvexUserId = internalMutation({
     stripeSubscriptionId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.convexUserId as any);
+    const user = await ctx.db.get(args.convexUserId as Id<"users">);
     if (!user) throw new Error(`User ${args.convexUserId} not found`);
 
     const nextUsageStats = {

@@ -7,6 +7,14 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https', // Oder 'cookly'
     hostname: 'cookly-app.com',
+    allowNavigation: [
+      'cookly-app.com',
+      '*.convex.cloud',             // Convex backend (WebSocket + HTTP)
+      '*.convex.site',              // Convex Auth HTTP routes
+      'accounts.google.com',
+      'accounts.youtube.com',
+      'oauth.googleusercontent.com',
+    ],
   },
 
   plugins: {
@@ -29,14 +37,6 @@ const config: CapacitorConfig = {
     allowMixedContent: false, // SECURITY: Only HTTPS in production
     captureInput: false, // FIX: Enable keyboard autocomplete suggestions
     webContentsDebuggingEnabled: false,
-    allowNavigation: [
-      'cookly-app.com',
-      '*.convex.cloud',             // Convex backend (WebSocket + HTTP)
-      '*.convex.site',              // Convex Auth HTTP routes
-      'accounts.google.com',
-      'accounts.youtube.com',
-      'oauth.googleusercontent.com',
-    ],
   },
 };
 

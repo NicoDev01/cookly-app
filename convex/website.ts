@@ -4,7 +4,7 @@ import { api, internal } from "./_generated/api";
 import { v } from "convex/values";
 import { GoogleGenAI } from "@google/genai";
 import { Id } from "./_generated/dataModel";
-import { RECIPE_CATEGORIES } from "./constants";
+import { GEMINI_MODELS, RECIPE_CATEGORIES } from "./constants";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { createImportTimer } from "./importTiming";
 
@@ -187,7 +187,7 @@ export const scrapeWebsite = action({
                 .replace("{{MARKDOWN}}", truncatedMarkdown);
 
             const result = await ai.models.generateContent({
-                model: "gemini-3.1-flash-lite-preview",
+                model: GEMINI_MODELS.recipeTextExtraction,
                 contents: prompt,
             });
 

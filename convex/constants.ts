@@ -11,6 +11,11 @@ export const FREE_LIMITS = {
   
 export type FreeLimitType = keyof typeof FREE_LIMITS;
 
+export const GEMINI_MODELS = {
+  recipeImageScan: "gemini-3.1-flash-lite",
+  recipeTextExtraction: "gemini-3.1-flash-lite",
+} as const;
+
 export const RECIPE_CATEGORIES = [
   "Pasta",
   "Salat",

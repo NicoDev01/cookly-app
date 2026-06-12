@@ -1,10 +1,8 @@
 import path from 'path';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
-
+export default defineConfig(() => {
   return {
     base: './',  // Wichtig für Hash-Routing
     server: {
@@ -33,9 +31,6 @@ export default defineConfig(({ mode }) => {
               }
               
               // 2. Schwere Feature-Bibliotheken (Lazy geladen)
-              if (id.includes('@google/genai')) {
-                return 'vendor-ai';
-              }
               if (id.includes('html2canvas')) {
                 return 'vendor-utils-large';
               }
@@ -54,10 +49,6 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
-    },
-    define: {
-      'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },
     resolve: {
       alias: {

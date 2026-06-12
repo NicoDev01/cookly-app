@@ -1,5 +1,5 @@
-import { App, URLOpenListenerEvent, PluginListenerHandle } from '@capacitor/app';
-import { Capacitor } from '@capacitor/core';
+import { App, URLOpenListenerEvent } from '@capacitor/app';
+import { Capacitor, type PluginListenerHandle } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 
 /**

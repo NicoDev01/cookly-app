@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useBackNavigation } from "@/hooks/useBackNavigation";
+import { Capacitor } from "@capacitor/core";
 import { ArrowLeft, ArrowRight, CheckCircle2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { getSubscriptionViewState } from "@/utils/subscriptionStatus";
 
 const PRO_FEATURES_MONTHLY = [
   "Unlimitierte Rezepte speichern",
@@ -36,15 +38,25 @@ export default function SubscribePage() {
   const createPortal = useAction(api.stripe.createPortalSession);
   const [loading, setLoading] = useState<string | null>(null);
   const [isYearly, setIsYearly] = useState(false);
+  const [billingNotice, setBillingNotice] = useState<string | null>(null);
 
   React.useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
 
-  const isPro = currentUser?.subscription !== "free";
+  const { isLoadingUser, isPro } = getSubscriptionViewState(currentUser);
+  const nativeBillingUnavailable = Capacitor.isNativePlatform();
+  const nativeBillingMessage =
+    "In-App-Kauf ist in dieser App-Version noch nicht aktiviert. Bitte verwende bis zur Store-Freischaltung die Web-Version.";
 
   const handleSubscribe = async (planId: "pro_monthly" | "pro_yearly") => {
+    if (nativeBillingUnavailable) {
+      setBillingNotice(nativeBillingMessage);
+      return;
+    }
+
     setLoading(planId);
+    setBillingNotice(null);
     try {
       const baseUrl = window.location.origin;
       const result = await createCheckout({
@@ -65,7 +77,13 @@ export default function SubscribePage() {
   };
 
   const handleManageSubscription = async () => {
+    if (nativeBillingUnavailable) {
+      setBillingNotice(nativeBillingMessage);
+      return;
+    }
+
     setLoading("manage");
+    setBillingNotice(null);
     try {
       const baseUrl = window.location.origin;
       const result = await createPortal({
@@ -169,6 +187,16 @@ export default function SubscribePage() {
                   <p className="text-sm font-medium mt-2 text-primary">
                     {billingLabel}
                   </p>
+                  {nativeBillingUnavailable && (
+                    <p className="mt-4 rounded-xl border border-primary/20 bg-background/70 p-3 text-sm text-muted-foreground">
+                      {nativeBillingMessage}
+                    </p>
+                  )}
+                  {billingNotice && (
+                    <p className="mt-3 text-sm font-medium text-primary">
+                      {billingNotice}
+                    </p>
+                  )}
                 </div>
               </CardHeader>
             
@@ -185,10 +213,20 @@ export default function SubscribePage() {
             </CardContent>
             
             <CardFooter className="pt-8">
-              {isPro ? (
+              {isLoadingUser ? (
+                <Button
+                  disabled
+                  className="w-full h-14 text-lg font-bold bg-primary/80 text-primary-foreground shadow-lg shadow-primary/20 rounded-full"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="w-5 h-5 border-3 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                    Lädt...
+                  </span>
+                </Button>
+              ) : isPro ? (
                 <Button 
                   onClick={handleManageSubscription}
-                  disabled={loading === 'manage'}
+                  disabled={nativeBillingUnavailable || loading === 'manage'}
                   className="w-full h-14 text-lg font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20 rounded-full"
                 >
                   {loading === 'manage' ? (
@@ -197,13 +235,13 @@ export default function SubscribePage() {
                        Lädt...
                     </span>
                   ) : (
-                    "Abo verwalten"
+                    nativeBillingUnavailable ? "Im Web verwalten" : "Abo verwalten"
                   )}
                 </Button>
               ) : (
                 <Button 
                   onClick={() => handleSubscribe(proPlanId)}
-                  disabled={loading === proPlanId}
+                  disabled={nativeBillingUnavailable || loading === proPlanId}
                   className="w-full h-14 text-lg font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20 group/btn rounded-full"
                 >
                   {loading === proPlanId ? (
@@ -213,7 +251,7 @@ export default function SubscribePage() {
                     </span>
                   ) : (
                     <span className="flex items-center justify-center gap-2">
-                      Jetzt upgraden
+                      {nativeBillingUnavailable ? "In-App-Kauf folgt" : "Jetzt upgraden"}
                       <ArrowRight className="h-5 w-5 group-hover/btn:translate-x-1 transition-transform" />
                     </span>
                   )}
@@ -232,7 +270,9 @@ export default function SubscribePage() {
             </div>
             <div className="flex flex-col items-center gap-1 opacity-50 grayscale hover:grayscale-0 transition-all">
               <span className="material-symbols-outlined text-4xl">payments</span>
-              <span className="text-[10px] font-bold uppercase tracking-widest">Stripe</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest">
+                {nativeBillingUnavailable ? "Store Billing" : "Stripe"}
+              </span>
             </div>
             <div className="flex flex-col items-center gap-1 opacity-50 grayscale hover:grayscale-0 transition-all">
               <span className="material-symbols-outlined text-4xl">verified</span>
@@ -248,7 +288,7 @@ export default function SubscribePage() {
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
-            Sichere Zahlung über Stripe. Deine Daten werden verschlüsselt übertragen. 
+            {nativeBillingUnavailable ? "Abos in der App werden über den jeweiligen Store bereitgestellt." : "Sichere Zahlung über Stripe. Deine Daten werden verschlüsselt übertragen."}
             Jederzeit kündbar über die Profileinstellungen.
           </p>
           <div className="pt-4">

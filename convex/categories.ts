@@ -1,14 +1,15 @@
 import { query, mutation } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { Id } from "./_generated/dataModel";
 
-async function getAuthenticatedUserId(ctx: any): Promise<Id<"users">> {
+async function getAuthenticatedUserId(ctx: QueryCtx | MutationCtx): Promise<Id<"users">> {
   const authUserId = await getAuthUserId(ctx);
   if (!authUserId) throw new Error("Not authenticated");
   const linkedUser = await ctx.db
     .query("users")
-    .withIndex("by_authUserId", (q: any) => q.eq("authUserId", authUserId.toString()))
+    .withIndex("by_authUserId", (q) => q.eq("authUserId", authUserId.toString()))
     .first();
   if (linkedUser) return linkedUser._id;
 
@@ -37,7 +38,7 @@ export const list = query({
           if (cat.imageUrl) {
             imageUrl = cat.imageUrl;
           } else if (cat.imageStorageId) {
-            imageUrl = await ctx.storage.getUrl(cat.imageStorageId);
+            imageUrl = (await ctx.storage.getUrl(cat.imageStorageId)) ?? undefined;
           }
           return {
             _id: cat._id,
@@ -88,24 +89,30 @@ export const getCategoriesWithStats = query({
 
           let imageUrl: string | undefined;
 
-          const firstRecipe = await ctx.db
+          const previewRecipes = await ctx.db
             .query("recipes")
-            .withIndex("by_user", (q) => q.eq("userId", userId))
-            .filter((q) => q.eq(q.field("category"), categoryName))
-            .first();
+            .withIndex("by_category", (q) => q.eq("userId", userId).eq("category", categoryName))
+            .take(4);
 
-          if (firstRecipe) {
-            imageUrl = firstRecipe.image;
-            if (firstRecipe.imageStorageId) {
-              const url = await ctx.storage.getUrl(firstRecipe.imageStorageId);
-              if (url) imageUrl = url;
-            }
-          }
+          const recipeImages = (
+            await Promise.all(
+              previewRecipes.map(async (recipe) => {
+                let recipeImageUrl = recipe.image;
+                if (recipe.imageStorageId) {
+                  const url = await ctx.storage.getUrl(recipe.imageStorageId);
+                  if (url) recipeImageUrl = url;
+                }
+                return recipeImageUrl;
+              })
+            )
+          ).filter((image): image is string => typeof image === "string" && image.length > 0);
+
+          imageUrl = recipeImages[0];
 
           if (!imageUrl && cat?.imageUrl) {
             imageUrl = cat.imageUrl;
           } else if (!imageUrl && cat?.imageStorageId) {
-            imageUrl = await ctx.storage.getUrl(cat.imageStorageId);
+            imageUrl = (await ctx.storage.getUrl(cat.imageStorageId)) ?? undefined;
           }
 
           return {
@@ -113,6 +120,7 @@ export const getCategoriesWithStats = query({
             icon: cat?.icon || "restaurant",
             color: cat?.color || "#6366f1",
             image: imageUrl,
+            recipeImages,
             count: statsMap.get(categoryName) || 0,
           };
         })

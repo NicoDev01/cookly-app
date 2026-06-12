@@ -1,7 +1,6 @@
 /**
  * Pollinations Image URL Generator
- * Generiert URLs für die neue Pollinations API (gen.pollinations.ai)
- * KEIN Download - URLs funktionieren direkt im Browser!
+ * Generiert keylose URLs für Pollinations.
  */
 
 // Einfache Configs - nur Dimensionen
@@ -41,34 +40,31 @@ export function getConsistentSeed(text: string): number {
 
 /**
  * Generiert Pollinations URL
- * Format: https://gen.pollinations.ai/image/{prompt}?model=klein&width=1024&height=1024&seed=42&key=API_KEY
+ * Format: https://image.pollinations.ai/prompt/{prompt}?model=klein&width=1024&height=1024&seed=42&nologo=true
  */
 function buildPollinationsUrl(
   prompt: string,
   width: number,
   height: number,
   seed: number,
-  model: string,
-  apiKey: string
+  model: string
 ): string {
   const encodedPrompt = encodeURIComponent(prompt);
   const params = new URLSearchParams({
-    model: model,
+    model,
     width: width.toString(),
     height: height.toString(),
     seed: seed.toString(),
-    enhance: 'false',
-    safe: 'false',  // false für weniger Restriktionen
-    key: apiKey,
+    nologo: 'true',
   });
 
-  return `https://gen.pollinations.ai/image/${encodedPrompt}?${params.toString()}`;
+  return `https://image.pollinations.ai/prompt/${encodedPrompt}?${params.toString()}`;
 }
 
 /**
  * Generiert URL für Rezeptbild
  */
-export function buildRecipeImageUrl(title: string, seed: number, apiKey: string): string {
+export function buildRecipeImageUrl(title: string, seed: number): string {
   const cleanedTitle = cleanPrompt(title);
   const prompt = `professional food photography ${cleanedTitle} delicious meal restaurant quality lighting 8k`;
 
@@ -77,7 +73,19 @@ export function buildRecipeImageUrl(title: string, seed: number, apiKey: string)
     RECIPE_IMAGE_CONFIG.width,
     RECIPE_IMAGE_CONFIG.height,
     seed,
-    RECIPE_IMAGE_CONFIG.model,
-    apiKey
+    RECIPE_IMAGE_CONFIG.model
   );
+}
+
+export function stripPollinationsApiKeyFromUrl(value?: string): string | undefined {
+  if (!value) return value;
+
+  try {
+    const url = new URL(value);
+    if (!url.hostname.endsWith("pollinations.ai")) return value;
+    url.searchParams.delete("key");
+    return url.toString();
+  } catch {
+    return value;
+  }
 }

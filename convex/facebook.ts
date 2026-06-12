@@ -4,7 +4,7 @@ import { api, internal } from "./_generated/api";
 import { v } from "convex/values";
 import { GoogleGenAI } from "@google/genai";
 import { Id } from "./_generated/dataModel";
-import { RECIPE_CATEGORIES } from "./constants";
+import { GEMINI_MODELS, RECIPE_CATEGORIES } from "./constants";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { createImportTimer } from "./importTiming";
 
@@ -577,10 +577,13 @@ const runApifyActor = async (
   timeoutMs: number
 ): Promise<unknown[]> => {
   const response = await fetch(
-    `https://api.apify.com/v2/acts/${actorName}/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
+    `https://api.apify.com/v2/acts/${actorName}/run-sync-get-dataset-items`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Authorization": `Bearer ${APIFY_TOKEN}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(input),
       signal: AbortSignal.timeout(timeoutMs),
     }
@@ -653,9 +656,9 @@ const normalizeRecipeData = (raw: unknown): RecipeData => {
       const name = typeof entry.name === "string" ? entry.name.trim() : "";
       if (!name) return null;
       const amount = typeof entry.amount === "string" && entry.amount.trim() ? entry.amount.trim() : undefined;
-      return { name, amount, checked: false };
+      return amount ? { name, amount, checked: false } : { name, checked: false };
     })
-    .filter((item): item is { name: string; amount?: string; checked?: boolean } => item !== null);
+    .filter((item): item is { name: string; amount?: string; checked: boolean } => item !== null);
 
   const rawInstructions = Array.isArray(record.instructions) ? record.instructions : [];
   const instructions = rawInstructions
@@ -863,7 +866,7 @@ export const scrapePost = action({
       const prompt = FACEBOOK_PROMPT.replace("{{TEXT}}", geminiInputText);
 
       const result = await ai.models.generateContent({
-        model: "gemini-3.1-flash-lite-preview",
+        model: GEMINI_MODELS.recipeTextExtraction,
         contents: prompt,
         config: {
           responseMimeType: "application/json",

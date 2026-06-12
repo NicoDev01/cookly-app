@@ -2,25 +2,176 @@ import React from 'react';
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Link } from 'react-router-dom';
+import { Doc } from "../convex/_generated/dataModel";
+import ImageWithBlurhash from '../components/ImageWithBlurhash';
+import { IconButton } from '../components/ui/cookly/IconButton';
+import {
+  getNextFavoritesViewMode,
+  parseFavoritesViewMode,
+  type FavoritesViewMode,
+} from '../utils/favoritesViewMode';
+
+const FAVORITES_VIEW_MODE_STORAGE_KEY = 'favoritesViewMode';
+
+type FavoriteRecipe = Doc<"recipes"> & {
+  image?: string;
+};
+
+interface FavoriteRecipeCardProps {
+  recipe: FavoriteRecipe;
+  index: number;
+  favoriteIds: FavoriteRecipe["_id"][];
+}
+
+const getRecipeLinkState = (
+  recipe: FavoriteRecipe,
+  favoriteIds: FavoriteRecipe["_id"][],
+  index: number
+) => ({
+  nav: { ids: favoriteIds, index },
+  from: 'favorites',
+  heroPreview: {
+    id: recipe._id,
+    image: recipe.image,
+    imageBlurhash: recipe.imageBlurhash,
+    imageWidth: recipe.imageWidth,
+    imageHeight: recipe.imageHeight,
+    imageAspectRatio: recipe.imageAspectRatio,
+    imageAlt: recipe.imageAlt || recipe.title,
+    title: recipe.title,
+    isFavorite: recipe.isFavorite,
+  },
+});
+
+const RecipeImage: React.FC<{
+  recipe: FavoriteRecipe;
+  className: string;
+  iconClassName: string;
+  loading: "eager" | "lazy";
+}> = ({ recipe, className, iconClassName, loading }) => {
+  if (recipe.image) {
+    return (
+      <ImageWithBlurhash
+        src={recipe.image}
+        blurhash={recipe.imageBlurhash}
+        alt={recipe.imageAlt || recipe.title}
+        className={className}
+        loading={loading}
+      />
+    );
+  }
+
+  return (
+    <div className={`${className} bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center text-white shadow-inner`}>
+      <span className={`material-symbols-outlined drop-shadow-sm ${iconClassName}`}>restaurant</span>
+    </div>
+  );
+};
+
+const FavoriteLargeCard: React.FC<FavoriteRecipeCardProps> = ({ recipe, index, favoriteIds }) => (
+  <Link
+    to={`/recipe/${recipe._id}`}
+    state={getRecipeLinkState(recipe, favoriteIds, index)}
+    className="flex flex-col gap-3 rounded-xl bg-card-light p-4 shadow-neo-light-convex dark:bg-card-dark dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all cursor-pointer group"
+  >
+    <div className="w-full aspect-video rounded-lg overflow-hidden relative">
+      <RecipeImage
+        recipe={recipe}
+        className="w-full h-full"
+        iconClassName="text-4xl"
+        loading={index === 0 ? "eager" : "lazy"}
+      />
+      <div className="absolute top-2 right-2 bg-white/80 dark:bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg text-caption font-bold flex items-center gap-1">
+        <span className="material-symbols-outlined filled text-sm text-red-500">favorite</span>
+      </div>
+    </div>
+    <div>
+      <h3 className="text-body font-bold text-text-primary-light dark:text-text-primary-dark line-clamp-2 group-hover:text-primary transition-colors">{recipe.title}</h3>
+      <div className="flex items-center gap-2 mt-1 text-body-sm text-text-secondary-light dark:text-text-secondary-dark">
+        <span className={`px-2 py-0.5 rounded-full text-caption font-medium ${
+          recipe.difficulty === 'Einfach' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
+          recipe.difficulty === 'Mittel' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400' :
+          'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+        }`}>
+          {recipe.difficulty}
+        </span>
+        <span>•</span>
+        <span>{recipe.portions} Portionen</span>
+      </div>
+    </div>
+  </Link>
+);
+
+const FavoriteCompactCard: React.FC<FavoriteRecipeCardProps> = ({ recipe, index, favoriteIds }) => (
+  <Link
+    to={`/recipe/${recipe._id}`}
+    state={getRecipeLinkState(recipe, favoriteIds, index)}
+    className="flex items-center gap-4 rounded-xl bg-card-light p-3 shadow-neo-light-convex dark:bg-card-dark dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all cursor-pointer group"
+  >
+    <RecipeImage
+      recipe={recipe}
+      className="h-16 w-16 flex-shrink-0 rounded-lg overflow-hidden"
+      iconClassName="text-2xl"
+      loading={index === 0 ? "eager" : "lazy"}
+    />
+
+    <div className="min-w-0 flex-grow">
+      <p className="text-body font-bold text-text-primary-light dark:text-text-primary-dark group-hover:text-primary transition-colors line-clamp-2">{recipe.title}</p>
+      <div className="flex items-center gap-2 text-body-sm text-text-secondary-light dark:text-text-secondary-dark">
+        <span className={`px-2 py-0.5 rounded-full text-xs font-medium text-black dark:text-white shadow-neomorphism-pill dark:shadow-dark-neomorphism-pill ${
+          recipe.difficulty === 'Einfach' ? 'bg-ingredient-2-bg' :
+          recipe.difficulty === 'Mittel' ? 'bg-ingredient-1-bg' :
+          'bg-ingredient-3-bg'
+        }`}>
+          {recipe.difficulty}
+        </span>
+        <span>•</span>
+        <span>{recipe.prepTimeMinutes} Min</span>
+      </div>
+    </div>
+
+    <span className="material-symbols-outlined text-text-secondary-light dark:text-text-secondary-dark flex-shrink-0 group-hover:translate-x-1 transition-transform">chevron_right</span>
+  </Link>
+);
 
 const FavoritesPage: React.FC = () => {
   const favoriteRecipes = useQuery(api.recipes.getFavorites, {});
+  const [viewMode, setViewMode] = React.useState<FavoritesViewMode>(() => {
+    if (typeof window === 'undefined') return parseFavoritesViewMode(null);
+    return parseFavoritesViewMode(localStorage.getItem(FAVORITES_VIEW_MODE_STORAGE_KEY));
+  });
 
   const favoriteIds = React.useMemo(() => {
     if (!favoriteRecipes) return [];
     return favoriteRecipes.map((r) => r._id);
   }, [favoriteRecipes]);
 
+  React.useEffect(() => {
+    localStorage.setItem(FAVORITES_VIEW_MODE_STORAGE_KEY, viewMode);
+  }, [viewMode]);
+
+  const handleToggleViewMode = React.useCallback(() => {
+    setViewMode((current) => getNextFavoritesViewMode(current));
+  }, []);
 
   return (
     <div className="page-enter relative flex w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark font-display">
       <div className="flex flex-col flex-1">
 
         {/* Header */}
-        <div className="flex items-center px-6 py-3 gap-4" style={{ paddingTop: 'max(1.5rem, var(--safe-area-inset-top))' }}>
+        <div className="flex items-center justify-between px-6 py-3 gap-4" style={{ paddingTop: 'max(1.5rem, var(--safe-area-inset-top))' }}>
           <h1 className="text-headline text-text-primary-light dark:text-text-primary-dark">
             Favoriten
           </h1>
+          {favoriteRecipes && favoriteRecipes.length > 0 && (
+            <IconButton
+              icon={viewMode === 'large' ? 'view_module' : 'view_agenda'}
+              onClick={handleToggleViewMode}
+              aria-label={viewMode === 'large' ? 'Zur Kachelansicht wechseln' : 'Zur großen Ansicht wechseln'}
+              title={viewMode === 'large' ? 'Zur Kachelansicht wechseln' : 'Zur großen Ansicht wechseln'}
+              className="bg-card-light dark:bg-card-dark text-text-primary-light dark:text-text-primary-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave !rounded-full active:scale-95 transition-all duration-150"
+            />
+          )}
         </div>
 
         {/* Recipe List - PERFORMANCE (AC-1): Standard Grid statt Virtuoso für bessere Shadows */}
@@ -60,46 +211,21 @@ const FavoritesPage: React.FC = () => {
           ) : (
             <div className="grid grid-cols-1 gap-4 p-6 pb-4">
               {favoriteRecipes?.map((recipe, index) => (
-                <Link
-                  key={recipe._id}
-                  to={`/recipe/${recipe._id}`}
-                  state={{ nav: { ids: favoriteIds, index }, from: 'favorites' }}
-                  className="flex flex-col gap-3 rounded-xl bg-card-light p-4 shadow-neo-light-convex dark:bg-card-dark dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all cursor-pointer group"
-                >
-                  <div className="w-full aspect-video rounded-lg overflow-hidden relative">
-                     {recipe.image ? (
-                       <img
-                         src={recipe.image}
-                         alt={recipe.title}
-                         className="w-full h-full object-cover"
-                         // PERFORMANCE (QW-4): Erstes Bild eager loaden für sofortige Sichtbarkeit
-                         loading={index === 0 ? "eager" : "lazy"}
-                         decoding="async"
-                       />
-                     ) : (
-                       <div className="w-full h-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center text-white shadow-inner">
-                         <span className="material-symbols-outlined text-4xl drop-shadow-sm">restaurant</span>
-                       </div>
-                     )}
-                     <div className="absolute top-2 right-2 bg-white/80 dark:bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg text-caption font-bold flex items-center gap-1">
-                        <span className="material-symbols-outlined filled text-sm text-red-500">favorite</span>
-                     </div>
-                  </div>
-                  <div>
-                    <h3 className="text-body font-bold text-text-primary-light dark:text-text-primary-dark line-clamp-2 group-hover:text-primary transition-colors">{recipe.title}</h3>
-                    <div className="flex items-center gap-2 mt-1 text-body-sm text-text-secondary-light dark:text-text-secondary-dark">
-                      <span className={`px-2 py-0.5 rounded-full text-caption font-medium ${
-                        recipe.difficulty === 'Einfach' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
-                        recipe.difficulty === 'Mittel' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400' :
-                        'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                      }`}>
-                        {recipe.difficulty}
-                      </span>
-                      <span>•</span>
-                      <span>{recipe.portions} Portionen</span>
-                    </div>
-                  </div>
-                </Link>
+                viewMode === 'large' ? (
+                  <FavoriteLargeCard
+                    key={recipe._id}
+                    recipe={recipe}
+                    index={index}
+                    favoriteIds={favoriteIds}
+                  />
+                ) : (
+                  <FavoriteCompactCard
+                    key={recipe._id}
+                    recipe={recipe}
+                    index={index}
+                    favoriteIds={favoriteIds}
+                  />
+                )
               ))}
             </div>
           )}

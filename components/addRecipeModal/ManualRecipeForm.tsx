@@ -11,10 +11,10 @@ export type ManualFormData = {
   title: string;
   category: string;
   prepTimeMinutes: number;
-  difficulty: string;
+  difficulty: "Einfach" | "Mittel" | "Schwer";
   portions: number;
-  ingredients: Array<{ name: string; amount: string }>;
-  instructions: Array<{ text: string; icon?: string }>;
+  ingredients: Ingredient[];
+  instructions: Instruction[];
   image: string;
   imageAlt: string;
   imageBlurhash?: string;
@@ -25,7 +25,7 @@ type Props = {
   initialData?: boolean;
 
   formData: ManualFormData;
-  setFormData: (next: ManualFormData) => void;
+  setFormData: React.Dispatch<React.SetStateAction<ManualFormData>>;
 
   existingCategories: string[];
   isNewCategoryMode: boolean;
@@ -33,11 +33,11 @@ type Props = {
 
   recipeImagePreviewUrl: string | null;
   recipeImageStorageId: Id<"_storage"> | null;
-  recipeImageInputRef: React.RefObject<HTMLInputElement>;
+  recipeImageInputRef: React.RefObject<HTMLInputElement | null>;
 
   isImageActionMenuOpen: boolean;
   setIsImageActionMenuOpen: (next: boolean) => void;
-  imageActionMenuRef: React.RefObject<HTMLDivElement>;
+  imageActionMenuRef: React.RefObject<HTMLDivElement | null>;
 
   openRecipeImagePicker: () => void;
   handleGenerateAiImage: () => void;
@@ -288,7 +288,7 @@ const ManualRecipeForm: React.FC<Props> = ({
                   type="button"
                   onClick={() => {
                     setIsNewCategoryMode(false);
-                    if (!formData.category) setFormData({ ...formData, category: "Hauptgericht" });
+                    if (!formData.category) setFormData({ ...formData, category: "Sonstiges" });
                   }}
                   className="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg text-sm font-medium"
                 >
@@ -366,8 +366,8 @@ const ManualRecipeForm: React.FC<Props> = ({
               id="recipe-difficulty"
               name="difficulty"
               className="w-full bg-gray-50 dark:bg-black/20 border-0 rounded-lg p-3 text-gray-900 dark:text-white"
-              value={formData.difficulty}
-              onChange={(e) => setFormData({ ...formData, difficulty: e.target.value })}
+                  value={formData.difficulty}
+                  onChange={(e) => setFormData({ ...formData, difficulty: e.target.value as ManualFormData["difficulty"] })}
             >
               <option>Einfach</option>
               <option>Mittel</option>
@@ -387,7 +387,7 @@ const ManualRecipeForm: React.FC<Props> = ({
                   name={`ing-amount-${idx}`}
                   placeholder="Menge"
                   className="w-20 sm:w-24 flex-shrink-0 bg-gray-50 dark:bg-black/20 border-0 rounded-lg p-2 text-sm dark:text-white"
-                  value={ing.amount}
+                  value={ing.amount ?? ""}
                   onChange={(e) => updateIngredient(idx, "amount", e.target.value)}
                   autoComplete="on"
                   autoCorrect="on"

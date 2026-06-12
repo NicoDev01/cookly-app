@@ -6,7 +6,6 @@ interface Props {
   fallback?: ReactNode;
   onError?: (error: Error, errorInfo: ErrorInfo) => void;
 }
-
 interface State {
   hasError: boolean;
   error: Error | null;
@@ -53,5 +52,3 @@ export class ErrorBoundary extends Component<Props, State> {
     return this.props.children;
   }
 }
-
-ErrorBoundary.displayName = 'ErrorBoundary';

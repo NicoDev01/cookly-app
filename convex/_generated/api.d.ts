@@ -16,6 +16,8 @@ import type * as http from "../http.js";
 import type * as importTiming from "../importTiming.js";
 import type * as instagram from "../instagram.js";
 import type * as migrateUserStats from "../migrateUserStats.js";
+import type * as photoScan from "../photoScan.js";
+import type * as photoScanShared from "../photoScanShared.js";
 import type * as pollinationsHelper from "../pollinationsHelper.js";
 import type * as rateLimiter from "../rateLimiter.js";
 import type * as recipes from "../recipes.js";
@@ -42,6 +44,8 @@ declare const fullApi: ApiFromModules<{
   importTiming: typeof importTiming;
   instagram: typeof instagram;
   migrateUserStats: typeof migrateUserStats;
+  photoScan: typeof photoScan;
+  photoScanShared: typeof photoScanShared;
   pollinationsHelper: typeof pollinationsHelper;
   rateLimiter: typeof rateLimiter;
   recipes: typeof recipes;
