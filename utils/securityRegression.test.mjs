@@ -14,8 +14,6 @@ test('Gemini credentials are not exposed through Vite or client source', () => {
   const files = [
     'components/AddRecipeModal.tsx',
     'vite.config.ts',
-    '.env.local',
-    '.env.production',
     'README.md',
   ];
 
@@ -23,6 +21,15 @@ test('Gemini credentials are not exposed through Vite or client source', () => {
     const source = read(file);
     assert.equal(
       /VITE_GEMINI_API_KEY|process\.env\.API_KEY|process\.env\.GEMINI_API_KEY/.test(source),
+      false,
+      `${file} must not expose Gemini credentials to the Vite client bundle`,
+    );
+  }
+
+  for (const file of ['.env.local', '.env.production']) {
+    if (!existsSync(join(root, file))) continue;
+    assert.equal(
+      /VITE_GEMINI_API_KEY|process\.env\.API_KEY|process\.env\.GEMINI_API_KEY/.test(read(file)),
       false,
       `${file} must not expose Gemini credentials to the Vite client bundle`,
     );
