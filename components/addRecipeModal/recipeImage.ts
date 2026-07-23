@@ -58,38 +58,11 @@ export const getImageDimensionsFromUrl = (url: string): Promise<ImageDimensions>
     img.src = url;
   });
 
-/**
- * optimizeImage - Wählt automatisch das beste Format basierend auf Dateigröße
- * Versucht WebP und fällt auf JPEG zurück, wenn WebP nicht mind. 50% kleiner ist
- */
-export const optimizeImage = async (
-  file: File | Blob,
-  maxSize = 1200,
-  quality = 0.75
-): Promise<{ blob: Blob; format: ImageFormat }> => {
-  // Zuerst WebP versuchen
-  const webpBlob = await compressImage(file, maxSize, quality, 'image/webp');
-  const originalSize = file.size;
-
-  // WebP verwenden, wenn es >50% kleiner ist als das Original
-  if (webpBlob.size < originalSize * 0.5) {
-    return { blob: webpBlob, format: 'image/webp' };
-  }
-
-  // Sonst JPEG als Fallback
-  const jpegBlob = await compressImage(file, maxSize, quality, 'image/jpeg');
-  return { blob: jpegBlob, format: 'image/jpeg' };
-};
-
-export const uploadImageToConvexStorage = async (
-  uploadUrl: string,
-  blob: Blob,
-  format: ImageFormat
-) => {
+export const uploadJpegToConvexStorage = async (uploadUrl: string, blob: Blob) => {
   const res = await fetch(uploadUrl, {
     method: "POST",
     headers: {
-      "Content-Type": format,
+      "Content-Type": "image/jpeg",
     },
     body: blob,
   });
@@ -100,9 +73,4 @@ export const uploadImageToConvexStorage = async (
 
   const json = await res.json();
   return json as { storageId: string };
-};
-
-// Legacy alias for backwards compatibility
-export const uploadJpegToConvexStorage = async (uploadUrl: string, blob: Blob) => {
-  return uploadImageToConvexStorage(uploadUrl, blob, 'image/jpeg');
 };

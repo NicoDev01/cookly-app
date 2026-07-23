@@ -1,12 +1,11 @@
-import React, { Suspense, useRef, useState } from 'react';
+import React, { Activity, Suspense, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import AppNav from './AppNav';
 import { OfflineBanner } from './OfflineBanner';
 import { ErrorBoundary } from './ErrorBoundary';
 import { useModal } from '../contexts/ModalContext';
-import { prefetchAddRecipeModal, prefetchRecipeImages } from '../prefetch';
-import { useQuery } from 'convex/react';
-import { api } from '../convex/_generated/api';
+import { prefetchAddRecipeModal } from '../prefetch';
+import { ModalLoader, PageLoader } from './PageLoader';
 
 // Lazy load pages
 const CategoriesPage = React.lazy(() => import('../pages/CategoriesPage'));
@@ -19,105 +18,65 @@ const CategoryRecipesPage = React.lazy(() => import('../pages/CategoryRecipesPag
 
 const AddRecipeModal = React.lazy(() => import('./AddRecipeModal'));
 
+const TAB_ROUTES = [
+  '/tabs/categories',
+  '/tabs/favorites',
+  '/tabs/weekly',
+  '/tabs/shopping',
+  '/tabs/profile',
+  '/tabs/subscribe',
+] as const;
+
+type TabRoute = typeof TAB_ROUTES[number];
+
+const renderTab = (route: TabRoute) => {
+  if (route === '/tabs/categories') return <CategoriesPage />;
+  if (route === '/tabs/favorites') return <FavoritesPage />;
+  if (route === '/tabs/weekly') return <WeeklyPage />;
+  if (route === '/tabs/shopping') return <ShoppingPage />;
+  if (route === '/tabs/profile') return <ProfilePage />;
+  return <SubscribePage />;
+};
+
 // Wrapper component to provide params to cached CategoryRecipesPage
 const CategoryRecipesWrapper: React.FC<{ category: string }> = ({ category }) => {
   return <CategoryRecipesPage key={category} category={category} />;
 };
 
-/**
- * TabsLayout - Persistent container mit State Preservation für Tabs
- *
- * PERFORMANCE OPTIMIZATION (QW-1):
- * - Alle Tabs werden gleichzeitig gemountet
- * - Tab-Wechsel ist instant (keine neuen Queries nötig)
- * - Scroll-Position wird bei jedem Wechsel auf Top zurückgesetzt (gewünschtes Verhalten)
- * - Such-Text und Filter bleiben erhalten
- */
 export const TabsLayout: React.FC = () => {
   const { isAddModalOpen, closeAddModal, openAddModal, isAnyModalOpen } = useModal();
   const location = useLocation();
-
-  // Refs für Scroll-Reset bei Tab-Wechsel
-  const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const previousTabRef = useRef<string | null>(null);
-
-  // PERFORMANCE: Tracke besuchte Kategorien für State Preservation
-  const [visitedCategories, setVisitedCategories] = useState<Set<string>>(new Set());
-
-  // Prefetch all tab routes immediately on mount for instant tab switching
-  React.useEffect(() => {
-    Promise.all([
-      import('../pages/CategoriesPage'),
-      import('../pages/FavoritesPage'),
-      import('../pages/WeeklyPage'),
-      import('../pages/ShoppingPage'),
-      import('../pages/ProfilePage'),
-      import('../pages/SubscribePage'),
-      import('../pages/CategoryRecipesPage'), // Prefetch für Category-Seite
-    ]);
-  }, []);
-
-  // Prefetch recipe images for instant visual feedback
-  const recipes = useQuery(api.recipes.list, {});
-  React.useEffect(() => {
-    if (recipes && recipes.length > 0) {
-      const imageUrls = recipes.map(r => r.image).filter(Boolean) as string[];
-      prefetchRecipeImages(imageUrls);
-    }
-  }, [recipes]);
+  const currentPath = location.pathname;
+  const currentTab = TAB_ROUTES.find((route) => route === currentPath);
+  const categoryMatch = currentPath.match(/^\/category\/(.+)$/);
+  const currentCategory = categoryMatch?.[1] ? decodeURIComponent(categoryMatch[1]) : null;
+  const [visitedTabs, setVisitedTabs] = useState<TabRoute[]>(() => currentTab ? [currentTab] : []);
+  const [retainedCategories, setRetainedCategories] = useState<string[]>(() => currentCategory ? [currentCategory] : []);
 
   const handleAddRecipe = () => {
     void prefetchAddRecipeModal();
     openAddModal();
   };
 
-  // Track visited categories
   React.useEffect(() => {
-    const match = location.pathname.match(/^\/category\/(.+)$/);
-    if (match && match[1]) {
-      const category = decodeURIComponent(match[1]);
-      setVisitedCategories(prev => {
-        if (!prev.has(category)) {
-          const newSet = new Set(prev);
-          newSet.add(category);
-          return newSet;
-        }
-        return prev;
-      });
+    if (currentTab) {
+      setVisitedTabs((routes) => routes.includes(currentTab) ? routes : [...routes, currentTab]);
     }
-  }, [location.pathname]);
-
-  // Scroll-Reset bei Tab-Wechsel (nicht für Outlet-Routen)
-  React.useEffect(() => {
-    const currentPath = location.pathname;
-    const isTabRoute = currentPath.startsWith('/tabs/') && currentPath.split('/').length === 3;
-
-    if (isTabRoute && previousTabRef.current !== currentPath) {
-      // Scroll-Position des aktuellen Tabs auf Top zurücksetzen
-      const currentTabRef = tabRefs.current[currentPath];
-      if (currentTabRef) {
-        currentTabRef.scrollTop = 0;
-      }
-      previousTabRef.current = currentPath;
+    if (currentCategory) {
+      setRetainedCategories((categories) => [
+        ...categories.filter((category) => category !== currentCategory),
+        currentCategory,
+      ].slice(-3));
     }
-  }, [location.pathname]);
+  }, [currentCategory, currentTab]);
 
-  // Tab-Route Definitionen
-  const tabRoutes = [
-    '/tabs/categories',
-    '/tabs/favorites',
-    '/tabs/weekly',
-    '/tabs/shopping',
-    '/tabs/profile',
-    '/tabs/subscribe',
-  ];
-
-  const currentPath = location.pathname;
-  const isTabRoute = tabRoutes.includes(currentPath);
-
-  // Check if current route is a category route
-  const categoryMatch = currentPath.match(/^\/category\/(.+)$/);
-  const currentCategory = categoryMatch?.[1] ? decodeURIComponent(categoryMatch[1]) : null;
+  const mountedTabs = currentTab && !visitedTabs.includes(currentTab)
+    ? [...visitedTabs, currentTab]
+    : visitedTabs;
+  const mountedCategories = currentCategory && !retainedCategories.includes(currentCategory)
+    ? [...retainedCategories, currentCategory].slice(-3)
+    : retainedCategories;
+  const isTabRoute = Boolean(currentTab);
   const isCategoryRoute = !!currentCategory;
 
   return (
@@ -127,47 +86,29 @@ export const TabsLayout: React.FC = () => {
 
         {/* Page Content Area - Expands to fill available space */}
         <div className="flex-1 relative w-full overflow-hidden">
-          <Suspense fallback={null}>
-            {/* TAB-ROUTEN: Permanent im DOM halten */}
-            <div style={{ display: isTabRoute ? 'contents' : 'none' }}>
-              {tabRoutes.map((tabPath) => (
+          <Suspense fallback={<PageLoader />}>
+            {mountedTabs.map((tabPath) => (
+              <Activity key={tabPath} mode={currentTab === tabPath ? 'visible' : 'hidden'}>
                 <div
-                  key={tabPath}
-                  ref={(el) => { tabRefs.current[tabPath] = el; }}
-                  style={{
-                    display: currentPath === tabPath ? 'block' : 'none',
-                  }}
                   className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden touch-pan-y page-enter"
                 >
-                  {tabPath === '/tabs/categories' && <CategoriesPage />}
-                  {tabPath === '/tabs/favorites' && <FavoritesPage />}
-                  {tabPath === '/tabs/weekly' && <WeeklyPage />}
-                  {tabPath === '/tabs/shopping' && <ShoppingPage />}
-                  {tabPath === '/tabs/profile' && <ProfilePage />}
-                  {tabPath === '/tabs/subscribe' && <SubscribePage />}
+                  {renderTab(tabPath)}
                 </div>
-              ))}
-            </div>
+              </Activity>
+            ))}
 
-            {/* CATEGORY-ROUTEN: Permanent im DOM halten (cached) */}
-            <div style={{ display: isCategoryRoute ? 'contents' : 'none' }}>
-              {Array.from(visitedCategories).map((category) => {
+            {mountedCategories.map((category) => {
                 const categoryPath = `/category/${encodeURIComponent(category)}`;
                 const isActive = currentCategory === category;
                 
                 return (
-                  <div
-                    key={categoryPath}
-                    style={{
-                      display: isActive ? 'block' : 'none',
-                    }}
-                    className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden touch-pan-y page-enter"
-                  >
-                    <CategoryRecipesWrapper category={category} />
-                  </div>
+                  <Activity key={categoryPath} mode={isActive ? 'visible' : 'hidden'}>
+                    <div className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden touch-pan-y page-enter">
+                      <CategoryRecipesWrapper category={category} />
+                    </div>
+                  </Activity>
                 );
-              })}
-            </div>
+            })}
 
             {/* OUTLET-ROUTEN: Transient (werden neu gemountet) */}
             {!isTabRoute && !isCategoryRoute && (
@@ -183,7 +124,7 @@ export const TabsLayout: React.FC = () => {
 
         {/* Add Recipe Modal */}
         {isAddModalOpen && (
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoader label="Rezeptformular lädt..." />}>
             <AddRecipeModal
               isOpen={isAddModalOpen}
               onClose={closeAddModal}

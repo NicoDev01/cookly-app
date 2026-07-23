@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { useAction, useQuery } from "convex/react";
+import React, { useMemo, useState } from "react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useBackNavigation } from "@/hooks/useBackNavigation";
 import { Capacitor } from "@capacitor/core";
@@ -15,7 +15,12 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { logger } from "@/utils/logger";
 import { getSubscriptionViewState } from "@/utils/subscriptionStatus";
+import { useNotification } from "@/contexts/NotificationContext";
+import { getUserErrorMessage } from "@/utils/userErrors";
+import { createBillingClient } from "@/services/billing";
+import { capture } from "@/services/analytics";
 
 const PRO_FEATURES_MONTHLY = [
   "Unlimitierte Rezepte speichern",
@@ -31,83 +36,113 @@ const PRO_FEATURES_YEARLY = [
 ];
 
 export default function SubscribePage() {
+  React.useEffect(() => {
+    capture("paywall_viewed");
+  }, []);
   const handleBack = useBackNavigation();
   const currentUser = useQuery(api.users.getCurrentUser);
   const pricing = useQuery(api.stripe.getPlanPricing);
+  const billingSummary = useQuery(api.billing.getSummary);
   const createCheckout = useAction(api.stripe.createCheckoutSession);
   const createPortal = useAction(api.stripe.createPortalSession);
+  const ensureBillingUserId = useMutation(api.users.ensureBillingUserId);
   const [loading, setLoading] = useState<string | null>(null);
   const [isYearly, setIsYearly] = useState(false);
   const [billingNotice, setBillingNotice] = useState<string | null>(null);
+  const [nativePrices, setNativePrices] = useState<Partial<Record<"pro_monthly" | "pro_yearly", string>>>({});
+  const { showToast } = useNotification();
+  const billing = useMemo(() => createBillingClient(currentUser?.billingUserId, {
+    checkout: createCheckout,
+    portal: createPortal,
+  }), [currentUser?.billingUserId, createCheckout, createPortal]);
 
   React.useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
 
+  React.useEffect(() => {
+    if (!Capacitor.isNativePlatform() || currentUser === undefined || currentUser === null || currentUser.billingUserId) return;
+    void ensureBillingUserId();
+  }, [currentUser, ensureBillingUserId]);
+
+  React.useEffect(() => {
+    if (billing.provider !== "store" || !billing.available || !currentUser?.billingUserId) return;
+    void billing.prices().then((prices) => prices && setNativePrices(prices)).catch(() => undefined);
+  }, [billing, currentUser?.billingUserId]);
+
   const { isLoadingUser, isPro } = getSubscriptionViewState(currentUser);
-  const nativeBillingUnavailable = Capacitor.isNativePlatform();
+  const nativeBillingUnavailable = billing.provider === "store" && !billing.available;
   const nativeBillingMessage =
     "In-App-Kauf ist in dieser App-Version noch nicht aktiviert. Bitte verwende bis zur Store-Freischaltung die Web-Version.";
 
   const handleSubscribe = async (planId: "pro_monthly" | "pro_yearly") => {
-    if (nativeBillingUnavailable) {
+    if (!billing.available) {
       setBillingNotice(nativeBillingMessage);
       return;
     }
 
     setLoading(planId);
     setBillingNotice(null);
+    capture("checkout_started", { plan: planId, provider: billing.provider });
     try {
-      const baseUrl = window.location.origin;
-      const result = await createCheckout({
-        planId,
-        successUrl: `${baseUrl}/#/profile?success=true`,
-        cancelUrl: `${baseUrl}/#/subscribe?canceled=true`,
-      });
-
-      if (result.checkoutUrl) {
-        window.location.href = result.checkoutUrl;
+      const result = await billing.purchase(planId);
+      if (result.redirectUrl) window.location.href = result.redirectUrl;
+      if (result.active) {
+        capture("purchase_completed", { plan: planId, provider: billing.provider });
+        setBillingNotice("Kauf bestätigt. Die Pro-Berechtigung wird synchronisiert.");
+        showToast("Pro wurde aktiviert.", "success");
       }
     } catch (error) {
-      console.error("Checkout error:", error);
-      alert("Fehler beim Erstellen der Checkout-Session. Bitte versuche es erneut.");
+      logger.error('Billing', 'Checkout failed', error);
+      showToast(getUserErrorMessage(error, 'billing'), 'error');
     } finally {
       setLoading(null);
     }
   };
 
   const handleManageSubscription = async () => {
-    if (nativeBillingUnavailable) {
+    if (!billing.available) {
       setBillingNotice(nativeBillingMessage);
+      return;
+    }
+    if (billing.provider === "store" && !billingSummary?.providers.some((provider) => provider === "google_play" || provider === "app_store")) {
+      setBillingNotice("Dieses Abo wurde im Web abgeschlossen und kann dort verwaltet werden.");
       return;
     }
 
     setLoading("manage");
     setBillingNotice(null);
     try {
-      const baseUrl = window.location.origin;
-      const result = await createPortal({
-        returnUrl: `${baseUrl}/#/profile`,
-      });
-
-      if (result.portalUrl) {
-        window.location.href = result.portalUrl;
-      }
+      const redirectUrl = await billing.manage();
+      if (redirectUrl) window.location.href = redirectUrl;
     } catch (error) {
-      console.error("Portal error:", error);
-      alert("Fehler beim Öffnen des Kundenportals");
+      logger.error('Billing', 'Portal failed', error);
+      showToast(getUserErrorMessage(error, 'billing'), 'error');
     } finally {
       setLoading(null);
     }
   };
 
+  const handleRestore = async () => {
+    setLoading("restore");
+    try {
+      const active = await billing.restore();
+      setBillingNotice(active ? "Käufe wiederhergestellt. Die Pro-Berechtigung wird synchronisiert." : "Kein aktives Store-Abo gefunden.");
+    } catch (error) {
+      logger.error("Billing", "Restore failed", error);
+      showToast(getUserErrorMessage(error, "billing"), "error");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const proPlanId = (isYearly ? "pro_yearly" : "pro_monthly") as "pro_monthly" | "pro_yearly";
   const selectedPlan = isYearly ? pricing?.pro_yearly : pricing?.pro_monthly;
-  const proPrice = selectedPlan?.displayPrice ?? (isYearly ? "24,99 €" : "2,99 €");
+  const proPrice = nativePrices[proPlanId] ?? selectedPlan?.displayPrice ?? (isYearly ? "24,99 €" : "2,99 €");
   const proPeriod = selectedPlan?.displayPeriod ?? (isYearly ? "Jahr" : "Monat");
   const billingLabel =
     selectedPlan?.billingLabel ??
     (isYearly ? "Jährliche Abrechnung (Gesamt 24,99 €)" : "Monatliche Abrechnung (Gesamt 35,88 €/Jahr)");
-  const proPlanId = (isYearly ? "pro_yearly" : "pro_monthly") as "pro_monthly" | "pro_yearly";
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans pb-20">
@@ -212,7 +247,7 @@ export default function SubscribePage() {
               </ul>
             </CardContent>
             
-            <CardFooter className="pt-8">
+            <CardFooter className="pt-8 flex-col gap-3">
               {isLoadingUser ? (
                 <Button
                   disabled
@@ -226,7 +261,7 @@ export default function SubscribePage() {
               ) : isPro ? (
                 <Button 
                   onClick={handleManageSubscription}
-                  disabled={nativeBillingUnavailable || loading === 'manage'}
+                  disabled={!billing.available || loading === 'manage'}
                   className="w-full h-14 text-lg font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20 rounded-full"
                 >
                   {loading === 'manage' ? (
@@ -235,13 +270,13 @@ export default function SubscribePage() {
                        Lädt...
                     </span>
                   ) : (
-                    nativeBillingUnavailable ? "Im Web verwalten" : "Abo verwalten"
+                    nativeBillingUnavailable ? "Noch nicht verfügbar" : "Abo verwalten"
                   )}
                 </Button>
               ) : (
                 <Button 
                   onClick={() => handleSubscribe(proPlanId)}
-                  disabled={nativeBillingUnavailable || loading === proPlanId}
+                  disabled={!billing.available || loading === proPlanId}
                   className="w-full h-14 text-lg font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20 group/btn rounded-full"
                 >
                   {loading === proPlanId ? (
@@ -255,6 +290,11 @@ export default function SubscribePage() {
                       <ArrowRight className="h-5 w-5 group-hover/btn:translate-x-1 transition-transform" />
                     </span>
                   )}
+                </Button>
+              )}
+              {billing.canRestore && (
+                <Button variant="ghost" onClick={handleRestore} disabled={loading === "restore"} className="w-full h-12 rounded-full">
+                  {loading === "restore" ? "Wird wiederhergestellt..." : "Käufe wiederherstellen"}
                 </Button>
               )}
             </CardFooter>

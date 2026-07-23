@@ -1,12 +1,20 @@
 "use node";
-import { action } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { action, internalAction } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { GoogleGenAI } from "@google/genai";
 import { Id } from "./_generated/dataModel";
 import { GEMINI_MODELS, RECIPE_CATEGORIES } from "./constants";
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { createImportTimer } from "./importTiming";
+import { runLegacyImport } from "./legacyImport";
+import {
+  getNestedValue,
+  isHttpUrl,
+  normalizeInstructionIcon,
+  normalizeWhitespace,
+  toRecord,
+  uniqueNonEmpty,
+} from "./socialImportShared";
 
 const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
@@ -117,15 +125,6 @@ const TRACKING_PARAMS_TO_DROP = new Set([
 
 const QUERY_PARAMS_TO_KEEP = new Set(["v", "id", "story_fbid"]);
 
-const toRecord = (value: unknown): Record<string, unknown> | null => {
-  if (!value || typeof value !== "object") return null;
-  return value as Record<string, unknown>;
-};
-
-const isHttpUrl = (value: string): boolean => {
-  return value.startsWith("https://") || value.startsWith("http://");
-};
-
 const isSupportedFacebookHost = (hostname: string): boolean => {
   const host = hostname.toLowerCase();
   return host === "fb.watch" || host === "facebook.com" || host.endsWith(".facebook.com");
@@ -216,33 +215,6 @@ const normalizeFacebookUrl = async (rawUrl: string): Promise<string> => {
   return canonical;
 };
 
-const getNestedValue = (obj: unknown, path: string): unknown => {
-  const parts = path.split(".");
-  let current: unknown = obj;
-
-  for (const part of parts) {
-    if (current === null || current === undefined) return undefined;
-
-    const arrMatch = part.match(/^(\w+)\[(\d+)\]$/);
-    if (arrMatch) {
-      const [, key, indexRaw] = arrMatch;
-      const index = Number(indexRaw);
-      const record = toRecord(current);
-      if (!record) return undefined;
-      const arrValue = record[key];
-      if (!Array.isArray(arrValue) || index < 0 || index >= arrValue.length) return undefined;
-      current = arrValue[index];
-      continue;
-    }
-
-    const record = toRecord(current);
-    if (!record) return undefined;
-    current = record[part];
-  }
-
-  return current;
-};
-
 const addStringCandidate = (bucket: string[], value: unknown) => {
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -264,66 +236,6 @@ const addStringCandidate = (bucket: string[], value: unknown) => {
     if (typeof record.story === "string") bucket.push(record.story.trim());
     if (typeof record.description === "string") bucket.push(record.description.trim());
   }
-};
-
-const uniqueNonEmpty = (values: string[]): string[] => {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const value of values) {
-    const normalized = value.trim();
-    if (!normalized) continue;
-    if (seen.has(normalized)) continue;
-    seen.add(normalized);
-    result.push(normalized);
-  }
-  return result;
-};
-
-const normalizeWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim();
-
-const ALLOWED_MATERIAL_ICONS = new Set([
-  "outdoor_grill",
-  "timer",
-  "restaurant",
-  "blender",
-  "oven_gen",
-  "skillet",
-  "cookie",
-  "local_pizza",
-  "set_meal",
-  "soup_kitchen",
-  "flatware",
-  "egg",
-  "kitchen",
-  "microwave",
-]);
-
-const inferInstructionIcon = (text: string): string => {
-  const lower = text.toLowerCase();
-  if (/(ofen|vorheizen|backen|bake|roast)/.test(lower)) return "oven_gen";
-  if (/(anbraten|braten|fry|saute|pfanne)/.test(lower)) return "skillet";
-  if (/(grill|grillen|bbq)/.test(lower)) return "outdoor_grill";
-  if (/(mix|mixen|rühren|verrühren|blenden|pürieren)/.test(lower)) return "blender";
-  if (/(kochen|köcheln|simmer|suppe|eintopf)/.test(lower)) return "soup_kitchen";
-  if (/(schneiden|hacken|würfeln|slice|chop|julienne)/.test(lower)) return "kitchen";
-  if (/(ruhen|ziehen lassen|minuten|sekunden|timer|warten)/.test(lower)) return "timer";
-  if (/(servieren|anrichten|garnieren|serve)/.test(lower)) return "flatware";
-  if (/(mikrowelle|microwave)/.test(lower)) return "microwave";
-  if (/(ei|eier|egg)/.test(lower)) return "egg";
-  if (/(keks|cookie|teig|dessert|kuchen)/.test(lower)) return "cookie";
-  if (/(pizza)/.test(lower)) return "local_pizza";
-  if (/(portionieren|aufteilen)/.test(lower)) return "set_meal";
-  return "restaurant";
-};
-
-const normalizeInstructionIcon = (iconValue: unknown, text: string): string => {
-  if (typeof iconValue === "string") {
-    const normalized = iconValue.trim();
-    if (ALLOWED_MATERIAL_ICONS.has(normalized)) {
-      return normalized;
-    }
-  }
-  return inferInstructionIcon(text);
 };
 
 const extractCaptionCandidates = (post: Record<string, unknown>): string[] => {
@@ -707,33 +619,19 @@ const normalizeRecipeData = (raw: unknown): RecipeData => {
 
 export const scrapePost = action({
   args: { url: v.string() },
-  handler: async (ctx, args): Promise<Id<"recipes">> => {
+  handler: (ctx, args): Promise<Id<"recipes">> => runLegacyImport(ctx, "facebook", args.url),
+});
+
+export const scrapePostInternal = internalAction({
+  args: { userId: v.id("users"), url: v.string() },
+  handler: async (ctx, args) => {
     const timer = createImportTimer("facebook", { url: args.url });
 
     if (!APIFY_TOKEN) throw new Error("APIFY_API_TOKEN is missing in Convex Environment Variables");
     if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY is missing in Convex Environment Variables");
     timer.mark("env_checked");
 
-    const authUserId = await getAuthUserId(ctx);
-    if (!authUserId) {
-      throw new Error("NOT_AUTHENTICATED");
-    }
-    const userIdStr = authUserId.toString();
     timer.mark("authenticated");
-
-    const rateLimit = await ctx.runMutation(internal.rateLimiter.checkAndConsumeRateLimit, {
-      identifier: userIdStr,
-      bucket: "facebook",
-    });
-    if (!rateLimit.allowed) {
-      throw new Error(
-        JSON.stringify({
-          type: "RATE_LIMIT_EXCEEDED",
-          resetAt: rateLimit.resetAt,
-          message: "Du hast zu viele Anfragen gestellt. Bitte warte einen Moment.",
-        })
-      );
-    }
     timer.mark("rate_limit_checked");
 
     if (!isSupportedFacebookUrl(args.url)) {
@@ -744,13 +642,13 @@ export const scrapePost = action({
     timer.mark("url_normalized", { normalizedUrl });
 
     let staleExistingId: Id<"recipes"> | null = null;
-    const existingId = await ctx.runQuery(api.recipes.getBySourceUrl, { url: normalizedUrl });
+    const existingRecipe = await ctx.runQuery(internal.recipes.getBySourceUrlForUser, { userId: args.userId, url: normalizedUrl });
+    const existingId = existingRecipe?._id;
     if (existingId) {
-      const existingRecipe = await ctx.runQuery(api.recipes.get, { id: existingId });
       if (isExistingRecipeUsable(existingRecipe)) {
         timer.mark("dedupe_hit");
         timer.summary({ result: "existing_recipe" });
-        return existingId;
+        return { recipeId: existingId };
       }
 
       staleExistingId = existingId;
@@ -900,16 +798,15 @@ export const scrapePost = action({
 
     timer.mark("ready_to_create");
 
-    const finalExisting = await ctx.runQuery(api.recipes.getBySourceUrl, { url: normalizedUrl });
-    if (finalExisting && finalExisting !== staleExistingId) {
+    const finalExisting = await ctx.runQuery(internal.recipes.getBySourceUrlForUser, { userId: args.userId, url: normalizedUrl });
+    if (finalExisting && finalExisting._id !== staleExistingId) {
       timer.mark("dedupe_final_hit");
       timer.summary({ result: "existing_recipe_final_check" });
-      return finalExisting;
+      return { recipeId: finalExisting._id };
     }
     timer.mark("dedupe_final_miss_or_stale_update");
 
-    try {
-      const payload = {
+    const payload = {
         title: recipeData.title,
         category: recipeData.category,
         prepTimeMinutes: recipeData.prepTimeMinutes,
@@ -922,30 +819,7 @@ export const scrapePost = action({
         sourceUrl: normalizedUrl,
         imageAlt: recipeData.title,
         isFavorite: false,
-      } as const;
-
-      if (staleExistingId) {
-        await ctx.runMutation(api.recipes.update, {
-          id: staleExistingId,
-          ...payload,
-        });
-
-        timer.mark("recipe_updated_from_stale", { recipeId: staleExistingId });
-        timer.summary({ result: "updated_stale_recipe" });
-        return staleExistingId;
-      }
-
-      const newRecipeId = await ctx.runMutation(api.recipes.create, payload);
-
-      timer.mark("recipe_created", { recipeId: newRecipeId });
-      timer.summary({ result: "created" });
-      return newRecipeId;
-    } catch (createError: unknown) {
-      const errStr = createError instanceof Error ? createError.message : "";
-      if (errStr.includes("LIMIT_REACHED")) {
-        throw createError;
-      }
-      throw new Error("Fehler beim Speichern des Rezepts.");
-    }
+    } as const;
+    return { staleRecipeId: staleExistingId ?? undefined, payload };
   },
 });

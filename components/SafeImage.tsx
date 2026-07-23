@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { capture } from '../services/analytics';
 
 interface SafeImageProps {
   src: string;
@@ -10,7 +11,7 @@ interface SafeImageProps {
   autoRetry?: boolean; // Automatisch neu versuchen bei Fehler
 }
 
-const SafeImage: React.FC<SafeImageProps> = ({
+const SafeImageContent: React.FC<SafeImageProps> = ({
   src,
   alt,
   className,
@@ -22,26 +23,11 @@ const SafeImage: React.FC<SafeImageProps> = ({
   const [hasError, setHasError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [retryCount, setRetryCount] = useState(0);
-  const [currentSrc, setCurrentSrc] = useState(src);
-  const imgRef = useRef<HTMLImageElement>(null);
+  const loadStartedAt = useRef(0);
 
-  // Wenn sich src ändert, aktualisiere currentSrc und setze Fehler zurück
   useEffect(() => {
-    setCurrentSrc(src);
-    setHasError(false);
-    setIsLoading(true);
-    setRetryCount(0);
-  }, [src]);
-
-  // Check if image is already loaded (from cache)
-  useEffect(() => {
-    if (imgRef.current && imgRef.current.complete) {
-      if (imgRef.current.naturalWidth > 0) {
-        setIsLoading(false);
-        if (onSuccess) onSuccess();
-      }
-    }
-  }, [currentSrc]);
+    loadStartedAt.current = performance.now();
+  }, []);
 
   const handleError = () => {
     if (autoRetry && onRetry && retryCount < 10) {
@@ -53,6 +39,10 @@ const SafeImage: React.FC<SafeImageProps> = ({
       // Nach 10 Versuchen oder wenn autoRetry deaktiviert ist, Fehler anzeigen
       setHasError(true);
       setIsLoading(false);
+      capture('image_load_failed', {
+        durationMs: Math.round(performance.now() - loadStartedAt.current),
+        retryCount,
+      });
     }
   };
 
@@ -88,12 +78,16 @@ const SafeImage: React.FC<SafeImageProps> = ({
             <div className="absolute inset-0 bg-gray-200 dark:bg-gray-700 animate-pulse" />
           )}
           <img
-            ref={imgRef}
-            src={currentSrc}
+            src={src}
             alt={alt}
+            decoding="async"
             className={`w-full h-full object-cover ${isLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-200`}
             onLoad={() => {
               setIsLoading(false);
+              capture('image_load_completed', {
+                durationMs: Math.round(performance.now() - loadStartedAt.current),
+                retryCount,
+              });
               if (onSuccess) onSuccess();
             }}
             onError={handleError}
@@ -103,5 +97,9 @@ const SafeImage: React.FC<SafeImageProps> = ({
     </div>
   );
 };
+
+const SafeImage: React.FC<SafeImageProps> = (props) => (
+  <SafeImageContent key={props.src} {...props} />
+);
 
 export default SafeImage;

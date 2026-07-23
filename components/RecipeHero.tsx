@@ -10,7 +10,9 @@ import React, {
 import { createPortal } from "react-dom";
 import { Recipe } from "../types";
 import { useMutation } from "convex/react";
+import { logger } from "../utils/logger";
 import { api } from "../convex/_generated/api";
+import { ModalLoader } from "./PageLoader";
 
 // Lazy load modals - they are only needed when user interacts with them
 const MealPlanModal = lazy(() => import("./MealPlanModal"));
@@ -135,7 +137,7 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
           navigator.vibrate(50);
         }
       } catch (error) {
-        console.error("Fehler beim Umschalten der Favoriten:", error);
+        logger.error('Recipe', 'Toggle favorite failed', error);
       }
     },
     [recipe._id, toggleFavorite, recipe.isFavorite],
@@ -298,26 +300,30 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-b from-transparent to-white" />
       </div>
 
-      <Suspense fallback={null}>
-        <MealPlanModal
-          isOpen={isPlanModalOpen}
-          onClose={() => setIsPlanModalOpen(false)}
-          mode="selectDay"
-          recipeId={recipe._id}
-          recipeTitle={recipe.title}
-          recipeImage={recipe.image}
-          weekStartDate={undefined} // Let modal manage its own week
-        />
-      </Suspense>
+      {isPlanModalOpen && (
+        <Suspense fallback={<ModalLoader label="Wochenplan lädt..." />}>
+          <MealPlanModal
+            isOpen={isPlanModalOpen}
+            onClose={() => setIsPlanModalOpen(false)}
+            mode="selectDay"
+            recipeId={recipe._id}
+            recipeTitle={recipe.title}
+            recipeImage={recipe.image}
+            weekStartDate={undefined} // Let modal manage its own week
+          />
+        </Suspense>
+      )}
 
-      <Suspense fallback={null}>
-        <ImageZoomModal
-          isOpen={isZoomOpen}
-          onClose={() => setIsZoomOpen(false)}
-          src={heroImageSrc}
-          alt={recipe.imageAlt || recipe.title || "Rezeptbild"}
-        />
-      </Suspense>
+      {isZoomOpen && (
+        <Suspense fallback={<ModalLoader label="Bild lädt..." />}>
+          <ImageZoomModal
+            isOpen={isZoomOpen}
+            onClose={() => setIsZoomOpen(false)}
+            src={heroImageSrc}
+            alt={recipe.imageAlt || recipe.title || "Rezeptbild"}
+          />
+        </Suspense>
+      )}
 
       {/* Delete Confirmation Modal */}
       {isDeleteConfirmOpen &&

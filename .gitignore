@@ -28,6 +28,8 @@ dist-ssr
 *.key
 *.keystore
 .env.local
+.env.admin.local
+.env.sentry-build-plugin
 
 # Android signing credentials (contains passwords!)
 android/gradle.properties

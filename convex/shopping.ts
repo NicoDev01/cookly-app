@@ -3,6 +3,8 @@ import type { QueryCtx, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { Id } from "./_generated/dataModel";
+import { storeAnalyticsEvent } from "./analytics";
+import { getAuthenticatedUserId } from "./lib/authUser";
 
 const normalizeShoppingText = (value: string) => value.toLowerCase().trim().replace(/\s+/g, " ");
 
@@ -40,21 +42,6 @@ const assertRecipeAccessible = async (
   return recipe;
 };
 
-async function getAuthenticatedUserId(ctx: QueryCtx | MutationCtx): Promise<Id<"users">> {
-  const authUserId = await getAuthUserId(ctx);
-  if (!authUserId) throw new Error("Not authenticated");
-  const linkedUser = await ctx.db
-    .query("users")
-    .withIndex("by_authUserId", (q) => q.eq("authUserId", authUserId.toString()))
-    .first();
-  if (linkedUser) return linkedUser._id;
-
-  const authUser = await ctx.db.get(authUserId as Id<"users">);
-  if (authUser) return authUser._id;
-
-  throw new Error("User not found");
-}
-
 export const getShoppingList = query({
   args: {},
   handler: async (ctx) => {
@@ -70,38 +57,51 @@ export const getShoppingList = query({
       .query("shoppingItems")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect();
-    const recipes = await ctx.db
-      .query("recipes")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .collect();
 
-    return await Promise.all(items.map(async (item) => {
-      const keyRecipeId = getRecipeIdFromShoppingKey(item.key);
-      const recipeId = item.recipeId ?? keyRecipeId;
+    const resolvedItems = items.map((item) => ({
+      item,
+      recipeId: item.recipeId ?? getRecipeIdFromShoppingKey(item.key),
+    }));
+    const linkedRecipeIds = [...new Set(resolvedItems
+      .filter(({ item, recipeId }) => recipeId && !item.recipeTitle)
+      .map(({ recipeId }) => recipeId!))];
+    const linkedRecipes = await Promise.all(linkedRecipeIds.map((recipeId) => ctx.db.get(recipeId)));
+    const recipeTitles = new Map(linkedRecipes.flatMap((recipe) =>
+      recipe && recipe.userId === user._id
+        ? [[recipe._id, recipe.title] as const]
+        : []
+    ));
+    const needsLegacyLookup = resolvedItems.some(({ recipeId }) => !recipeId);
+    const legacyRecipes = needsLegacyLookup
+      ? await ctx.db
+        .query("recipes")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect()
+      : [];
 
-      if (!recipeId) {
-        const matchingRecipes = recipes.filter((recipe) =>
-          recipe.ingredients.some((ingredient) =>
-            normalizeShoppingText(ingredient.name) === normalizeShoppingText(item.name)
-          )
-        );
-
-        if (matchingRecipes.length === 1) {
-          return {
-            ...item,
-            recipeTitle: matchingRecipes[0].title,
-          };
-        }
-
-        return item;
+    return resolvedItems.map(({ item, recipeId }) => {
+      if (recipeId) {
+        return {
+          ...item,
+          recipeId,
+          recipeTitle: item.recipeTitle ?? recipeTitles.get(recipeId),
+        };
       }
-      const recipe = await ctx.db.get(recipeId);
+
+      const normalizedName = normalizeShoppingText(item.name);
+      const matchingRecipes = legacyRecipes.filter((recipe) =>
+        recipe.ingredients.some((ingredient) =>
+          normalizeShoppingText(ingredient.name) === normalizedName
+        )
+      );
+      if (matchingRecipes.length === 1) {
+        return { ...item, recipeTitle: matchingRecipes[0].title };
+      }
+
       return {
         ...item,
-        recipeId,
-        recipeTitle: recipe?.title,
       };
-    }));
+    });
   },
 });
 
@@ -231,7 +231,22 @@ export const toggleShoppingItem = mutation({
     const userId = await getAuthenticatedUserId(ctx);
     const item = await ctx.db.get(args.id);
     if (!item || item.userId !== userId) throw new Error("Item not found or access denied");
-    await ctx.db.patch(args.id, { checked: !item.checked });
+    const checked = !item.checked;
+    await ctx.db.patch(args.id, { checked });
+    if (checked) {
+      const user = await ctx.db.get(userId);
+      const now = Date.now();
+      await storeAnalyticsEvent(ctx, {
+        eventId: `shopping:${args.id}:checked:${now}`,
+        name: "shopping_item_checked",
+        version: 1,
+        userId,
+        billingUserId: user?.billingUserId,
+        platform: "server",
+        properties: { recipeId: item.recipeId ? String(item.recipeId) : undefined },
+        occurredAt: now,
+      });
+    }
   },
 });
 

@@ -1,32 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useMutation, useQuery } from 'convex/react';
+import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useNavigate } from 'react-router-dom';
+import { logger } from '../../utils/logger';
+import { capture } from '../../services/analytics';
 import { WelcomeStep } from './steps/WelcomeStep';
-import { FeaturesStep } from './steps/FeaturesStep';
 import { PersonalizationStep } from './steps/PersonalizationStep';
 import { OnboardingProgress } from './OnboardingProgress';
 
 export const WelcomeScreen: React.FC = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
-  const [onboardingData, setOnboardingData] = useState({
-    name: '',
-    cookingFrequency: 'regular',
-    preferredCuisines: [] as string[],
-  });
-
   const updateOnboarding = useMutation(api.users.updateOnboarding);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const totalSteps = 3;
+  const totalSteps = 2;
+
+  useEffect(() => {
+    capture('onboarding_started');
+  }, []);
 
   // Scroll to top when step changes
   useEffect(() => {
     if (contentRef.current) {
       contentRef.current.scrollTop = 0;
     }
+    capture('onboarding_step_viewed', { step: currentStep });
   }, [currentStep]);
 
   const handleNext = () => {
@@ -41,42 +41,36 @@ export const WelcomeScreen: React.FC = () => {
     }
   };
 
-  const handleSkip = () => {
-    handleCompleteOnboarding();
-  };
-
   const handlePersonalizationSubmit = (data: {
     name: string;
-    cookingFrequency: string;
-    preferredCuisines: string[];
+    onboardingGoal: string;
   }) => {
-    setOnboardingData(data);
     handleCompleteOnboarding(data);
   };
 
   const handleCompleteOnboarding = async (data?: {
     name: string;
-    cookingFrequency: string;
-    preferredCuisines: string[];
+    onboardingGoal: string;
   }) => {
     try {
       // Update onboarding data if provided
       if (data) {
         await updateOnboarding({
           name: data.name || undefined,
-          cookingFrequency: data.cookingFrequency,
-          preferredCuisines: data.preferredCuisines,
-          notificationsEnabled: false,
+          onboardingGoal: data.onboardingGoal,
         });
+        capture('onboarding_goal_selected', { onboardingGoal: data.onboardingGoal });
       }
 
       // Complete onboarding
       await completeOnboarding();
+      capture('onboarding_completed', { onboardingGoal: data?.onboardingGoal });
+      capture('first_action_prompted', { entryPoint: 'onboarding_complete' });
 
       // Navigate to main app
       navigate('/tabs/categories');
     } catch (error) {
-      console.error('Error completing onboarding:', error);
+      logger.error('Onboarding', 'Complete onboarding failed', error);
     }
   };
 
@@ -85,8 +79,6 @@ export const WelcomeScreen: React.FC = () => {
       case 0:
         return <WelcomeStep onNext={handleNext} />;
       case 1:
-        return <FeaturesStep onNext={handleNext} />;
-      case 2:
         return (
           <PersonalizationStep
             onNext={handlePersonalizationSubmit}
@@ -104,19 +96,13 @@ export const WelcomeScreen: React.FC = () => {
         {renderStep()}
       </div>
 
-      {currentStep > 0 && currentStep < 2 && (
+      {currentStep > 0 && (
         <div className="flex justify-center gap-4 mt-4 px-4 pb-4">
           <button
             onClick={handleBack}
             className="px-6 py-3 text-muted-foreground active:text-foreground active:scale-[0.98] transition-transform duration-150 select-none"
           >
             Zurück
-          </button>
-          <button
-            onClick={handleSkip}
-            className="px-6 py-3 text-muted-foreground/60 active:text-muted-foreground active:scale-[0.98] transition-transform duration-150 select-none"
-          >
-            Überspringen
           </button>
         </div>
       )}

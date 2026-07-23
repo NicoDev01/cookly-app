@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation } from "convex/react";
+import { logger } from "../utils/logger";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import ImageWithBlurhash from './ImageWithBlurhash';
@@ -33,7 +34,6 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
   mode,
   recipeId,
   recipeTitle,
-  recipeImage,
   date,
   scope,
   formattedDate,
@@ -70,9 +70,15 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Queries for selectRecipes mode
-  const allRecipes = useQuery(api.recipes.list, { search: searchQuery || undefined });
-  const favoriteRecipes = useQuery(api.recipes.getFavorites, {});
+  // Queries for selectRecipes mode: lightweight previews only.
+  const allRecipes = useQuery(
+    api.recipes.listPreviews,
+    mode === 'selectRecipes' ? {} : "skip"
+  );
+  const favoriteRecipes = useQuery(
+    api.recipes.listPreviews,
+    mode === 'selectRecipes' ? { favoritesOnly: true } : "skip"
+  );
 
   // Reset state when modal closes or mode changes
   useEffect(() => {
@@ -129,14 +135,11 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
   // selectRecipes mode: Toggle selection
   const displayedRecipes = useMemo(() => {
     if (mode !== 'selectRecipes') return [];
-    if (activeTab === 'favorites') {
-      if (!favoriteRecipes) return undefined;
-      if (!searchQuery) return favoriteRecipes;
-      const lowerQ = searchQuery.toLowerCase();
-      return favoriteRecipes.filter(r => r.title.toLowerCase().includes(lowerQ));
-    } else {
-      return allRecipes;
-    }
+    const recipes = activeTab === 'favorites' ? favoriteRecipes : allRecipes;
+    if (!recipes) return undefined;
+    if (!searchQuery) return recipes;
+    const lowerQ = searchQuery.toLowerCase();
+    return recipes.filter(r => r.title.toLowerCase().includes(lowerQ));
   }, [mode, activeTab, allRecipes, favoriteRecipes, searchQuery]);
 
   const toggleSelection = (id: Id<"recipes">) => {
@@ -163,7 +166,7 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
       });
       onClose();
     } catch (err) {
-      console.error('Error adding meals:', err);
+      logger.error('MealPlan', 'Add meals failed', err);
       setError('Fehler beim Speichern der Mahlzeiten.');
     } finally {
       setIsSubmitting(false);
@@ -198,7 +201,7 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
   const getWeekNumber = (d: Date) => {
     d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
     d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-    var yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
     return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   };
 

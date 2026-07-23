@@ -1,5 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { ErrorState } from './ErrorState';
+import { logger } from '../utils/logger';
 
 interface Props {
   children: ReactNode;
@@ -22,8 +23,12 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Log error for debugging
-    console.error('ErrorBoundary caught:', error, errorInfo);
+    // Schicht 3: in den Ringpuffer + (Prod) an den Sentry-Sink.
+    logger.error('ErrorBoundary', 'Component tree crashed', {
+      message: error.message,
+      stack: error.stack,
+      componentStack: errorInfo.componentStack,
+    });
 
     // Call custom error handler if provided
     this.props.onError?.(error, errorInfo);

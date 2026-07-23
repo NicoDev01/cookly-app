@@ -2,8 +2,7 @@
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "entry": [
     "index.tsx",
-    "prefetch.ts",
-    "capacitor.config.ts"
+    "prefetch.ts"
   ],
   "project": [
     "**/*.{ts,tsx}"
@@ -13,14 +12,6 @@
     "android/**",
     "ios/**",
     "convex/_generated/**"
-  ],
-  "ignoreDependencies": [
-    "@types/node",
-    "@types/html2canvas",
-    "autoprefixer",
-    "postcss",
-    "tailwindcss",
-    "typescript"
   ],
   "vite": {
     "config": [

@@ -1,6 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Instruction, Ingredient } from '../types';
 import { sanitizeMaterialSymbolName } from '../utils/iconUtils';
+import {
+  createKeywordPattern,
+  mergeAdjacentIngredientMatches,
+  type IngredientTextMatch,
+} from '../utils/ingredientKeywordPattern';
 
 interface InstructionsProps {
   instructions: Instruction[];
@@ -9,284 +14,216 @@ interface InstructionsProps {
   onToggleHighlight?: (index: number) => void;
 }
 
-const Instructions: React.FC<InstructionsProps> = ({ instructions, ingredients = [], highlightedIndex, onToggleHighlight }) => {
+const COLORS = [
+  'bg-ingredient-1-bg', 'bg-ingredient-2-bg', 'bg-ingredient-3-bg',
+  'bg-ingredient-4-bg', 'bg-ingredient-5-bg', 'bg-ingredient-6-bg',
+  'bg-ingredient-7-bg', 'bg-ingredient-8-bg', 'bg-ingredient-9-bg',
+  'bg-ingredient-10-bg',
+];
 
-  // Helper to cycle through colors defined in tailwind config (same as in Ingredients.tsx)
-  const INGREDIENT_COLORS = [
-    'bg-ingredient-1-bg',
-    'bg-ingredient-2-bg',
-    'bg-ingredient-3-bg',
-    'bg-ingredient-4-bg',
-    'bg-ingredient-5-bg',
-    'bg-ingredient-6-bg',
-    'bg-ingredient-7-bg',
-    'bg-ingredient-8-bg',
-    'bg-ingredient-9-bg',
-    'bg-ingredient-10-bg',
-  ];
+const STOP_WORDS = new Set([
+  'g', 'kg', 'ml', 'l', 'el', 'tl', 'msp', 'prise', 'etwas', 'ca',
+  'von', 'und', 'in', 'mit', 'der', 'die', 'das', 'den', 'dem', 'des',
+  'ein', 'eine', 'einen', 'einer', 'eines', 'große', 'kleine', 'mittlere',
+  'groß', 'klein', 'mittel', 'befreit', 'steinen', 'gewaschen', 'gehackt',
+  'gewürfelt', 'scheiben', 'streifen', 'stücke', 'oder', 'anderes',
+  'geschmacksneutrales', 'fein', 'grob', 'frisch', 'getrocknet', 'gemahlen',
+  'warm', 'kalt', 'heiß', 'lauwarm', 'zum', 'für', 'bei', 'als', 'im',
+  'aus', 'auf', 'nach', 'wahl', 'belieben', 'bedarf', 'garnieren',
+  'servieren', 'z.b.', 'z.b', 'bsp.', 'bsp', 'evtl.', 'evtl', 'eventuell',
+  'optional', 'dazu', 'darüber', 'daran', 'damit', 'davon', 'dabei', 'dafür',
+  'darauf', 'darin', 'darunter', 'unter', 'über', 'durch', 'vor', 'hinter',
+  'neben', 'zwischen', 'dose', 'dosen', 'glas', 'gläser', 'becher',
+  'packung', 'päckchen', 'bund', 'stange', 'stangen', 'zehe', 'zehen',
+]);
 
-  const getColorClass = (index: number) => {
-    return INGREDIENT_COLORS[index % INGREDIENT_COLORS.length];
-  };
+const BASE_INGREDIENTS = [
+  'öl', 'mehl', 'zucker', 'salz', 'pfeffer', 'milch', 'sahne', 'käse',
+  'wurst', 'fleisch', 'fisch', 'nudeln', 'reis', 'brot', 'ei', 'eier',
+  'beeren', 'nüsse', 'mandeln', 'kerne', 'samen', 'schalen', 'flocken',
+  'saft', 'wein', 'essig', 'wasser', 'brühe', 'fond', 'sauce', 'soße',
+  'creme', 'quark', 'joghurt', 'sirup', 'pulver', 'gewürz', 'kraut',
+  'kräuter', 'schokolade', 'kakao', 'honig', 'senf', 'ketchup', 'mayonnaise',
+  'zwiebel', 'knoblauch', 'tomate', 'kartoffel', 'paprika', 'möhre',
+  'karotte', 'gurke', 'zucchini', 'kürbis', 'schinken', 'speck', 'hack',
+  'filet', 'brust', 'keule', 'hirse', 'quinoa', 'couscous', 'bulgur',
+  'polenta', 'grieß', 'hafer', 'dinkel', 'zitrone', 'orange', 'limette',
+  'beere', 'apfel', 'birne', 'pfirsich', 'kirsche', 'tofu', 'agar',
+];
 
-  const renderTextWithHighlights = (text: string) => {
-    // Defensive: ensure text is a string
-    if (typeof text !== 'string') {
-      return String(text ?? '');
+const COMPOUND_SUFFIXES = [
+  'zehe', 'zehen', 'stange', 'stangen', 'filet', 'filets', 'brust', 'keule',
+  'schenkel', 'würfel', 'scheiben', 'streifen', 'stücke', 'röschen',
+  'blättchen', 'hälften', 'enden', 'knolle', 'knollen', 'schote', 'schoten',
+  'kerne', 'samen', 'schalen',
+];
+
+const ALIASES: Record<string, string[]> = {
+  tagliatelle: ['nudeln', 'pasta'],
+  spaghetti: ['nudeln', 'pasta'],
+  penne: ['nudeln', 'pasta'],
+  fusilli: ['nudeln', 'pasta'],
+  rigatoni: ['nudeln', 'pasta'],
+  farfalle: ['nudeln', 'pasta'],
+  makkaroni: ['nudeln', 'pasta'],
+  tortellini: ['nudeln', 'pasta'],
+  linguine: ['nudeln', 'pasta'],
+  gnocchi: ['nudeln', 'gnocchis'],
+  lasagneplatten: ['nudeln', 'pasta', 'lasagne'],
+  basmatireis: ['reis'],
+  jasminreis: ['reis'],
+  risottoreis: ['reis'],
+  milchreis: ['reis'],
+  wildreis: ['reis'],
+  kartoffeln: ['kartoffel'],
+  champignons: ['pilze', 'champignons'],
+  zwiebeln: ['zwiebel'],
+  frühlingszwiebeln: ['zwiebel', 'zwiebeln'],
+  parmesan: ['käse'],
+  gouda: ['käse'],
+  mozzarella: ['käse'],
+  feta: ['käse', 'schafskäse'],
+  cheddar: ['käse'],
+  sahne: ['rahm'],
+  schmand: ['sahne', 'creme'],
+  'crème fraîche': ['sahne', 'creme'],
+  hackfleisch: ['hack', 'fleisch'],
+  rinderhack: ['hack', 'fleisch', 'rind'],
+  seidentofu: ['tofu'],
+  cashewkerne: ['cashew', 'kerne'],
+  flohsamenschalen: ['flohsamen', 'schalen'],
+  apfelessig: ['essig'],
+  olivenöl: ['öl'],
+  agaragar: ['agar'],
+  'agar agar': ['agar'],
+};
+
+type Keyword = { keyword: string; pattern: string; ingredientIndex: number };
+
+const addKeyword = (map: Map<string, number>, value: string, ingredientIndex: number) => {
+  const keyword = value.trim().toLowerCase();
+  if (keyword.length >= 2 && !STOP_WORDS.has(keyword) && !map.has(keyword)) {
+    map.set(keyword, ingredientIndex);
+  }
+};
+
+const buildKeywords = (ingredients: Ingredient[]): Keyword[] => {
+  const keywords = new Map<string, number>();
+
+  ingredients.forEach((ingredient, ingredientIndex) => {
+    const cleanName = ingredient.name.replace(/[0-9().,]/g, ' ').trim();
+    const words = cleanName.split(/\s+/);
+    addKeyword(keywords, cleanName, ingredientIndex);
+    addKeyword(
+      keywords,
+      words.filter((word) => !STOP_WORDS.has(word.toLowerCase())).join(' '),
+      ingredientIndex,
+    );
+
+    for (const word of words) {
+      const lower = word.toLowerCase();
+      addKeyword(keywords, word, ingredientIndex);
+      for (const base of BASE_INGREDIENTS) {
+        if (lower !== base && (lower.endsWith(base) || (base.length > 2 && lower.includes(base)))) {
+          addKeyword(keywords, base, ingredientIndex);
+        }
+      }
+      for (const suffix of COMPOUND_SUFFIXES) {
+        if (lower.endsWith(suffix) && lower.length - suffix.length > 2) {
+          addKeyword(keywords, lower.slice(0, -suffix.length), ingredientIndex);
+        }
+      }
+      for (const alias of ALIASES[lower] ?? []) addKeyword(keywords, alias, ingredientIndex);
+      for (const suffix of ['e', 'en', 'er', 'es', 'n', 's', 'ern', 'nen']) {
+        if (lower.endsWith(suffix) && lower.length - suffix.length >= 3) {
+          addKeyword(keywords, lower.slice(0, -suffix.length), ingredientIndex);
+        }
+      }
     }
-    if (!ingredients || ingredients.length === 0) return text;
+  });
 
-    // 1. Setup Lists & Dictionaries
-    
-    // Words to ignore to prevent false positives
-    const stopWords = [
-      'g', 'kg', 'ml', 'l', 'el', 'tl', 'msp', 'prise', 'etwas', 'ca',
-      'von', 'und', 'in', 'mit', 'der', 'die', 'das', 'den', 'dem', 'des', 'ein', 'eine', 'einen', 'einer', 'eines',
-      'große', 'kleine', 'mittlere', 'groß', 'klein', 'mittel',
-      'befreit', 'steinen', 'gewaschen', 'gehackt', 'gewürfelt', 'scheiben', 'streifen', 'stücke',
-      'oder', 'anderes', 'geschmacksneutrales', 'fein', 'grob', 'frisch', 'getrocknet', 'gemahlen',
-      'warm', 'kalt', 'heiß', 'lauwarm', 'zum', 'für', 'bei', 'als', 'im', 'aus', 'auf',
-      'nach', 'wahl', 'belieben', 'bedarf', 'garnieren', 'servieren', 'z.b.', 'z.b', 'bsp.', 'bsp',
-      'evtl.', 'evtl', 'eventuell', 'optional', 'dazu', 'darüber', 'daran', 'damit', 'davon', 'dabei',
-      'dafür', 'darauf', 'darin', 'darunter', 'darüber', 'unter', 'über', 'durch', 'vor', 'hinter', 'neben', 'zwischen',
-      'dose', 'dosen', 'glas', 'gläser', 'becher', 'packung', 'päckchen', 'bund', 'stange', 'stangen', 'zehe', 'zehen'
-    ];
+  return [...keywords]
+    .map(([keyword, ingredientIndex]) => ({
+      keyword,
+      pattern: createKeywordPattern(keyword),
+      ingredientIndex,
+    }))
+    .sort((a, b) => b.keyword.length - a.keyword.length);
+};
 
-    // Base ingredients to extract from compounds (Suffix Match)
-    // "Olivenöl" ends with "öl" -> match "Öl" in text
-    const commonBaseIngredients = [
-      'öl', 'mehl', 'zucker', 'salz', 'pfeffer', 'milch', 'sahne', 'käse', 'wurst', 'fleisch', 'fisch',
-      'nudeln', 'reis', 'brot', 'ei', 'eier', 'beeren', 'nüsse', 'mandeln', 'kerne', 'samen', 'schalen', 'flocken',
-      'saft', 'wein', 'essig', 'wasser', 'brühe', 'fond', 'sauce', 'soße', 'creme', 'quark', 'joghurt',
-      'sirup', 'pulver', 'gewürz', 'kraut', 'kräuter', 'schokolade', 'kakao', 'honig', 'senf', 'ketchup', 'mayonnaise',
-      'zwiebel', 'knoblauch', 'tomate', 'kartoffel', 'paprika', 'möhre', 'karotte', 'gurke', 'zucchini', 'kürbis',
-      'schinken', 'speck', 'hack', 'filet', 'brust', 'keule', 'hirse', 'quinoa', 'couscous', 'bulgur', 'polenta', 'grieß', 'hafer', 'dinkel',
-      'zitrone', 'orange', 'limette', 'beere', 'apfel', 'birne', 'pfirsich', 'kirsche',
-      'tofu', 'agar'
-    ];
+const Instructions: React.FC<InstructionsProps> = ({
+  instructions,
+  ingredients = [],
+  highlightedIndex,
+  onToggleHighlight,
+}) => {
+  const keywords = useMemo(() => buildKeywords(ingredients), [ingredients]);
+  const keywordPattern = useMemo(() => {
+    if (!keywords.length) return null;
+    const alternatives = keywords
+      .map(({ pattern }) => `(${pattern})[a-zA-Z0-9_\\u00C0-\\u00FF]*`)
+      .join('|');
+    return new RegExp(
+      `(?<![a-zA-Z0-9_\\u00C0-\\u00FF])(?:${alternatives})(?![a-zA-Z0-9_\\u00C0-\\u00FF])`,
+      'gi',
+    );
+  }, [keywords]);
 
-    // Suffixes to strip to find the stem (Stemming Match)
-    // "Knoblauchzehen" -> strip "zehen" -> match "Knoblauch" in text
-    const compoundSuffixes = [
-      'zehe', 'zehen', 'stange', 'stangen', 'filet', 'filets', 'brust', 'keule', 'schenkel',
-      'würfel', 'scheiben', 'streifen', 'stücke', 'röschen', 'blättchen', 'hälften', 'enden',
-      'knolle', 'knollen', 'schote', 'schoten', 'kerne', 'samen', 'schalen'
-    ];
+  const renderText = (value: unknown) => {
+    const text = typeof value === 'string' ? value : String(value ?? '');
+    if (!keywordPattern) return text;
 
-    // Semantic Aliases (Concept Match)
-    // "Tagliatelle" -> also match "Nudeln" or "Pasta"
-    const categoryAliases: Record<string, string[]> = {
-      'tagliatelle': ['nudeln', 'pasta'],
-      'spaghetti': ['nudeln', 'pasta'],
-      'penne': ['nudeln', 'pasta'],
-      'fusilli': ['nudeln', 'pasta'],
-      'rigatoni': ['nudeln', 'pasta'],
-      'farfalle': ['nudeln', 'pasta'],
-      'makkaroni': ['nudeln', 'pasta'],
-      'tortellini': ['nudeln', 'pasta'],
-      'linguine': ['nudeln', 'pasta'],
-      'gnocchi': ['nudeln', 'gnocchis'],
-      'lasagneplatten': ['nodeln', 'pasta', 'lasagne'],
-      'basmatireis': ['reis'],
-      'jasminreis': ['reis'],
-      'risottoreis': ['reis'],
-      'milchreis': ['reis'],
-      'wildreis': ['reis'],
-      'kartoffeln': ['kartoffel'],
-      'champignons': ['pilze', 'champinons'],
-      'zwiebeln': ['zwiebel'],
-      'frühlingszwiebeln': ['zwiebel', 'zwiebeln'],
-      'parmesan': ['käse'],
-      'gouda': ['käse'],
-      'mozzarella': ['käse'],
-      'feta': ['käse', 'schafskäse'],
-      'cheddar': ['käse'],
-      'sahne': ['rahn'],
-      'schmand': ['sahne', 'creme'],
-      'crème fraîche': ['sahne', 'creme'],
-      'hackfleisch': ['hack', 'fleisch'],
-      'rinderhack': ['hack', 'fleisch', 'rind'],
-      'seidentofu': ['tofu', 'Tofu'],
-      'cashewkerne': ['cashew', 'kerne'],
-      'flohsamenschalen': ['flohsamen', 'schalen'],
-      'apfelessig': ['essig'],
-      'olivenöl': ['öl'],
-      'agaragar': ['agar'],
-      'agar agar': ['agar'],
-    };
-
-    const ingredientKeywords: { keyword: string; originalIndex: number }[] = [];
-
-    // 2. Build Keyword List
-    ingredients.forEach((ing, idx) => {
-      const cleanName = ing.name.replace(/[0-9().,]/g, ' ');
-      const words = cleanName.split(/\s+/);
-
-      // A0. Füge den vollständigen Namen als Keyword hinzu (höchste Priorität)
-      const fullName = cleanName.trim();
-      if (fullName.length >= 2) {
-        ingredientKeywords.push({ keyword: fullName, originalIndex: idx });
+    const matches: IngredientTextMatch[] = [];
+    const matcher = new RegExp(keywordPattern.source, keywordPattern.flags);
+    for (const match of text.matchAll(matcher)) {
+      const keywordIndex = match.slice(1).findIndex(Boolean);
+      const ingredientIndex = keywords[keywordIndex]?.ingredientIndex;
+      if (ingredientIndex !== undefined) {
+        matches.push({
+          start: match.index,
+          end: match.index + match[0].length,
+          ingredientIndex,
+        });
       }
+    }
 
-      // A0b. Füge das erste Wort des Namens als Keyword hinzu (für "Cashewkerne, eingeweicht" -> "Cashewkerne")
-      const firstWord = cleanName.trim().split(/\s+/)[0];
-      if (firstWord && firstWord.length >= 3 && !stopWords.includes(firstWord.toLowerCase())) {
-        ingredientKeywords.push({ keyword: firstWord, originalIndex: idx });
-      }
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
 
-      words.forEach(word => {
-        const lower = word.toLowerCase().trim();
-        
-        // Basic Length Filter & Stop Words
-        if (lower.length >= 2 && !stopWords.includes(lower)) {
-          // A. Add original word (Default)
-          ingredientKeywords.push({ keyword: word, originalIndex: idx });
+    for (const { start, end, ingredientIndex } of mergeAdjacentIngredientMatches(text, matches)) {
+      const label = text.slice(start, end);
+      const isHighlighted = highlightedIndex === ingredientIndex;
+      const amount = ingredients[ingredientIndex]?.amount?.trim();
+      if (start > lastIndex) parts.push(text.slice(lastIndex, start));
+      parts.push(
+        <button
+          type="button"
+          key={`${start}-${ingredientIndex}`}
+          aria-expanded={isHighlighted}
+          aria-label={`${label}${amount ? `, Menge ${amount}` : ''}`}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onToggleHighlight?.(ingredientIndex);
+          }}
+          className="relative inline-flex items-center mx-0.5 align-baseline touch-manipulation after:absolute after:-inset-y-2 after:inset-x-0"
+        >
+          <span
+            className={`px-1.5 py-px rounded-full text-sm font-medium shadow-sm inline-block transition-colors duration-200
+              ${COLORS[ingredientIndex % COLORS.length]} text-black dark:text-white
+              ${isHighlighted
+              ? 'ring-1 ring-black/25 dark:ring-white/30 opacity-100'
+              : 'opacity-90 hover:opacity-100'}`}
+          >
+            {label}{isHighlighted && amount ? ` ${amount}` : ''}
+          </span>
+        </button>,
+      );
+      lastIndex = end;
+    }
 
-          // B. Check Common Base Ingredients (Suffix Match: "Olivenöl" -> "Öl")
-          for (const base of commonBaseIngredients) {
-            if (lower.endsWith(base) && lower !== base) {
-              const capitalizedBase = base.charAt(0).toUpperCase() + base.slice(1);
-              ingredientKeywords.push({ keyword: capitalizedBase, originalIndex: idx });
-            }
-            // Also check if the word *contains* the base (e.g. "Rinderhack" contains "hack", "Kalbsfleisch" contains "fleisch")
-            // This is safer now with expanded list
-             if (lower.includes(base) && lower !== base && base.length > 2) {
-               const capitalizedBase = base.charAt(0).toUpperCase() + base.slice(1);
-               ingredientKeywords.push({ keyword: capitalizedBase, originalIndex: idx });
-            }
-          }
-
-          // C. Check Compound Suffixes (Stemming: "Knoblauchzehen" -> "Knoblauch")
-          for (const suffix of compoundSuffixes) {
-            if (lower.endsWith(suffix) && lower.length > suffix.length) {
-              const stem = lower.substring(0, lower.length - suffix.length);
-              // Only add stem if it's substantial
-              if (stem.length > 2) {
-                 // Capitalize stem
-                 const capitalizedStem = stem.charAt(0).toUpperCase() + stem.slice(1);
-                 ingredientKeywords.push({ keyword: capitalizedStem, originalIndex: idx });
-              }
-            }
-          }
-
-          // D. Check Aliases (Semantic: "Tagliatelle" -> "Nudeln")
-          if (categoryAliases[lower]) {
-            categoryAliases[lower].forEach(alias => {
-               const capitalizedAlias = alias.charAt(0).toUpperCase() + alias.slice(1);
-               ingredientKeywords.push({ keyword: capitalizedAlias, originalIndex: idx });
-            });
-          }
-
-          // E. Stemming: Schneide häufige Endungen ab um Grundform zu finden
-          const stemmingSuffixes = ['e', 'en', 'er', 'es', 'n', 's', 'ern', 'nen'];
-          for (const suffix of stemmingSuffixes) {
-            if (lower.endsWith(suffix) && lower.length - suffix.length >= 3) {
-              const stem = lower.substring(0, lower.length - suffix.length);
-              if (!stopWords.includes(stem)) {
-                const capitalizedStem = stem.charAt(0).toUpperCase() + stem.slice(1);
-                ingredientKeywords.push({ keyword: capitalizedStem, originalIndex: idx });
-              }
-            }
-          }
-        }
-      });
-    });
-
-    // 3. Deduplicate keywords per index (optimization)
-    const uniqueKeywords: { keyword: string; originalIndex: number }[] = [];
-    const seen = new Set<string>();
-    ingredientKeywords.forEach(k => {
-      const key = `${k.keyword.toLowerCase()}-${k.originalIndex}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        uniqueKeywords.push(k);
-      }
-    });
-
-    // 4. Sort by length desc to match longest words first (Greedy Match)
-    uniqueKeywords.sort((a, b) => b.keyword.length - a.keyword.length);
-
-    // 5. Iterative Replacement (index-based to avoid split() issues with lookbehind/lookahead)
-    let parts: (string | React.ReactNode)[] = [text];
-
-    uniqueKeywords.forEach(({ keyword, originalIndex }) => {
-      const newParts: (string | React.ReactNode)[] = [];
-
-      parts.forEach(part => {
-        if (typeof part === 'string') {
-          const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const regex = new RegExp(`(?<![a-zA-Z0-9_\\u00C0-\\u00FF])(${escapedKeyword}[a-zA-Z0-9_\\u00C0-\\u00FF]*)(?![a-zA-Z0-9_\\u00C0-\\u00FF])`, 'gi');
-
-          const str = part;
-          let lastIndex = 0;
-          let match: RegExpExecArray | null;
-          regex.lastIndex = 0;
-          let matchCount = 0;
-
-          while ((match = regex.exec(str)) !== null) {
-            const fullMatch = match[0];
-            const capturedGroup = match[1];
-            // match[0] may include chars before captured group due to lookbehind not consuming
-            // match.index is start of full match, captured group starts at match.index + (fullMatch.length - capturedGroup.length)
-            const matchStart = match.index + (fullMatch.length - capturedGroup.length);
-            const matchedText = capturedGroup;
-
-            // Safety: avoid infinite loop on zero-length match
-            if (match.index === regex.lastIndex) {
-              regex.lastIndex++;
-            }
-
-            // Text before match
-            if (matchStart > lastIndex) {
-              newParts.push(str.substring(lastIndex, matchStart));
-            }
-
-            // Safety Clean Check: Don't highlight stop words
-            if (stopWords.includes(matchedText.toLowerCase())) {
-              newParts.push(matchedText);
-            } else {
-              const isHighlighted = highlightedIndex === originalIndex;
-              newParts.push(
-                <span
-                  key={`${keyword}-${originalIndex}-${matchCount++}`}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (onToggleHighlight) onToggleHighlight(originalIndex);
-                  }}
-                  className={`
-                    px-1.5 py-0.5 rounded-full text-sm font-medium mx-0.5 shadow-sm inline-block my-0.5 transition-all duration-200 cursor-pointer
-                    ${getColorClass(originalIndex)}
-                    text-black dark:text-white
-                    ${isHighlighted
-                      ? 'ring-2 ring-offset-1 ring-black dark:ring-white scale-110 font-bold z-10 shadow-lg'
-                      : 'hover:scale-105 active:scale-95 opacity-90 hover:opacity-100'}
-                  `}
-                >
-                  {matchedText}
-                </span>
-              );
-            }
-
-            lastIndex = matchStart + matchedText.length;
-          }
-
-          // Remaining text after last match
-          if (lastIndex < str.length) {
-            newParts.push(str.substring(lastIndex));
-          }
-
-          // If no matches found, keep original string
-          if (newParts.length === 0) {
-            newParts.push(str);
-          }
-        } else {
-          newParts.push(part);
-        }
-      });
-      parts = newParts;
-    });
-
+    if (!parts.length) return text;
+    if (lastIndex < text.length) parts.push(text.slice(lastIndex));
     return parts;
   };
 
@@ -294,24 +231,14 @@ const Instructions: React.FC<InstructionsProps> = ({ instructions, ingredients =
     <div className="mt-8">
       <h2 className="text-xl font-bold mb-4 text-[#111718] dark:text-white">Zubereitung</h2>
       <ol className="space-y-4 text-gray-800 dark:text-gray-200">
-        {instructions.map((step, index) => {
-          // Defensive: ensure step is an object with text property
-          const stepText = typeof step === 'object' && step !== null
-            ? (typeof step.text === 'string' ? step.text : String(step.text ?? ''))
-            : String(step ?? '');
-          const stepIcon = typeof step === 'object' && step !== null ? step.icon : undefined;
-
-          return (
-            <li key={index} className="flex items-start gap-3">
-              <span className="material-symbols-outlined !text-xl !leading-tight text-gray-500 dark:text-gray-400 pt-0.5">
-                {sanitizeMaterialSymbolName(stepIcon) || 'circle'}
-              </span>
-              <span className="leading-relaxed">
-                {renderTextWithHighlights(stepText)}
-              </span>
-            </li>
-          );
-        })}
+        {instructions.map((step, index) => (
+          <li key={index} className="flex items-start gap-3">
+            <span className="material-symbols-outlined !text-xl !leading-tight text-gray-500 dark:text-gray-400 pt-0.5">
+              {sanitizeMaterialSymbolName(step?.icon) || 'circle'}
+            </span>
+            <span className="leading-relaxed">{renderText(step?.text)}</span>
+          </li>
+        ))}
       </ol>
     </div>
   );

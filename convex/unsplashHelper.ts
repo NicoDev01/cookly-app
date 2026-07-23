@@ -15,7 +15,7 @@ export interface UnsplashPhoto {
 /**
  * Sucht nach Food-Bildern auf Unsplash (ohne API Key - public search)
  */
-export async function searchFoodImages(query: string, count: number = 5): Promise<string[]> {
+export async function searchFoodImages(query: string): Promise<string[]> {
   const searchQuery = `${query} food recipe`;
   const encodedQuery = encodeURIComponent(searchQuery);
   

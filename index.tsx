@@ -1,10 +1,12 @@
-import React, { Component, ErrorInfo, ReactNode } from "react";
+import "./services/observability";
+import React, { ErrorInfo, ReactNode } from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
 import App from "./App";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { HashRouter } from "react-router-dom";
 import { convexClient } from "./convexClient";
+import { logger } from "./utils/logger";
 
 // --- Error Boundary Component ---
 interface Props {
@@ -27,7 +29,11 @@ class ErrorBoundary extends React.Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("Uncaught error:", error, errorInfo);
+    logger.error("Boot", "Uncaught error at root boundary", {
+      message: error.message,
+      stack: error.stack,
+      componentStack: errorInfo.componentStack,
+    });
   }
 
   public render() {
@@ -57,18 +63,18 @@ class ErrorBoundary extends React.Component<Props, State> {
       );
     }
 
-    return (this as any).props.children;
+    return this.props.children;
   }
 }
 
 // --- App Initialization ---
 
-// Global error handlers for Android WebView debugging
+// Global error handlers – feed uncaught issues into the logger ring buffer / Sentry sink.
 window.addEventListener('unhandledrejection', (event) => {
-  console.error('[Global] Unhandled Promise Rejection:', event.reason);
+  logger.error('Global', 'Unhandled promise rejection', event.reason);
 });
 window.onerror = (message, source, lineno, colno, error) => {
-  console.error('[Global] Uncaught Error:', message, source, lineno, colno, error);
+  logger.error('Global', 'Uncaught error', { message, source, lineno, colno, error });
 };
 
 const rootElement = document.getElementById("root");

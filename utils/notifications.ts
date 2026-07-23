@@ -1,11 +1,36 @@
 import { LocalNotifications, LocalNotificationSchema } from '@capacitor/local-notifications';
+import { logger } from './logger';
 import { Capacitor } from '@capacitor/core';
+import { capture } from '../services/analytics';
 
 // Channel ID für Android 8+
 const RECIPE_IMPORT_CHANNEL_ID = 'recipe-import';
+const MAX_ANDROID_NOTIFICATION_ID = 2_147_483_647;
+
+const notificationId = () => Date.now() % MAX_ANDROID_NOTIFICATION_ID;
 
 // Track ob Channel bereits erstellt wurde (Performance-Optimierung)
 let channelCreated = false;
+
+export async function ensureNotificationPermission(
+  source: 'profile' | 'import_complete',
+): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return true;
+
+  const permission = await LocalNotifications.checkPermissions();
+  if (permission.display === 'granted') return true;
+  if (permission.display === 'denied') return false;
+
+  capture('notification_permission_requested', { source });
+  const result = await LocalNotifications.requestPermissions();
+  capture('notification_permission_result', { source, result: result.display });
+
+  if (result.display === 'granted') {
+    window.dispatchEvent(new Event('cookly:notification-permission-granted'));
+    return true;
+  }
+  return false;
+}
 
 /**
  * Erstellt den Notification Channel für Android 8+ (Oreo und höher).
@@ -19,25 +44,25 @@ let channelCreated = false;
  */
 export async function createNotificationChannel(): Promise<void> {
   if (!Capacitor.isNativePlatform()) {
-    console.log('[Notifications] Not a native platform, skipping channel creation');
+    logger.debug('Notifications', 'Not a native platform, skipping channel creation');
     return;
   }
 
   // Prüfen ob wir auf Android sind
   const platform = Capacitor.getPlatform();
   if (platform !== 'android') {
-    console.log('[Notifications] Not Android platform, skipping channel creation');
+    logger.debug('Notifications', 'Not Android platform, skipping channel creation');
     return;
   }
 
   // Channel bereits erstellt? (Optimierung)
   if (channelCreated) {
-    console.log('[Notifications] Channel already created, skipping');
+    logger.debug('Notifications', 'Channel already created, skipping');
     return;
   }
 
   try {
-    console.log('[Notifications] Creating notification channel:', RECIPE_IMPORT_CHANNEL_ID);
+    logger.debug('Notifications', 'Creating notification channel', RECIPE_IMPORT_CHANNEL_ID);
     
     // Notification Channel erstellen mit IMPORTANCE_HIGH für sichtbare Banner
     await LocalNotifications.createChannel({
@@ -53,73 +78,13 @@ export async function createNotificationChannel(): Promise<void> {
     });
     
     channelCreated = true;
-    console.log('[Notifications] ✅ Channel created successfully:', RECIPE_IMPORT_CHANNEL_ID);
+    logger.debug('Notifications', 'Channel created successfully', RECIPE_IMPORT_CHANNEL_ID);
     
     // Verifizieren: Channel auflisten
     const channels = await LocalNotifications.listChannels();
-    console.log('[Notifications] Available channels:', channels);
+    logger.debug('Notifications', 'Available channels', channels);
   } catch (error) {
-    console.error('[Notifications] ❌ Failed to create channel:', error);
-  }
-}
-
-/**
- * Zeigt eine Benachrichtigung an, wenn ein Rezept-Import abgeschlossen ist.
- * Funktioniert nur auf nativen Plattformen (Android/iOS).
- */
-export async function showImportNotification(
-  recipeName: string,
-  success: boolean = true,
-  recipeId?: string
-): Promise<void> {
-  // Nur auf nativen Plattformen ausführen (nicht im Web)
-  if (!Capacitor.isNativePlatform()) {
-    return;
-  }
-
-  try {
-    // Channel sicherstellen (für Android 8+)
-    await createNotificationChannel();
-
-    // Berechtigungen prüfen und ggf. anfragen
-    const permissionStatus = await LocalNotifications.checkPermissions();
-    
-    if (permissionStatus.display === 'prompt') {
-      const requestResult = await LocalNotifications.requestPermissions();
-      if (requestResult.display !== 'granted') {
-        console.log('Notification permission denied');
-        return;
-      }
-    } else if (permissionStatus.display === 'denied') {
-      console.log('Notification permission permanently denied');
-      return;
-    }
-
-    // Notification mit Channel ID und Deep Link Daten
-    const notification: LocalNotificationSchema = {
-      id: Date.now(),
-      title: success ? '✅ Rezept importiert' : '❌ Import fehlgeschlagen',
-      body: success
-        ? `Dein Rezept "${recipeName}" wurde erfolgreich importiert.`
-        : `Der Import von "${recipeName}" ist fehlgeschlagen.`,
-      smallIcon: 'ic_launcher',
-      largeIcon: 'ic_launcher',
-      channelId: RECIPE_IMPORT_CHANNEL_ID,
-      // Extra Daten für Deep Linking
-      extra: {
-        recipeId: recipeId || null,
-        type: 'recipe-import',
-      },
-    };
-
-    await LocalNotifications.schedule({
-      notifications: [notification],
-    });
-
-    console.log('[Notifications] Import notification sent:', recipeName, 'recipeId:', recipeId);
-  } catch (error) {
-    // Silent fail - App sollte nicht crashen wenn Notification fehlschlägt
-    console.error('[Notifications] Failed to show import notification:', error);
+    logger.warn('Notifications', 'Failed to create channel', error);
   }
 }
 
@@ -133,54 +98,40 @@ export async function showImportNotification(
  * - schedule() takes an array of notifications
  */
 export async function showSimpleImportNotification(recipeId?: string): Promise<void> {
-  console.log('[Notifications] showSimpleImportNotification called, recipeId:', recipeId);
+  logger.debug('Notifications', 'showSimpleImportNotification called', { recipeId });
   
   if (!Capacitor.isNativePlatform()) {
-    console.log('[Notifications] Not a native platform, skipping notification');
+    logger.debug('Notifications', 'Not a native platform, skipping notification');
     return;
   }
 
   const platform = Capacitor.getPlatform();
-  console.log('[Notifications] Platform:', platform);
+  logger.debug('Notifications', 'Platform', platform);
   
   if (platform !== 'android') {
-    console.log('[Notifications] Not Android, skipping notification');
+    logger.debug('Notifications', 'Not Android, skipping notification');
     return;
   }
 
   try {
     // Schritt 1: Channel sicherstellen (für Android 8+)
-    console.log('[Notifications] Step 1: Creating channel...');
+    logger.debug('Notifications', 'Step 1: Creating channel');
     await createNotificationChannel();
 
     // Schritt 2: Berechtigungen prüfen (Android 13+ Requirement!)
-    console.log('[Notifications] Step 2: Checking permissions...');
-    const permissionStatus = await LocalNotifications.checkPermissions();
-    console.log('[Notifications] Permission status:', permissionStatus);
-    
-    if (permissionStatus.display === 'prompt') {
-      console.log('[Notifications] Requesting permissions...');
-      const requestResult = await LocalNotifications.requestPermissions();
-      console.log('[Notifications] Permission request result:', requestResult);
-      if (requestResult.display !== 'granted') {
-        console.log('[Notifications] ❌ Permission denied');
-        return;
-      }
-    } else if (permissionStatus.display === 'denied') {
-      console.log('[Notifications] ❌ Permission permanently denied');
-      return;
-    }
+    logger.debug('Notifications', 'Step 2: Checking permissions');
+    if (!await ensureNotificationPermission('import_complete')) return;
 
     // Schritt 3: Notification erstellen
-    const notificationId = Date.now();
-    console.log('[Notifications] Step 3: Creating notification with id:', notificationId);
+    const id = notificationId();
+    logger.debug('Notifications', 'Step 3: Creating notification', { notificationId: id });
     
     const notification: LocalNotificationSchema = {
-      id: notificationId,
-      title: '✅ Rezept importiert',
-      body: 'Dein Rezept wurde erfolgreich importiert.',
-      smallIcon: 'ic_launcher',
-      largeIcon: 'ic_launcher',
+      id,
+      title: 'Rezept erfolgreich importiert',
+      body: 'Tippe hier, um das Rezept zu öffnen.',
+      smallIcon: 'ic_stat_recipe_import',
+      iconColor: '#f97316',
       channelId: RECIPE_IMPORT_CHANNEL_ID,
       // Extra Daten für Deep Linking
       extra: {
@@ -190,24 +141,25 @@ export async function showSimpleImportNotification(recipeId?: string): Promise<v
     };
 
     // Schritt 4: Notification schedulen
-    console.log('[Notifications] Step 4: Scheduling notification...', notification);
+    logger.debug('Notifications', 'Step 4: Scheduling notification', notification);
     const result = await LocalNotifications.schedule({
       notifications: [notification],
     });
-    console.log('[Notifications] ✅ Schedule result:', result);
+    capture('local_notification_scheduled', { recipeId, success: true });
+    logger.debug('Notifications', 'Schedule result', result);
 
     // Schritt 5: Verifizieren - Pending notifications abrufen
     const pending = await LocalNotifications.getPending();
-    console.log('[Notifications] Pending notifications:', pending);
+    logger.debug('Notifications', 'Pending notifications', pending);
 
-    console.log('[Notifications] ✅ Simple import notification sent successfully, recipeId:', recipeId);
+    logger.debug('Notifications', 'Simple import notification sent', { recipeId });
   } catch (error) {
-    console.error('[Notifications] ❌ Failed to show import notification:', error);
+    logger.warn('Notifications', 'Failed to show import notification (schedule)', error);
     // Detaillierte Fehlerinfo
     if (error instanceof Error) {
-      console.error('[Notifications] Error name:', error.name);
-      console.error('[Notifications] Error message:', error.message);
-      console.error('[Notifications] Error stack:', error.stack);
+      logger.debug('Notifications', 'Error name', error.name);
+      logger.debug('Notifications', 'Error message', error.message);
+      logger.debug('Notifications', 'Error stack', error.stack);
     }
   }
 }

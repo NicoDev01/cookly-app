@@ -1,6 +1,7 @@
 import { App, URLOpenListenerEvent } from '@capacitor/app';
 import { Capacitor, type PluginListenerHandle } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
+import { logger } from '../utils/logger';
 
 /**
  * Deep Link Handler für Capacitor-Apps
@@ -20,13 +21,12 @@ export function initDeepLinkHandler(navigate: NavigateFunction) {
 
   // Guard: Verhindere doppelte Initialisierung
   if (appUrlOpenHandle) {
-    console.log('[DeepLink] Handler already initialized, skipping');
+    logger.debug('DeepLink', 'Handler already initialized, skipping');
     return;
   }
 
   App.addListener('appUrlOpen', (event: URLOpenListenerEvent) => {
-    console.log('[DeepLink] ===== appUrlOpen fired =====');
-    console.log('[DeepLink] Raw URL:', event.url);
+    logger.debug('DeepLink', 'appUrlOpen fired', { url: event.url });
 
     // Externen Browser schließen (wurde für Google OAuth geöffnet)
     Browser.close().catch(() => {});
@@ -40,7 +40,7 @@ export function initDeepLinkHandler(navigate: NavigateFunction) {
         url.pathname?.includes('auth-callback');
 
       if (isAuthCallback) {
-        console.log('[DeepLink] Convex Auth callback detected');
+        logger.debug('DeepLink', 'Convex Auth callback detected');
         // Alle Query-Parameter weiterleiten
         const params = url.search || '';
         navigate(`/auth-callback${params}`);
@@ -49,10 +49,10 @@ export function initDeepLinkHandler(navigate: NavigateFunction) {
 
       // Allgemeine Deep-Links
       const path = url.pathname || '/';
-      console.log('[DeepLink] General deep link, navigating to:', path);
+      logger.debug('DeepLink', 'General deep link, navigating', { path });
       navigate(path);
     } catch (err) {
-      console.error('[DeepLink] Error parsing URL:', err, event.url);
+      logger.error('DeepLink', 'Error parsing URL', { err, url: event.url });
     }
   }).then((handle) => {
     appUrlOpenHandle = handle;
@@ -63,6 +63,6 @@ export function removeDeepLinkHandler() {
   if (appUrlOpenHandle) {
     appUrlOpenHandle.remove();
     appUrlOpenHandle = null;
-    console.log('[DeepLink] Handler removed');
+    logger.debug('DeepLink', 'Handler removed');
   }
 }

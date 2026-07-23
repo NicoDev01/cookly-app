@@ -64,7 +64,7 @@ const RecipeMeta: React.FC<RecipeMetaProps> = ({ recipe }) => {
   return (
     <div className="mb-2">
       <style>{morphStyles}</style>
-      <h1 className="uppercase  text-[#111718] dark:text-white tracking-tight text-3xl font-black leading-tight">
+      <h1 className="uppercase text-[#111718] dark:text-white tracking-tight text-3xl font-black leading-tight">
         {title}
       </h1>
       <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-gray-500 dark:text-gray-400">

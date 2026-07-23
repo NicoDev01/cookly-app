@@ -78,7 +78,7 @@ const Ingredients: React.FC<IngredientsProps> = ({ ingredients, highlightedIndex
   return (
     <div className="mt-6">
       <h2 className="text-xl font-bold mb-4 text-[#111718] dark:text-white">Zutaten</h2>
-      <div className="flex flex-wrap gap-3"> {/* Increased gap slightly for the badges */}
+      <div className="flex flex-wrap gap-2.5">
         {ingredients.map((ing, index) => {
           // Defensive: ensure ing is an object with name property (AI might return unexpected format)
           const ingName = typeof ing === 'object' && ing !== null 
@@ -100,7 +100,7 @@ const Ingredients: React.FC<IngredientsProps> = ({ ingredients, highlightedIndex
               onClick={() => toggleShoppingItem({ name: ingName, amount: ingAmount, recipeId })}
               className={`
                 relative group cursor-pointer select-none transition-all duration-300 ease-out active:scale-95
-                px-3 py-1.5 rounded-full text-sm font-medium 
+                px-3 py-[5px] rounded-full text-sm font-medium 
                 ${getColorClass(index)} 
                 text-black dark:text-white 
                 shadow-neomorphism-pill dark:shadow-dark-neomorphism-pill

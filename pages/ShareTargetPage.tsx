@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useAction, useQuery, useMutation } from "convex/react";
+import { useConvex, useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -8,22 +8,28 @@ import { App as CapacitorApp } from '@capacitor/app';
 import UpgradeModal from '../components/UpgradeModal';
 import { showSimpleImportNotification } from '../utils/notifications';
 import { useNotification } from '../contexts/NotificationContext';
+import { logger } from '../utils/logger';
 import { registerBackButtonOverride } from '../services/backButtonOverride';
+import { getStructuredUserError, getUserErrorMessage } from '../utils/userErrors';
+import { createPhaseSequencer, type ShareTargetPhase } from '../utils/shareTargetPhases';
+import { waitForImport } from '../utils/importOperationClient';
+import { createUuid } from '../utils/uuid';
 
-type ProcessingPhase = 'analyzing' | 'extrahieren' | 'importieren';
+type LimitFeature = 'manual_recipes' | 'link_imports' | 'photo_scans';
+
+const isLimitFeature = (feature: unknown): feature is LimitFeature =>
+    feature === 'manual_recipes' || feature === 'link_imports' || feature === 'photo_scans';
 
 const ShareTargetPage: React.FC = () => {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
-    const scrapePost = useAction(api.instagram.scrapePost);
-    const scrapeFacebookPost = useAction(api.facebook.scrapePost);
-    const scrapeWebsite = useAction(api.website.scrapeWebsite);
-    const proxyExternalImage = useAction(api.recipes.proxyExternalImage);
+    const convex = useConvex();
+    const startImport = useMutation(api.importOperations.startImport);
     const [status, setStatus] = useState<'idle' | 'analyzing' | 'success' | 'error'>('idle');
     const [error, setError] = useState<string | null>(null);
-    const [limitData, setLimitData] = useState<{ current: number, limit: number, feature: 'manual_recipes' | 'link_imports' | 'photo_scans' } | null>(null);
+    const [limitData, setLimitData] = useState<{ current: number, limit: number, feature: LimitFeature } | null>(null);
     const [savedRecipeId, setSavedRecipeId] = useState<string | null>(null);
-    const [phase, setPhase] = useState<ProcessingPhase>('analyzing');
+    const [phase, setPhase] = useState<ShareTargetPhase>('analyzing');
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
     const selectedCategoryRef = useRef<string | null>(null);
     const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
@@ -50,10 +56,29 @@ const ShareTargetPage: React.FC = () => {
                 throw err;
             }
 
-            console.warn("[ShareTarget] transient early connection loss, retrying action once", { elapsedMs });
+            logger.warn('ShareTarget', 'transient early connection loss, retrying action once', { elapsedMs });
             return await run();
         }
     }, []);
+
+    const importLink = useCallback(async (provider: 'instagram' | 'facebook' | 'website', url: string) => {
+        const operationId = createUuid();
+        return runWithReconnectRetry(async () => {
+            const started = await startImport({ operationId, provider, url });
+            const operation = await waitForImport(convex, started.operationId);
+            if (!operation.resultRecipeId) throw new Error('IMPORT_RESULT_MISSING');
+            return operation.resultRecipeId;
+        });
+    }, [convex, runWithReconnectRetry, startImport]);
+
+    const notifyImportSuccess = useCallback(async (recipeId: string) => {
+        try {
+            const user = await convex.query(api.users.getCurrentUser);
+            if (user?.notificationsEnabled) await showSimpleImportNotification(recipeId);
+        } catch (error) {
+            logger.warn('Notifications', 'Could not read notification preference', error);
+        }
+    }, [convex]);
 
     // Kategorien & Update-Mutation
     const categories = useQuery(api.categories.list);
@@ -66,7 +91,7 @@ const ShareTargetPage: React.FC = () => {
                 // Since SendIntent usually launches a new activity/task, this returns to the previous app.
                 await CapacitorApp.exitApp();
             } catch (e) {
-                console.error("Could not exit app:", e);
+                logger.error('ShareTarget', 'Could not exit app', e);
                 window.history.back();
             }
         } else {
@@ -107,118 +132,99 @@ const ShareTargetPage: React.FC = () => {
 
             shareInvocationRef.current += 1;
             const shareRunId = shareInvocationRef.current;
-            console.log(`[ShareTarget] handleShare start #${shareRunId}`);
+            logger.debug('ShareTarget', `handleShare start #${shareRunId}`);
 
             const title = searchParams.get('title');
             const text = searchParams.get('text');
             const urlParam = searchParams.get('url');
 
             const combinedText = `${title || ''} ${text || ''} ${urlParam || ''}`;
-            console.log(`[ShareTarget] #${shareRunId} params`, { title, text, urlParam });
+            logger.debug('ShareTarget', `#${shareRunId} params`, { title, text, urlParam });
             const instagramMatch = combinedText.match(/https?:\/\/(?:(?:www|m)\.)?instagram\.com\/(?:p\/[A-Za-z0-9_-]+|reel\/[A-Za-z0-9_-]+|share\/(?:p|reel)\/[A-Za-z0-9_-]+)(?:[^\s]*)/i);
             const facebookMatch = combinedText.match(/https?:\/\/(?:(?:www|m)\.)?(?:facebook\.com|fb\.watch)\/[^\s]+/i);
             const genericUrlMatch = combinedText.match(/(https?:\/\/[^\s]+)/);
 
             try {
+                const phaseSequencer = createPhaseSequencer({ onPhase: setPhase });
+
                 if (instagramMatch) {
                     const postUrl = instagramMatch[0];
-                    console.log(`[ShareTarget] #${shareRunId} instagramMatch`, { postUrl });
+                    logger.debug('ShareTarget', `#${shareRunId} instagramMatch`, { postUrl });
                     setStatus('analyzing');
                     const startedAt = Date.now();
 
                     // Phase 1: Analysieren
-                    setPhase('analyzing');
+                    await phaseSequencer.show('analyzing');
 
                     // Phase 2: Extrahieren
-                    setPhase('extrahieren');
+                    await phaseSequencer.show('extrahieren');
 
-                    const recipeId = await runWithReconnectRetry(() => scrapePost({ url: postUrl }));
-                    console.log(`[ShareTarget] #${shareRunId} scrapePost result`, { recipeId });
+                    const recipeId = await importLink('instagram', postUrl);
+                    logger.debug('ShareTarget', `#${shareRunId} scrapePost result`, { recipeId });
 
                     // Phase 3: Importieren
-                    setPhase('importieren');
+                    await phaseSequencer.show('importieren');
 
                     setSavedRecipeId(recipeId);
+                    await phaseSequencer.finish();
                     setStatus('success');
                     showImportToast(recipeId); // Global Toast anzeigen
-                    showSimpleImportNotification(recipeId); // System Notification
-                    // Async image proxying after fast recipe creation (don't block UX)
-                    void proxyExternalImage({ recipeId: recipeId as Id<"recipes"> })
-                        .then((result) => {
-                            console.log(`[ShareTarget] #${shareRunId} proxyExternalImage done`, result);
-                        })
-                        .catch((proxyErr) => {
-                            console.warn(`[ShareTarget] #${shareRunId} proxyExternalImage failed`, proxyErr);
-                        });
-                    console.log(`[ShareTarget] #${shareRunId} instagram totalMs`, { totalMs: Date.now() - startedAt });
+                    void notifyImportSuccess(recipeId);
+                    logger.debug('ShareTarget', `#${shareRunId} instagram totalMs`, { totalMs: Date.now() - startedAt });
                     if (selectedCategoryRef.current) {
                         updateRecipe({ id: recipeId as Id<"recipes">, category: selectedCategoryRef.current }).catch(() => {});
                     }
                 } else if (facebookMatch) {
                     const postUrl = facebookMatch[0];
-                    console.log(`[ShareTarget] #${shareRunId} facebookMatch`, { postUrl });
+                    logger.debug('ShareTarget', `#${shareRunId} facebookMatch`, { postUrl });
                     setStatus('analyzing');
                     const startedAt = Date.now();
 
                     // Phase 1: Analysieren
-                    setPhase('analyzing');
+                    await phaseSequencer.show('analyzing');
 
                     // Phase 2: Extrahieren
-                    setPhase('extrahieren');
+                    await phaseSequencer.show('extrahieren');
 
-                    const recipeId = await runWithReconnectRetry(() => scrapeFacebookPost({ url: postUrl }));
-                    console.log(`[ShareTarget] #${shareRunId} scrapeFacebookPost result`, { recipeId });
+                    const recipeId = await importLink('facebook', postUrl);
+                    logger.debug('ShareTarget', `#${shareRunId} scrapeFacebookPost result`, { recipeId });
 
                     // Phase 3: Importieren
-                    setPhase('importieren');
+                    await phaseSequencer.show('importieren');
 
                     setSavedRecipeId(recipeId);
+                    await phaseSequencer.finish();
                     setStatus('success');
                     showImportToast(recipeId); // Global Toast anzeigen
-                    showSimpleImportNotification(recipeId); // System Notification
-                    // Async image proxying after fast recipe creation (don't block UX)
-                    void proxyExternalImage({ recipeId: recipeId as Id<"recipes"> })
-                        .then((result) => {
-                            console.log(`[ShareTarget] #${shareRunId} proxyExternalImage done`, result);
-                        })
-                        .catch((proxyErr) => {
-                            console.warn(`[ShareTarget] #${shareRunId} proxyExternalImage failed`, proxyErr);
-                        });
-                    console.log(`[ShareTarget] #${shareRunId} facebook totalMs`, { totalMs: Date.now() - startedAt });
+                    void notifyImportSuccess(recipeId);
+                    logger.debug('ShareTarget', `#${shareRunId} facebook totalMs`, { totalMs: Date.now() - startedAt });
                     if (selectedCategoryRef.current) {
                         updateRecipe({ id: recipeId as Id<"recipes">, category: selectedCategoryRef.current }).catch(() => {});
                     }
                 } else if (genericUrlMatch) {
                     const websiteUrl = genericUrlMatch[1];
-                    console.log(`[ShareTarget] #${shareRunId} genericUrlMatch`, { websiteUrl });
+                    logger.debug('ShareTarget', `#${shareRunId} genericUrlMatch`, { websiteUrl });
                     setStatus('analyzing');
                     const startedAt = Date.now();
 
                     // Phase 1: Analysieren
-                    setPhase('analyzing');
+                    await phaseSequencer.show('analyzing');
 
                     // Phase 2: Extrahieren
-                    setPhase('extrahieren');
+                    await phaseSequencer.show('extrahieren');
 
-                    const recipeId = await runWithReconnectRetry(() => scrapeWebsite({ url: websiteUrl }));
-                    console.log(`[ShareTarget] #${shareRunId} scrapeWebsite result`, { recipeId });
+                    const recipeId = await importLink('website', websiteUrl);
+                    logger.debug('ShareTarget', `#${shareRunId} scrapeWebsite result`, { recipeId });
 
                     // Phase 3: Importieren
-                    setPhase('importieren');
+                    await phaseSequencer.show('importieren');
 
                     setSavedRecipeId(recipeId);
+                    await phaseSequencer.finish();
                     setStatus('success');
                     showImportToast(recipeId); // Global Toast anzeigen
-                    showSimpleImportNotification(recipeId); // System Notification
-                    // Async image proxying after fast recipe creation (don't block UX)
-                    void proxyExternalImage({ recipeId: recipeId as Id<"recipes"> })
-                        .then((result) => {
-                            console.log(`[ShareTarget] #${shareRunId} proxyExternalImage done`, result);
-                        })
-                        .catch((proxyErr) => {
-                            console.warn(`[ShareTarget] #${shareRunId} proxyExternalImage failed`, proxyErr);
-                        });
-                    console.log(`[ShareTarget] #${shareRunId} website totalMs`, { totalMs: Date.now() - startedAt });
+                    void notifyImportSuccess(recipeId);
+                    logger.debug('ShareTarget', `#${shareRunId} website totalMs`, { totalMs: Date.now() - startedAt });
                     if (selectedCategoryRef.current) {
                         updateRecipe({ id: recipeId as Id<"recipes">, category: selectedCategoryRef.current }).catch(() => {});
                     }
@@ -227,55 +233,24 @@ const ShareTargetPage: React.FC = () => {
                     setStatus('error');
                 }
             } catch (err: unknown) {
-                console.error(err);
+                logger.error('ShareTarget', 'Import failed', err);
                 const msg = err instanceof Error ? err.message : String(err ?? "");
-                console.error(`[ShareTarget] #${shareRunId} error`, { msg });
+                logger.error('ShareTarget', `#${shareRunId} error`, { msg });
 
-                // Try to parse structured error JSON
-                try {
-                    const errorData = JSON.parse(msg);
-
-                    if (errorData.type === "LIMIT_REACHED") {
-                        setLimitData({
-                            feature: errorData.feature || 'link_imports',
-                            current: errorData.current || 0,
-                            limit: errorData.limit || 50
-                        });
-                        setStatus('error');
-                    } else if (errorData.type === "RATE_LIMIT_EXCEEDED") {
-                        setError("Du hast zu viele Anfragen gestellt. Bitte warte einen Moment.");
-                        setStatus('error');
-                    } else if (errorData.type === "API_UNAVAILABLE") {
-                        setError(errorData.message || "Der Service ist gerade nicht verfügbar.");
-                        setStatus('error');
-                    } else if (errorData.type === "NO_RECIPE_CONTENT") {
-                        setError(errorData.message || "Im geteilten Inhalt wurde kein vollständiges Rezept gefunden.");
-                        setStatus('error');
-                    } else if (msg.includes("Connection lost while action was in flight")) {
-                        setError("Die Verbindung wurde kurz unterbrochen. Bitte versuche den Import erneut.");
-                        setStatus('error');
-                    } else {
-                        setError(msg || "Ein unerwarteter Fehler ist aufgetreten.");
-                        setStatus('error');
-                    }
-                } catch {
-                    // Fallback to string-based error detection
-                    if (msg.includes("No data found") || msg.includes("parse recipe data")) {
-                        setError("Kein Rezept gefunden 😕");
-                        setStatus('error');
-                    } else if (msg.includes("Connection lost while action was in flight")) {
-                        setError("Die Verbindung wurde kurz unterbrochen. Bitte versuche den Import erneut.");
-                        setStatus('error');
-                    } else if (msg.includes("Jina AI request failed")) {
-                        setError("Website konnte nicht geladen werden.");
-                        setStatus('error');
-                    } else {
-                        setError(msg || "Ein unerwarteter Fehler ist aufgetreten.");
-                        setStatus('error');
-                    }
+                const errorData = getStructuredUserError(err);
+                if (errorData?.type === "LIMIT_REACHED") {
+                    setLimitData({
+                        feature: isLimitFeature(errorData.feature) ? errorData.feature : 'link_imports',
+                        current: typeof errorData.current === 'number' ? errorData.current : 0,
+                        limit: typeof errorData.limit === 'number' ? errorData.limit : 60
+                    });
+                    setStatus('error');
+                } else {
+                    setError(getUserErrorMessage(err, 'import'));
+                    setStatus('error');
                 }
             } finally {
-                console.log(`[ShareTarget] handleShare end #${shareRunId}`);
+                logger.debug('ShareTarget', `handleShare end #${shareRunId}`);
                 processingRef.current = false;
             }
         };
@@ -283,7 +258,7 @@ const ShareTargetPage: React.FC = () => {
         if (status === 'idle') {
             handleShare();
         }
-    }, [searchParams, scrapePost, scrapeFacebookPost, scrapeWebsite, proxyExternalImage, runWithReconnectRetry, status]);
+    }, [searchParams, importLink, notifyImportSuccess, showImportToast, status, updateRecipe]);
 
     // Native Back Button Override: the global handler remains the single Capacitor listener.
     useEffect(() => {

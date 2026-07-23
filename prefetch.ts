@@ -12,11 +12,21 @@ export const prefetchProfilePage = () => import('./pages/ProfilePage');
 export const prefetchAddRecipeModal = () => import('./components/AddRecipeModal');
 
 // Image prefetching for instant visual feedback
-let prefetchedImages = new Set<string>();
+const PREFETCH_IMAGE_LIMIT = 6;
+const prefetchedImages = new Set<string>();
+
+const isDataSaverEnabled = () => {
+  const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+  return connection?.saveData === true;
+};
 
 export const prefetchRecipeImages = async (imageUrls: string[]) => {
-  // Prefetch first 20 images, skip already prefetched
-  const toPrefetch = imageUrls.slice(0, 20).filter(url => url && !prefetchedImages.has(url));
+  if (isDataSaverEnabled()) return;
+
+  // Prefetch roughly one visible viewport, skip already prefetched.
+  const toPrefetch = imageUrls
+    .slice(0, PREFETCH_IMAGE_LIMIT)
+    .filter(url => url && !prefetchedImages.has(url));
 
   if (toPrefetch.length === 0) return;
 
@@ -25,6 +35,7 @@ export const prefetchRecipeImages = async (imageUrls: string[]) => {
     toPrefetch.forEach(url => {
       if (url && !prefetchedImages.has(url)) {
         const img = new Image();
+        img.decoding = 'async';
         img.src = url;
         prefetchedImages.add(url);
       }

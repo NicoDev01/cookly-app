@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef, useTransition, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useTransition } from 'react';
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Link } from 'react-router-dom';
@@ -6,9 +6,12 @@ import MealPlanModal from '../components/MealPlanModal';
 import ImageWithBlurhash from '../components/ImageWithBlurhash';
 import { Id } from "../convex/_generated/dataModel";
 import { useModal } from '../contexts/ModalContext';
-import { useAction } from 'convex/react';
+import { logger } from '../utils/logger';
+import { useNotification } from '../contexts/NotificationContext';
+import { getUserErrorMessage } from '../utils/userErrors';
 
 const WeeklyPage: React.FC = () => {
+  const { showToast } = useNotification();
   // State for Week Navigation
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
     const d = new Date();
@@ -37,10 +40,7 @@ const WeeklyPage: React.FC = () => {
 
   const { isAddMealModalOpen, openAddMealModal, closeAddMealModal, addMealModalOptions } = useModal();
   const [deletingMealIds, setDeletingMealIds] = useState<Set<Id<"weeklyMeals">>>(new Set());
-  const [proxiedImages, setProxiedImages] = useState<Set<Id<"recipes">>>(new Set());
-
   const removeMeal = useMutation(api.weekly.removeMeal);
-  const proxyImages = useAction(api.recipes.proxyExternalImages);
 
   // Helper to format date as YYYY-MM-DD for backend (Local Time)
   const formatDate = (d: Date) => {
@@ -82,28 +82,6 @@ const WeeklyPage: React.FC = () => {
   const displayPlan = weeklyPlan ?? prevWeeklyPlanRef.current;
   const isInitialLoad = weeklyPlan === undefined && prevWeeklyPlanRef.current === null;
 
-  // Auto-proxy Instagram images when plan loads
-  useEffect(() => {
-    if (!displayPlan) return;
-
-    // Find recipes that need proxy (have sourceImageUrl but no imageStorageId)
-    const recipesNeedingProxy = displayPlan
-      .filter(item => item.recipe.sourceImageUrl && !item.recipe.imageStorageId)
-      .filter(item => !proxiedImages.has(item.recipe._id))
-      .map(item => item.recipe._id);
-
-    if (recipesNeedingProxy.length > 0) {
-      proxyImages({ recipeIds: recipesNeedingProxy })
-        .then(result => {
-          // Mark as proxied so we don't try again
-          setProxiedImages(prev => new Set([...prev, ...recipesNeedingProxy]));
-        })
-        .catch(err => {
-          console.error('[WeeklyPage] Proxy failed:', err);
-        });
-    }
-  }, [displayPlan, proxiedImages, proxyImages]);
-
   // Derived state mapping: DateString -> Array(PlanItem)
   const planByDate = useMemo(() => {
     const map: Record<string, typeof displayPlan> = {};
@@ -120,12 +98,6 @@ const WeeklyPage: React.FC = () => {
   const allWeeklyMeals = useMemo(() => {
     if (!displayPlan) return [];
     return [...displayPlan].sort((a, b) => a.date.localeCompare(b.date));
-  }, [displayPlan]);
-
-  // Filter meals by scope for Daily View
-  const dailyMeals = useMemo(() => {
-    if (!displayPlan) return [];
-    return displayPlan.filter(item => item.scope !== 'week');
   }, [displayPlan]);
 
   // Filter meals by scope for Weekly View
@@ -192,8 +164,8 @@ const WeeklyPage: React.FC = () => {
   const getWeekNumber = (d: Date) => {
     d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
     d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-    var yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    var weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
     return weekNo;
   };
 
@@ -244,11 +216,12 @@ const WeeklyPage: React.FC = () => {
         });
       } else {
         await navigator.clipboard.writeText(shareText.trim());
-        alert('Plan wurde in die Zwischenablage kopiert!');
+        showToast('Plan wurde in die Zwischenablage kopiert.', 'success');
       }
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
-        console.error('Fehler beim Teilen:', err);
+        logger.error('Weekly', 'Share plan failed', err);
+        showToast(getUserErrorMessage(err, 'generic'), 'error');
       }
     }
   };

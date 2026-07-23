@@ -112,6 +112,13 @@ function toCustomerId(
   return typeof customer === "string" ? customer : customer.id;
 }
 
+function getEventCustomerId(eventType: string, data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const event = data as { id?: unknown; customer?: string | Stripe.Customer | Stripe.DeletedCustomer | null };
+  if (eventType === "customer.deleted" && typeof event.id === "string") return event.id;
+  return toCustomerId(event.customer);
+}
+
 function toSubscriptionId(
   subscription: string | Stripe.Subscription | null | undefined
 ): string | null {
@@ -349,12 +356,30 @@ export const cancelSubscription = action({
 // INTERNAL ACTION - Handle Webhook Event
 // ============================================================
 
+export const deleteCustomer = internalAction({
+  args: { stripeCustomerId: v.string() },
+  handler: async (_ctx, args) => {
+    try {
+      const customer = await getStripe().customers.del(args.stripeCustomerId);
+      if (!customer.deleted) throw new Error("STRIPE_CUSTOMER_DELETE_UNCONFIRMED");
+    } catch (error) {
+      if (error instanceof Stripe.errors.StripeError && error.code === "resource_missing") return;
+      throw error;
+    }
+  },
+});
+
 export const handleWebhookEvent = internalAction({
   args: {
     eventType: v.string(),
     data: v.any(),
   },
   handler: async (ctx, args) => {
+    const eventCustomerId = getEventCustomerId(args.eventType, args.data);
+    if (eventCustomerId && await ctx.runQuery(internal.accountDeletion.isStripeCustomerDeleting, {
+      stripeCustomerId: eventCustomerId,
+    })) return;
+
     const syncFromStripeSubscriptionId = async (
       stripeSubscriptionId: string,
       fallbackPlanId?: PlanId

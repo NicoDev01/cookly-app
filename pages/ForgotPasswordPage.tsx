@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Input, Button, IconButton, Card, CardContent } from '../components/ui/cookly';
+import { getUserErrorMessage } from '../utils/userErrors';
+import { logger } from '../utils/logger';
+import { capture } from '../services/analytics';
 
 type Phase = 'email' | 'reset';
 
@@ -27,6 +30,7 @@ export const ForgotPasswordPage: React.FC = () => {
 
   // Phase 1: Send reset code
   const handleSendCode = async (e: React.FormEvent) => {
+    capture('password_reset_started');
     e.preventDefault();
     setLoading(true);
     setError('');
@@ -37,12 +41,8 @@ export const ForgotPasswordPage: React.FC = () => {
       setSuccess('Ein Reset-Code wurde an deine E-Mail gesendet.');
       setPhase('reset');
     } catch (err: unknown) {
-      console.error('Send Reset Code Error:', err);
-      let errorMessage = 'Fehler beim Senden des Reset-Codes. Bitte versuche es erneut.';
-      if (err instanceof Error) {
-        errorMessage = err.message;
-      }
-      setError(errorMessage);
+      logger.warn('Auth', 'Send reset code failed', err);
+      setError(getUserErrorMessage(err, 'auth-reset'));
     } finally {
       setLoading(false);
     }
@@ -67,14 +67,11 @@ export const ForgotPasswordPage: React.FC = () => {
 
     try {
       await signIn('password', { email, code, newPassword: password, flow: 'reset-verification' });
+      capture('password_reset_completed');
       navigate('/tabs/categories', { replace: true });
     } catch (err: unknown) {
-      console.error('Reset Password Error:', err);
-      let errorMessage = 'Fehler beim Zurücksetzen des Passworts. Bitte versuche es erneut.';
-      if (err instanceof Error) {
-        errorMessage = err.message;
-      }
-      setError(errorMessage);
+      logger.warn('Auth', 'Reset password failed', err);
+      setError(getUserErrorMessage(err, 'auth-reset'));
     } finally {
       setLoading(false);
     }

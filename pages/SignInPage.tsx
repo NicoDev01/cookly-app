@@ -3,9 +3,10 @@ import { useAuthActions } from '@convex-dev/auth/react';
 import { useConvexAuth } from 'convex/react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Input, IconButton } from '../components/ui/cookly';
-import { Capacitor } from '@capacitor/core';
-import { Browser } from '@capacitor/browser';
 import { getPasswordSignInErrorMessage } from '../utils/authErrors';
+import { logger } from '../utils/logger';
+import { capture } from '../services/analytics';
+import { startGoogleOAuth } from '../services/googleOAuth';
 
 export const SignInPage: React.FC = () => {
   const { signIn } = useAuthActions();
@@ -26,27 +27,12 @@ export const SignInPage: React.FC = () => {
   }, [isAuthenticated, navigate]);
 
   const handleGoogleSignIn = async () => {
+    capture('signin_started', { method: 'google' });
     setGoogleLoading(true);
     try {
-      if (Capacitor.isNativePlatform()) {
-        // Native Android: signIn('google') gibt ein FormData-Objekt zurück mit einer redirect URL.
-        // Diese URL muss im externen Browser geöffnet werden (Google blockiert WebViews).
-        // Nach dem Login: Google → Convex Auth → com.cookly.recipe://auth-callback → App.
-        const result = await signIn('google', { redirectTo: 'com.cookly.recipe://auth-callback' });
-        // result ist ein FormData-Response mit einer redirect URL
-        if (result instanceof Response) {
-          const redirectUrl = result.headers.get('Location') || result.url;
-          if (redirectUrl) {
-            await Browser.open({ url: redirectUrl });
-            return; // Browser übernimmt, Loading-State bleibt bis Deep Link zurückkommt
-          }
-        }
-        setGoogleLoading(false);
-      } else {
-        await signIn('google');
-      }
+      await startGoogleOAuth(() => signIn('google'));
     } catch (error) {
-      console.error('[SignInPage] Google OAuth Error:', error);
+      logger.warn('Auth', 'Google OAuth failed', error);
       setGoogleLoading(false);
     }
   };
@@ -55,12 +41,15 @@ export const SignInPage: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    capture('signin_started', { method: 'password' });
 
     try {
       await signIn('password', { email, password, flow: 'signIn' });
+      capture('signin_succeeded', { method: 'password' });
       navigate('/tabs/categories', { replace: true });
     } catch (err: unknown) {
-      console.error('SignIn Error:', err);
+      logger.warn('Auth', 'Password sign-in failed', err);
+      capture('signin_failed', { method: 'password', errorCode: 'AUTH_REJECTED' });
       setError(getPasswordSignInErrorMessage(err));
     } finally {
       setLoading(false);

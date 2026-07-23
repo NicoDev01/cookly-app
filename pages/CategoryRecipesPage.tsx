@@ -8,14 +8,27 @@ import { Id } from "../convex/_generated/dataModel";
 import ImageWithBlurhash from '../components/ImageWithBlurhash';
 import { IconButton } from '../components/ui/cookly/IconButton';
 import { prefetchRecipePage } from '../prefetch';
-import type { Recipe } from '../types';
 
 
 interface CategoryRecipesPageProps {
   category?: string;
 }
 
-type RecipeListItem = Omit<Recipe, "ingredients"> & { ingredients?: undefined };
+type RecipeListItem = {
+  _id: Id<"recipes">;
+  _creationTime: number;
+  title: string;
+  category: string;
+  image?: string;
+  imageAlt?: string;
+  imageBlurhash?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  imageAspectRatio?: number;
+  prepTimeMinutes: number;
+  difficulty: "Einfach" | "Mittel" | "Schwer";
+  isFavorite: boolean;
+};
 
 const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: propCategory }) => {
   const { category: paramCategory } = useParams<{ category: string }>();
@@ -48,16 +61,16 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
   }, [category]);
 
   const listArgs = React.useMemo(() => {
-    if (isAll) return { includeIngredients: false } as const;
+    if (isAll) return {} as const;
     if (!decodedCategory) return "skip" as const;
-    return { category: decodedCategory, includeIngredients: false };
+    return { category: decodedCategory };
   }, [isAll, decodedCategory]);
 
   // PERFORMANCE: Use cached query for instant navigation (eliminates spinner)
   const cacheKey = isAll ? 'category-all-recipes' : `category-${category}`;
   const { data: rawRecipes } = useCachedQuery<RecipeListItem[]>(
-    api.recipes.list,
-    listArgs === "skip" ? {} : listArgs,
+    api.recipes.listPreviews,
+    listArgs,
     cacheKey
   );
 
@@ -127,7 +140,7 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
     }
   };
 
-  const handlePointerUp = (e: React.PointerEvent, recipeId: Id<"recipes">) => {
+  const handlePointerUp = () => {
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
@@ -246,7 +259,7 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
                     key={recipe._id}
                     onPointerDown={(e) => handlePointerDown(e, recipe._id)}
                     onPointerMove={handlePointerMove}
-                    onPointerUp={(e) => handlePointerUp(e, recipe._id)}
+                    onPointerUp={handlePointerUp}
                     onPointerLeave={handlePointerLeave}
                     onContextMenu={(e) => {
                       e.preventDefault(); // Verhindert Kontextmenü bei Long Press

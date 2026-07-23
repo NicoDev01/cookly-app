@@ -119,15 +119,16 @@ const CategoriesPage: React.FC = () => {
   const isFiltering = debouncedSearch.length > 0 || selectedIngredients.length > 0;
 
   const stats = categoriesWithStats;
-  // Fallback: Immer alle Rezepte laden wenn keine Kategorien in der DB
-  const hasCategoriesInDb = stats && stats.length > 0;
+  const hasCategoriesInDb = (stats?.length ?? 0) > 0;
+  const shouldLoadRecipes = !categoriesLoading && (!hasCategoriesInDb || isFiltering);
+  const needsIngredientDetails = isFiltering && selectedIngredients.length > 0;
   const allRecipes = useQuery(
-    api.recipes.list,
-    // Immer laden wenn keine Kategorien in DB, sonst nur beim Filtern
-    !hasCategoriesInDb || isFiltering ? {
-      includeIngredients: isFiltering && selectedIngredients.length > 0,
-      search: debouncedSearch
-    } : "skip"
+    needsIngredientDetails ? api.recipes.list : api.recipes.listPreviews,
+    shouldLoadRecipes
+      ? needsIngredientDetails
+        ? { includeIngredients: true, search: debouncedSearch || undefined }
+        : { search: debouncedSearch || undefined }
+      : "skip"
   );
 
   const getColorClass = (index: number) => {

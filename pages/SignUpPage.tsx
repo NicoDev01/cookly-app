@@ -3,6 +3,9 @@ import { useAuthActions } from '@convex-dev/auth/react';
 import { useConvexAuth } from 'convex/react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Input, IconButton } from '../components/ui/cookly';
+import { getUserErrorMessage } from '../utils/userErrors';
+import { logger } from '../utils/logger';
+import { capture } from '../services/analytics';
 
 export const SignUpPage: React.FC = () => {
   const { signIn } = useAuthActions();
@@ -29,6 +32,7 @@ export const SignUpPage: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    capture('signup_started', { method: 'password' });
 
     if (password !== confirmPassword) {
       setError('Passwörter stimmen nicht überein');
@@ -38,14 +42,12 @@ export const SignUpPage: React.FC = () => {
 
     try {
       await signIn('password', { email, password, flow: 'signUp' });
+      capture('verification_sent', { method: 'email' });
       // Falls Email-Verifizierung erforderlich: Code-Eingabe anzeigen
       setShowCodeInput(true);
     } catch (err: unknown) {
-      let errorMessage = 'Registrierung fehlgeschlagen. Bitte versuche es erneut.';
-      if (err instanceof Error) {
-        errorMessage = err.message;
-      }
-      setError(errorMessage);
+      logger.warn('Auth', 'Sign-up failed', err);
+      setError(getUserErrorMessage(err, 'auth-signup'));
     } finally {
       setLoading(false);
     }
@@ -58,13 +60,12 @@ export const SignUpPage: React.FC = () => {
 
     try {
       await signIn('password', { email, code, flow: 'email-verification' });
+      capture('verification_completed', { method: 'email' });
+      capture('signup_completed', { method: 'password' });
       navigate('/onboarding', { replace: true });
     } catch (err: unknown) {
-      let errorMessage = 'Verifizierung fehlgeschlagen. Bitte prüfe den Code.';
-      if (err instanceof Error) {
-        errorMessage = err.message;
-      }
-      setError(errorMessage);
+      logger.warn('Auth', 'Email verification failed', err);
+      setError(getUserErrorMessage(err, 'auth-reset'));
     } finally {
       setLoading(false);
     }

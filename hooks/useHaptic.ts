@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { logger } from '../utils/logger';
 import { Capacitor } from '@capacitor/core';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 
@@ -33,7 +34,7 @@ export const useHaptic = () => {
       await Haptics.impact({ style: impactStyle });
     } catch (error) {
       // Silent fail - Haptics sind optional
-      console.debug('Haptic feedback not available:', error);
+      logger.debug('Haptic', 'Haptic feedback not available', error);
     }
   }, [isNative]);
 

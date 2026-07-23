@@ -1,10 +1,10 @@
 "use node";
 
-import { action } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { getAuthUserId } from "@convex-dev/auth/server";
+import { action, internalAction } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 import { v } from "convex/values";
 import { GoogleGenAI } from "@google/genai";
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { GEMINI_MODELS } from "./constants";
 import { runWithGeminiRetry } from "../utils/geminiRetry";
 import {
@@ -48,25 +48,6 @@ const toBase64 = (buffer: ArrayBuffer): string => {
   return Buffer.from(buffer).toString("base64");
 };
 
-const buildLimitReachedError = (current: number, limit: number): Error => {
-  return new Error(JSON.stringify({
-    type: "LIMIT_REACHED",
-    feature: "photo_scans",
-    current,
-    limit,
-    message: `Du hast dein Limit von ${limit} Foto-Scans erreicht.`,
-  }));
-};
-
-const buildRateLimitError = (resetAt: number): Error => {
-  return new Error(JSON.stringify({
-    type: "RATE_LIMIT_EXCEEDED",
-    feature: "photo_scans",
-    resetAt,
-    message: "Zu viele Foto-Scans. Bitte warte einen Moment.",
-  }));
-};
-
 export const scanRecipePhoto = action({
   args: {
     storageId: v.id("_storage"),
@@ -76,24 +57,33 @@ export const scanRecipePhoto = action({
   handler: async (ctx, args) => {
     const authUserId = await getAuthUserId(ctx);
     if (!authUserId) throw new Error("Not authenticated");
+    const user = await ctx.runQuery(api.users.getCurrentUser, {});
+    if (!user) throw new Error("NOT_AUTHENTICATED");
+
+    await ctx.runMutation(internal.storageAssets.registerServerAssetForUser, {
+      storageId: args.storageId,
+      userId: user._id,
+      purpose: "photo_scan",
+    });
+    return await ctx.runAction(internal.photoScan.scanRecipePhotoInternal, {
+      userId: user._id,
+      ...args,
+    });
+  },
+});
+
+export const scanRecipePhotoInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+    storageId: v.id("_storage"),
+    fallback: fallbackValidator,
+  },
+  returns: v.object({ doc: recipeScanDocValidator }),
+  handler: async (ctx, args) => {
+    await ctx.runQuery(internal.storageAssets.getPendingPhotoScanForUser, { userId: args.userId, storageId: args.storageId });
 
     if (!GEMINI_KEY) {
       throw new Error("GEMINI_API_KEY is missing in Convex Environment Variables");
-    }
-
-    const limitStatus = await ctx.runQuery(internal.users.getPhotoScanLimitStatusByAuthUserId, {
-      authUserId: authUserId.toString(),
-    });
-    if (!limitStatus.canProceed) {
-      throw buildLimitReachedError(limitStatus.current, limitStatus.limit);
-    }
-
-    const rateLimit = await ctx.runMutation(internal.rateLimiter.checkAndConsumeRateLimit, {
-      identifier: authUserId.toString(),
-      bucket: "photo",
-    });
-    if (!rateLimit.allowed) {
-      throw buildRateLimitError(rateLimit.resetAt);
     }
 
     const imageBlob = await ctx.storage.get(args.storageId);
@@ -126,6 +116,7 @@ export const scanRecipePhoto = action({
 
     const parsed = parseGeminiJson(response.text);
     const doc = normalizeAiScanResult(parsed, args.fallback);
+    await ctx.runMutation(internal.storageAssets.releasePendingAssetForUser, { userId: args.userId, storageId: args.storageId });
 
     return { doc };
   },

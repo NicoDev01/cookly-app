@@ -2,7 +2,7 @@ import React from 'react';
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Link } from 'react-router-dom';
-import { Doc } from "../convex/_generated/dataModel";
+import type { Id } from "../convex/_generated/dataModel";
 import ImageWithBlurhash from '../components/ImageWithBlurhash';
 import { IconButton } from '../components/ui/cookly/IconButton';
 import {
@@ -13,8 +13,19 @@ import {
 
 const FAVORITES_VIEW_MODE_STORAGE_KEY = 'favoritesViewMode';
 
-type FavoriteRecipe = Doc<"recipes"> & {
+type FavoriteRecipe = {
+  _id: Id<"recipes">;
+  title: string;
   image?: string;
+  imageAlt?: string;
+  imageBlurhash?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  imageAspectRatio?: number;
+  prepTimeMinutes: number;
+  difficulty: "Einfach" | "Mittel" | "Schwer";
+  portions: number;
+  isFavorite: boolean;
 };
 
 interface FavoriteRecipeCardProps {
@@ -135,7 +146,7 @@ const FavoriteCompactCard: React.FC<FavoriteRecipeCardProps> = ({ recipe, index,
 );
 
 const FavoritesPage: React.FC = () => {
-  const favoriteRecipes = useQuery(api.recipes.getFavorites, {});
+  const favoriteRecipes = useQuery(api.recipes.listPreviews, { favoritesOnly: true });
   const [viewMode, setViewMode] = React.useState<FavoritesViewMode>(() => {
     if (typeof window === 'undefined') return parseFavoritesViewMode(null);
     return parseFavoritesViewMode(localStorage.getItem(FAVORITES_VIEW_MODE_STORAGE_KEY));

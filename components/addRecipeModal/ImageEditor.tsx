@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 interface ImageEditorProps {
   imageUrl: string | null;
@@ -162,7 +162,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
 
     if (isResizing && resizeHandle) {
       const minSize = 50;
-      let newCrop = { ...cropArea };
+      const newCrop = { ...cropArea };
 
       switch (resizeHandle) {
         case 'nw':

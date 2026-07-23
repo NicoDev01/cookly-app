@@ -1,15 +1,68 @@
 "use node";
-import { action } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { action, internalAction } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { GoogleGenAI } from "@google/genai";
-import { Id } from "./_generated/dataModel";
 import { GEMINI_MODELS, RECIPE_CATEGORIES } from "./constants";
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { createImportTimer } from "./importTiming";
+import { runLegacyImport } from "./legacyImport";
+import { isRetryableGeminiError, runWithGeminiRetry } from "../utils/geminiRetry";
 
 const JINA_API_KEY = process.env.JINA_API_KEY;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
+
+interface ExtractedRecipe {
+    title: string;
+    category: string;
+    prepTimeMinutes: number;
+    difficulty: "Einfach" | "Mittel" | "Schwer";
+    portions: number;
+    ingredients: Array<{ name: string; amount: string }>;
+    instructions: Array<{ text: string; icon?: string }>;
+    imageKeywords?: string;
+}
+
+const parseRecipe = (value: string): ExtractedRecipe => {
+    const raw = JSON.parse(value.replace(/```json/g, "").replace(/```/g, "").trim()) as Partial<ExtractedRecipe>;
+    const title = typeof raw.title === "string" ? raw.title.trim() : "";
+    const ingredients = Array.isArray(raw.ingredients)
+        ? raw.ingredients
+            .filter((item) => typeof item?.name === "string" && item.name.trim())
+            .map((item) => ({
+                name: item.name.trim(),
+                amount: typeof item.amount === "string" ? item.amount.trim() : "",
+            }))
+        : [];
+    const instructions = Array.isArray(raw.instructions)
+        ? raw.instructions
+            .filter((item) => typeof item?.text === "string" && item.text.trim())
+            .map((item) => ({
+                text: item.text.trim(),
+                ...(typeof item.icon === "string" && item.icon.trim() ? { icon: item.icon.trim() } : {}),
+            }))
+        : [];
+    if (!title || !ingredients.length || !instructions.length) {
+        throw new Error("INCOMPLETE_RECIPE");
+    }
+    const prepTimeMinutes = Number(raw.prepTimeMinutes);
+    const portions = Number(raw.portions);
+    return {
+        title,
+        category: (RECIPE_CATEGORIES as readonly string[]).includes(raw.category ?? "")
+            ? raw.category!
+            : "Sonstiges",
+        prepTimeMinutes: Number.isFinite(prepTimeMinutes) && prepTimeMinutes > 0
+            ? Math.round(prepTimeMinutes)
+            : 30,
+        difficulty: ["Einfach", "Mittel", "Schwer"].includes(raw.difficulty ?? "")
+            ? raw.difficulty!
+            : "Mittel",
+        portions: Number.isFinite(portions) && portions > 0 ? Math.round(portions) : 4,
+        ingredients,
+        instructions,
+        imageKeywords: typeof raw.imageKeywords === "string" ? raw.imageKeywords.trim() : undefined,
+    };
+};
 
 
 const WEBSITE_RECIPE_PROMPT = `
@@ -37,46 +90,28 @@ Antworte NUR mit dem JSON.
 `;
 
 export const scrapeWebsite = action({
-    args: { url: v.string() },
-    handler: async (ctx, args): Promise<Id<"recipes">> => {
+  args: { url: v.string() },
+  handler: (ctx, args): Promise<Id<"recipes">> => runLegacyImport(ctx, "website", args.url),
+});
+
+export const scrapeWebsiteInternal = internalAction({
+    args: { userId: v.id("users"), url: v.string() },
+    handler: async (ctx, args) => {
         const timer = createImportTimer("website", { url: args.url });
         if (!JINA_API_KEY) throw new Error("JINA_API_KEY is missing in Convex Environment Variables");
         if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY is missing in Convex Environment Variables");
         timer.mark("env_checked");
 
-        // ============================================================
-        // 1. Authentifizierung
-        // ============================================================
-        const authUserId = await getAuthUserId(ctx);
-        if (!authUserId) {
-            throw new Error("NOT_AUTHENTICATED");
-        }
-        const userIdStr = authUserId.toString();
         timer.mark("authenticated");
-
-        // ============================================================
-        // 2. Rate Limiting prüfen (10 Requests/Minute)
-        // ============================================================
-        const rateLimit = await ctx.runMutation(internal.rateLimiter.checkAndConsumeRateLimit, {
-            identifier: userIdStr,
-            bucket: "website",
-        });
-        if (!rateLimit.allowed) {
-            throw new Error(JSON.stringify({
-                type: "RATE_LIMIT_EXCEEDED",
-                resetAt: rateLimit.resetAt,
-                message: "Du hast zu viele Anfragen gestellt. Bitte warte einen Moment.",
-            }));
-        }
         timer.mark("rate_limit_checked");
 
         // Check if we already have this recipe to save costs and time
-        const existingId = await ctx.runQuery(api.recipes.getBySourceUrl, { url: args.url });
-        if (existingId) {
+        const existing = await ctx.runQuery(internal.recipes.getBySourceUrlForUser, { userId: args.userId, url: args.url });
+        if (existing) {
             console.log(`Recipe already exists for ${args.url}, returning existing ID.`);
             timer.mark("dedupe_hit");
             timer.summary({ result: "existing_recipe" });
-            return existingId;
+            return { recipeId: existing._id };
         }
         timer.mark("dedupe_miss");
 
@@ -167,17 +202,6 @@ export const scrapeWebsite = action({
         // ============================================================
         // 4. Parse with Gemini mit Graceful Degradation
         // ============================================================
-        interface ExtractedRecipe {
-            title: string;
-            category: string;
-            prepTimeMinutes: number;
-            difficulty: "Einfach" | "Mittel" | "Schwer";
-            portions: number;
-            ingredients: Array<{ name: string; amount: string }>;
-            instructions: Array<{ text: string; icon?: string }>;
-            imageKeywords?: string;
-        }
-
         let recipeData: ExtractedRecipe;
 
         try {
@@ -186,10 +210,12 @@ export const scrapeWebsite = action({
                 .replace("{{TITLE}}", pageTitle)
                 .replace("{{MARKDOWN}}", truncatedMarkdown);
 
-            const result = await ai.models.generateContent({
-                model: GEMINI_MODELS.recipeTextExtraction,
-                contents: prompt,
-            });
+            const result = await runWithGeminiRetry(() =>
+                ai.models.generateContent({
+                    model: GEMINI_MODELS.recipeTextExtraction,
+                    contents: prompt,
+                })
+            );
 
             const responseText = result.text || "";
 
@@ -197,28 +223,21 @@ export const scrapeWebsite = action({
                 throw new Error("Gemini returned empty response");
             }
 
-            // Clean JSON
-            const jsonStr = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
-            recipeData = JSON.parse(jsonStr);
-
-            const rawCategory = recipeData.category || "Sonstiges";
-            recipeData.category = (RECIPE_CATEGORIES as readonly string[]).includes(rawCategory) ? rawCategory : "Sonstiges";
+            recipeData = parseRecipe(responseText);
             timer.mark("gemini_parsed", { hasIngredients: !!recipeData.ingredients?.length, hasInstructions: !!recipeData.instructions?.length });
 
         } catch (geminiError) {
             console.error("Gemini error:", geminiError);
-
-            // Graceful Degradation: Fallback auf Basis-Rezept
-            recipeData = {
-                title: pageTitle || "Website Rezept",
-                category: "Sonstiges",
-                prepTimeMinutes: 30,
-                difficulty: "Mittel",
-                portions: 4,
-                ingredients: [],
-                instructions: [],
-            };
-            timer.mark("gemini_fallback_used");
+            timer.mark("gemini_failed");
+            throw new Error(JSON.stringify({
+                type: isRetryableGeminiError(geminiError) ? "API_UNAVAILABLE" : "NO_RECIPE_CONTENT",
+                service: "gemini",
+                fallbackMode: "manual",
+                prefillUrl: args.url,
+                message: isRetryableGeminiError(geminiError)
+                    ? "Die Rezeptanalyse ist gerade nicht verfügbar. Bitte versuche es gleich erneut."
+                    : "Auf der Website wurde kein vollständiges Rezept mit Zutaten und Zubereitung gefunden.",
+            }));
         }
 
         // 4. Select initial image URL fast; storage proxying happens async after import
@@ -234,11 +253,7 @@ export const scrapeWebsite = action({
         const finalImageUrl = pageImageUrl || pollinationsUrl;
         timer.mark("image_url_selected", { usedPageImage: !!pageImageUrl });
 
-        // ============================================================
-        // 5. Save Recipe (sourceUrl gesetzt = link_imports Counter!)
-        // ============================================================
-        try {
-            const newRecipeId = await ctx.runMutation(api.recipes.create, {
+        const payload = {
                 title: recipeData.title || "Rezept von Website",
                 category: recipeData.category || "Sonstiges",
                 prepTimeMinutes: recipeData.prepTimeMinutes || 30,
@@ -251,20 +266,7 @@ export const scrapeWebsite = action({
                 sourceUrl: args.url,
                 imageAlt: recipeData.title,
                 isFavorite: false,
-            });
-
-            timer.mark("recipe_created", { recipeId: newRecipeId });
-            timer.summary({ result: "created" });
-            return newRecipeId;
-
-        } catch (createError) {
-            const err = createError as Error;
-            // Limit reached Error weiterwerfen
-            const errStr = err.message || "";
-            if (errStr.includes("LIMIT_REACHED")) {
-                throw createError;
-            }
-            throw new Error("Fehler beim Speichern des Rezepts.");
-        }
+        } as const;
+        return { payload };
     },
 });

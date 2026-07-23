@@ -1,0 +1,43 @@
+
+# Dependencies
+
+node_modules/
+
+## Build / generated output
+
+.next/
+build/
+coverage/
+dist/
+
+## Environment / secrets
+
+.env
+.env.*
+
+## Logs
+
+*.log
+
+## Docs / text files
+
+docs/
+*.html
+*.md
+*.mdx
+*.rst
+*.txt
+*.yaml
+*.yml
+
+## Media / binary files
+
+*.docx
+*.gif
+*.jpeg
+*.jpg
+*.pdf
+*.png
+*.svg
+*.webp
+*.xlsx

@@ -1,5 +1,13 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
+// WebView-Remote-Debugging (chrome://inspect) ist standardmäßig AUS (Release sicher).
+// Für eine inspizierbare Debug-APK gezielt aktivieren:
+//   COOKLY_DEBUG_WEBVIEW=1 npm run build:android   (bzw. npx cap sync android)
+// Bewusst ein explizites Opt-in-Flag statt NODE_ENV: `cap sync` läuft als eigener
+// Prozess, in dem NODE_ENV nicht zuverlässig auf "production" steht – ein Default
+// über NODE_ENV würde Release-Builds versehentlich debuggbar machen.
+const webContentsDebuggingEnabled = process.env.COOKLY_DEBUG_WEBVIEW === '1';
+
 const config: CapacitorConfig = {
   appId: 'com.cookly.recipe',
   appName: 'Cookly',
@@ -21,14 +29,14 @@ const config: CapacitorConfig = {
     SplashScreen: {
       launchShowDuration: 0,
       launchAutoHide: false,
-      backgroundColor: "#ffffff",
+      backgroundColor: "#f0f2f5",
     },
     LottieSplashScreen: {
       enabled: true,
       animationLight: "public/lottie.json", // Light mode animation
       animationDark: "public/lottie.json",  // Optional: same animation for dark mode (can be separate file)
-      backgroundLight: "#ffffff",          // Always white (no dark mode support)
-      backgroundDark: "#ffffff",           // Always white (no dark mode support)
+      backgroundLight: "#f0f2f5",
+      backgroundDark: "#f0f2f5",
       autoHide: false,                      // We control hide manually via appLoaded()
       loop: true,                           // Keep looping until app is fully ready (smooth transition)
     },
@@ -36,7 +44,7 @@ const config: CapacitorConfig = {
   android: {
     allowMixedContent: false, // SECURITY: Only HTTPS in production
     captureInput: false, // FIX: Enable keyboard autocomplete suggestions
-    webContentsDebuggingEnabled: false,
+    webContentsDebuggingEnabled,
   },
 };
 

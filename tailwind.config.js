@@ -100,6 +100,13 @@ export default {
         'neo-light-concave': 'inset 6px 6px 12px #d9dbde, inset -6px -6px 12px #ffffff',
         'neo-dark-concave': 'inset 6px 6px 12px #0c1516, inset -6px -6px 12px #162b2c',
       },
+      transitionDuration: {
+        'motion-snappy': '150ms',
+        'motion-smooth': '300ms',
+      },
+      transitionTimingFunction: {
+        'motion-cookly': 'cubic-bezier(0.2, 0, 0, 1)',
+      },
       keyframes: {
         shimmer: {
           '100%': { transform: 'translateX(100%)' },

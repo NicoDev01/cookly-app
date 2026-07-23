@@ -1,0 +1,39 @@
+{
+  "date": "2026-07-15",
+  "scope": "npm production dependencies",
+  "lockfileBaseline": "package-lock.json was unchanged relative to HEAD before AP-05",
+  "before": {
+    "total": 7,
+    "high": 4,
+    "moderate": 3,
+    "critical": 0
+  },
+  "after": {
+    "total": 0,
+    "high": 0,
+    "moderate": 0,
+    "critical": 0
+  },
+  "versions": {
+    "react-router-dom": "7.18.1",
+    "@google/genai": "1.52.0",
+    "protobufjs": "7.6.5",
+    "ws": "8.21.1",
+    "stripe": "20.4.1",
+    "@capacitor/core": "8.4.2",
+    "@capacitor/android": "8.4.2",
+    "@capacitor/cli": "8.4.2"
+  },
+  "verification": {
+    "npm audit --omit=dev --audit-level=high": "exit 0",
+    "npm test": "exit 0; 85/85 tests passed",
+    "npm run build:check": "exit 0",
+    "npx cap sync android": "exit 0",
+    "gradlew lintDebug testDebugUnitTest": "exit 0"
+  },
+  "manualE2ePending": [
+    "authenticated login and routing",
+    "Instagram, Facebook, website and photo imports with test providers",
+    "Stripe test checkout, portal and signed webhook"
+  ]
+}

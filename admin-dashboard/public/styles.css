@@ -1,0 +1,14 @@
+:root { color-scheme: dark; font: 15px/1.5 Inter, system-ui, sans-serif; --bg:#0b0e13; --panel:#141922; --line:#283140; --text:#f5f7fa; --muted:#92a0b3; --accent:#65d38e; }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--text) }
+header { position:sticky; top:0; z-index:2; display:flex; justify-content:space-between; align-items:center; padding:24px max(24px,calc((100vw - 1280px)/2)); background:#0b0e13e8; backdrop-filter:blur(16px); border-bottom:1px solid var(--line) }
+h1,h2,p { margin:0 } h1 { font-size:clamp(22px,3vw,34px) } h2 { margin-bottom:16px } small { color:var(--accent); letter-spacing:.16em; font-weight:800 }
+button,input,select,textarea { font:inherit; color:inherit; border:1px solid var(--line); background:#10151d; border-radius:10px; padding:9px 12px } button { cursor:pointer } button:hover { border-color:var(--accent) }
+nav { display:flex; gap:8px; overflow:auto; padding:14px max(24px,calc((100vw - 1280px)/2)); border-bottom:1px solid var(--line) } nav a { color:var(--muted); text-decoration:none; white-space:nowrap; padding:6px 10px }
+main { max-width:1280px; margin:auto; padding:28px 24px 100px } section { scroll-margin-top:150px; margin:0 0 48px }
+.cards,.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px }
+.card,.panel,table { background:var(--panel); border:1px solid var(--line); border-radius:14px }
+.card { padding:18px }.card span { color:var(--muted); display:block }.card strong { font-size:28px }
+.panel { padding:18px; overflow:auto }.bar { height:8px; border-radius:99px; background:#26303d; margin-top:12px }.bar i { display:block; height:100%; border-radius:inherit; background:var(--accent) }
+table { width:100%; border-collapse:collapse; overflow:hidden } th,td { text-align:left; padding:11px 13px; border-bottom:1px solid var(--line) } th { color:var(--muted); font-size:12px; text-transform:uppercase }
+.ok { color:var(--accent) }.bad,.error { color:#ff7885 }.muted { color:var(--muted) } form { display:flex; gap:8px; margin-bottom:12px } form input { flex:1 }
+@media (max-width:600px) { header { padding:18px } main { padding:20px 14px } }

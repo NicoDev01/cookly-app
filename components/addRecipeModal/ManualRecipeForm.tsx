@@ -22,8 +22,6 @@ export type ManualFormData = {
 };
 
 type Props = {
-  initialData?: boolean;
-
   formData: ManualFormData;
   setFormData: React.Dispatch<React.SetStateAction<ManualFormData>>;
 
@@ -57,7 +55,6 @@ type Props = {
 };
 
 const ManualRecipeForm: React.FC<Props> = ({
-  initialData,
   formData,
   setFormData,
   existingCategories,

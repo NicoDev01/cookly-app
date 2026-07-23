@@ -1,34 +1,46 @@
-import { query, mutation, action, internalMutation } from "./_generated/server";
+import { action, query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
-import { internal, api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { FREE_LIMITS } from "./constants";
-import { getAuthUserId } from "@convex-dev/auth/server";
+import { storeAnalyticsEvent } from "./analytics";
 import { Id } from "./_generated/dataModel";
-import { createImportTimer } from "./importTiming";
-import {
-  buildRecipeImageUrl,
-  getConsistentSeed,
-  stripPollinationsApiKeyFromUrl,
-} from "./pollinationsHelper";
+import { stripPollinationsApiKeyFromUrl } from "./pollinationsHelper";
+import { claimRecipeAsset, deleteTrackedAsset } from "./storageAssets";
+import { getAuthenticatedUserId } from "./lib/authUser";
 
-// Helper: Authentifizierten User laden (wirft wenn nicht eingeloggt)
-async function getAuthenticatedUserId(ctx: any): Promise<Id<"users">> {
-  const authUserId = await getAuthUserId(ctx);
-  if (!authUserId) throw new Error("Not authenticated");
-  const linkedUser = await ctx.db
-    .query("users")
-    .withIndex("by_authUserId", (q: any) => q.eq("authUserId", authUserId.toString()))
-    .first();
-  if (linkedUser) return linkedUser._id;
+// Compatibility endpoints for installed clients released before storage/image
+// operations moved to storageAssets and remoteImages.
+export const generateImageUploadUrl = mutation({
+  args: {},
+  handler: async (ctx): Promise<string> => {
+    await getAuthenticatedUserId(ctx);
+    return await ctx.runMutation(api.storageAssets.generateUploadUrl, { purpose: "recipe_image" });
+  },
+});
 
-  const authUser = await ctx.db.get(authUserId as Id<"users">);
-  if (authUser) return authUser._id;
+export const generateAndStoreAiImage = action({
+  args: { recipeTitle: v.string() },
+  handler: async (ctx, args): Promise<{ url: string; storageId: Id<"_storage"> }> =>
+    await ctx.runAction(api.remoteImages.generateAndStoreAiImage, args),
+});
 
-  throw new Error("User not found");
-}
+export const proxyExternalImage = action({
+  args: { recipeId: v.id("recipes") },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ success: boolean; imageStorageId?: Id<"_storage">; imageUrl?: string; errorCode?: string }> =>
+    await ctx.runAction(api.remoteImages.proxyExternalImage, args),
+});
+
+export const proxyExternalImages = action({
+  args: { recipeIds: v.array(v.id("recipes")) },
+  handler: async (ctx, args): Promise<{ proxied: number; failed: number }> =>
+    await ctx.runAction(api.remoteImages.proxyExternalImages, args),
+});
 
 // Helper: Kategorie-Statistiken aktualisieren
-async function adjustCategoryCount(ctx: any, category: string, amount: number, userId: Id<"users">) {
+export async function adjustCategoryCount(ctx: any, category: string, amount: number, userId: Id<"users">) {
   const existing = await ctx.db
     .query("categoryStats")
     .withIndex("by_user_category", (q: any) => q.eq("userId", userId).eq("category", category))
@@ -47,7 +59,9 @@ async function adjustCategoryCount(ctx: any, category: string, amount: number, u
       if (categoryEntry) {
         if (categoryEntry.imageStorageId) {
           try {
-            await ctx.storage.delete(categoryEntry.imageStorageId);
+            if (!await deleteTrackedAsset(ctx, userId, categoryEntry.imageStorageId)) {
+              await ctx.storage.delete(categoryEntry.imageStorageId);
+            }
           } catch (e) {
             console.warn(`[adjustCategoryCount] Could not delete category image:`, e);
           }
@@ -63,7 +77,7 @@ async function adjustCategoryCount(ctx: any, category: string, amount: number, u
 }
 
 // Helper: Sicherstellen, dass Kategorie in categories-Tabelle existiert
-async function ensureCategoryExists(ctx: any, category: string, userId: Id<"users">) {
+export async function ensureCategoryExists(ctx: any, category: string, userId: Id<"users">) {
   const existing = await ctx.db
     .query("categories")
     .withIndex("by_user_name", (q: any) => q.eq("userId", userId).eq("name", category))
@@ -130,6 +144,71 @@ export const list = query({
     }
 
     return recipesWithUrl;
+  },
+});
+
+// List lightweight recipe previews for persistent list UIs.
+// Deliberately excludes ingredients and instructions to keep subscriptions cheap.
+export const listPreviews = query({
+  args: {
+    search: v.optional(v.string()),
+    category: v.optional(v.string()),
+    favoritesOnly: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthenticatedUserId(ctx);
+
+    let recipes;
+    if (args.favoritesOnly) {
+      recipes = await ctx.db
+        .query("recipes")
+        .withIndex("by_favorite", (q) => q.eq("userId", userId).eq("isFavorite", true))
+        .collect();
+    } else if (args.category) {
+      const category = args.category;
+      recipes = await ctx.db
+        .query("recipes")
+        .withIndex("by_category", (q) => q.eq("userId", userId).eq("category", category))
+        .collect();
+    } else {
+      recipes = await ctx.db
+        .query("recipes")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .collect();
+    }
+
+    if (args.search) {
+      const lowerQuery = args.search.toLowerCase();
+      recipes = recipes.filter(r => r.title.toLowerCase().includes(lowerQuery));
+    }
+
+    return await Promise.all(recipes.map(async (r) => {
+      let imageUrl = r.image;
+      if (r.imageStorageId) {
+        const url = await ctx.storage.getUrl(r.imageStorageId);
+        if (url) imageUrl = url;
+      }
+
+      return {
+        _id: r._id,
+        _creationTime: r._creationTime,
+        title: r.title,
+        category: r.category,
+        image: imageUrl,
+        imageAlt: r.imageAlt,
+        imageBlurhash: r.imageBlurhash,
+        imageWidth: r.imageWidth,
+        imageHeight: r.imageHeight,
+        imageAspectRatio: r.imageAspectRatio,
+        sourceImageUrl: r.sourceImageUrl,
+        prepTimeMinutes: r.prepTimeMinutes,
+        difficulty: r.difficulty,
+        portions: r.portions,
+        isFavorite: r.isFavorite,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+      };
+    }));
   },
 });
 
@@ -205,6 +284,45 @@ export const getBySourceUrl = query({
       )
       .first();
     return recipe ? recipe._id : null;
+  },
+});
+
+export const getBySourceUrlForUser = internalQuery({
+  args: { userId: v.id("users"), url: v.string() },
+  handler: (ctx, args) => ctx.db.query("recipes")
+    .withIndex("by_user_sourceUrl", (q) => q.eq("userId", args.userId).eq("sourceUrl", args.url))
+    .first(),
+});
+
+export const getForUser = internalQuery({
+  args: { userId: v.id("users"), id: v.id("recipes") },
+  handler: async (ctx, args) => {
+    const recipe = await ctx.db.get(args.id);
+    return recipe?.userId === args.userId ? recipe : null;
+  },
+});
+
+export const attachProxiedImage = internalMutation({
+  args: {
+    userId: v.id("users"),
+    recipeId: v.id("recipes"),
+    storageId: v.id("_storage"),
+    imageUrl: v.string(),
+    sourceImageUrl: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const recipe = await ctx.db.get(args.recipeId);
+    if (!recipe || recipe.userId !== args.userId) throw new Error("RECIPE_NOT_OWNED");
+    if (recipe.imageStorageId) return false;
+
+    await claimRecipeAsset(ctx, args.userId, args.storageId, args.recipeId);
+    await ctx.db.patch(args.recipeId, {
+      imageStorageId: args.storageId,
+      image: args.imageUrl,
+      sourceImageUrl: args.sourceImageUrl,
+      updatedAt: Date.now(),
+    });
+    return true;
   },
 });
 
@@ -284,6 +402,7 @@ export const create = mutation({
     sourceImageUrl: v.optional(v.string()),
     sourceUrl: v.optional(v.string()),
     isFavorite: v.optional(v.boolean()),
+    importOperationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthenticatedUserId(ctx);
@@ -302,6 +421,28 @@ export const create = mutation({
     const user = await ctx.db.get(userId);
     if (!user) throw new Error("NOT_AUTHENTICATED");
 
+    if (args.importOperationId) {
+      const operation = await ctx.db.query("importOperations")
+        .withIndex("by_user_operation", (q) => q.eq("userId", userId).eq("operationId", args.importOperationId!))
+        .unique();
+      if (!operation || operation.status !== "succeeded" || operation.feature !== "photo_scans" || !operation.resultDraft) {
+        throw new Error("INVALID_IMPORT_OPERATION");
+      }
+      if (operation.resultRecipeId) return operation.resultRecipeId;
+      const recipeId = await insertRecipe(ctx, userId, args);
+      await adjustCategoryCount(ctx, args.category, 1, userId);
+      await ensureCategoryExists(ctx, args.category, userId);
+      await ctx.db.patch(operation._id, { resultRecipeId: recipeId, resultDraft: undefined, updatedAt: Date.now() });
+      return recipeId;
+    }
+
+    if (featureType === "manual_recipes") {
+      const recipeId = await insertRecipe(ctx, userId, args);
+      await adjustCategoryCount(ctx, args.category, 1, userId);
+      await ensureCategoryExists(ctx, args.category, userId);
+      return recipeId;
+    }
+
     // Pro User: kein Limit
     if ((user.subscription ?? "free") !== "free") {
       const recipeId = await insertRecipe(ctx, userId, args);
@@ -319,10 +460,6 @@ export const create = mutation({
     let currentCount: number;
     let limit: number;
     switch (featureType) {
-      case "manual_recipes":
-        currentCount = stats.manualRecipes || 0;
-        limit = FREE_LIMITS.MANUAL_RECIPES;
-        break;
       case "link_imports":
         currentCount = stats.linkImports || 0;
         limit = FREE_LIMITS.LINK_IMPORTS;
@@ -343,33 +480,29 @@ export const create = mutation({
       }));
     }
 
-    try {
-      const recipeId = await insertRecipe(ctx, userId, args);
+    const recipeId = await insertRecipe(ctx, userId, args);
 
-      await ctx.runMutation(internal.users.incrementUsageCounter, {
-        userId,
-        feature: featureType,
-      });
+    await ctx.runMutation(internal.users.incrementUsageCounter, {
+      userId,
+      feature: featureType,
+    });
 
-      await adjustCategoryCount(ctx, args.category, 1, userId);
-      await ensureCategoryExists(ctx, args.category, userId);
+    await adjustCategoryCount(ctx, args.category, 1, userId);
+    await ensureCategoryExists(ctx, args.category, userId);
 
-      return recipeId;
-    } catch (error) {
-      throw error;
-    }
+    return recipeId;
   },
 });
 
 // Helper: Rezept in DB einfügen
-async function insertRecipe(ctx: any, userId: Id<"users">, args: any): Promise<any> {
+export async function insertRecipe(ctx: any, userId: Id<"users">, args: any): Promise<any> {
   const ingredientsWithChecked = args.ingredients.map((ing: any) => ({
     ...ing,
     checked: ing.checked ?? false,
   }));
 
   const now = Date.now();
-  return await ctx.db.insert("recipes", {
+  const recipeId = await ctx.db.insert("recipes", {
     userId,
     title: args.title,
     description: args.description,
@@ -393,6 +526,36 @@ async function insertRecipe(ctx: any, userId: Id<"users">, args: any): Promise<a
     createdAt: now,
     updatedAt: now,
   });
+  if (args.imageStorageId) await claimRecipeAsset(ctx, userId, args.imageStorageId, recipeId);
+  const user = await ctx.db.get(userId);
+  if (user) {
+    await ctx.db.patch(userId, {
+      firstRecipeAt: user.firstRecipeAt ?? now,
+      lastRecipeAt: now,
+      lifecycleStage: "engaged",
+      updatedAt: now,
+    });
+    await storeAnalyticsEvent(ctx, {
+      eventId: `recipe:${recipeId}:saved`,
+      name: "recipe_saved",
+      version: 1,
+      userId,
+      billingUserId: user.billingUserId,
+      operationId: args.importOperationId,
+      correlationId: args.importOperationId,
+      platform: "server",
+      properties: {
+        recipeId: String(recipeId),
+        source: args.sourceUrl ? "link" : args.sourceImageUrl ? "photo_scan" : "manual",
+        category: args.category,
+        hasImage: Boolean(args.image || args.imageStorageId),
+        ingredientCount: args.ingredients.length,
+        instructionCount: args.instructions.length,
+      },
+      occurredAt: now,
+    });
+  }
+  return recipeId;
 }
 
 function getLimitMessage(
@@ -400,7 +563,7 @@ function getLimitMessage(
   limit: number
 ): string {
   const messages = {
-    manual_recipes: `Du hast dein Limit von ${limit} manuellen Rezepten erreicht.`,
+    manual_recipes: "Manuelle Rezepte sind unbegrenzt.",
     link_imports: `Du hast dein Limit von ${limit} Link-Imports erreicht.`,
     photo_scans: `Du hast dein Limit von ${limit} Foto-Scans erreicht.`,
   };
@@ -444,7 +607,7 @@ export const update = mutation({
     if (!recipe || recipe.userId !== userId) throw new Error("Recipe not found or access denied");
 
     const {
-      id,
+      id: recipeId,
       ingredients,
       image,
       imageStorageId,
@@ -458,16 +621,8 @@ export const update = mutation({
     const shouldClearImageStorageId = clearImageStorageId === true;
     const shouldClearImageMetadata = clearImageMetadata === true;
 
-    if (
-      recipe.imageStorageId &&
-      (shouldClearImageStorageId || (imageStorageId && recipe.imageStorageId !== imageStorageId))
-    ) {
-      try {
-        await ctx.storage.delete(recipe.imageStorageId);
-      } catch (e) {
-        console.warn('Could not delete old storage file:', e);
-      }
-    }
+    const replacesImage = imageStorageId !== undefined && imageStorageId !== recipe.imageStorageId;
+    if (replacesImage) await claimRecipeAsset(ctx, userId, imageStorageId, recipeId);
 
     const updates: Record<string, unknown> = { ...otherUpdates, updatedAt: Date.now() };
 
@@ -490,7 +645,9 @@ export const update = mutation({
     }
 
     if (shouldClearImageStorageId || shouldClearImageMetadata) {
-      const { _id, _creationTime, ...recipeDoc } = recipe;
+      const recipeDoc = { ...recipe } as Record<string, unknown>;
+      delete recipeDoc._id;
+      delete recipeDoc._creationTime;
       const replacement: Record<string, unknown> = { ...recipeDoc, ...updates };
       if (shouldClearImageStorageId) {
         delete (replacement as { imageStorageId?: unknown }).imageStorageId;
@@ -500,11 +657,20 @@ export const update = mutation({
         delete (replacement as { imageHeight?: unknown }).imageHeight;
         delete (replacement as { imageAspectRatio?: unknown }).imageAspectRatio;
       }
-      await ctx.db.replace(args.id, replacement as any);
-      return;
+      await ctx.db.replace(recipeId, replacement as any);
+    } else {
+      await ctx.db.patch(recipeId, updates);
     }
 
-    await ctx.db.patch(args.id, updates);
+    if (recipe.imageStorageId && (shouldClearImageStorageId || replacesImage)) {
+      try {
+        if (!await deleteTrackedAsset(ctx, userId, recipe.imageStorageId)) {
+          await ctx.storage.delete(recipe.imageStorageId);
+        }
+      } catch (e) {
+        console.warn('Could not delete old storage file:', e);
+      }
+    }
   },
 });
 
@@ -518,7 +684,9 @@ export const deleteRecipe = mutation({
 
     if (recipe.imageStorageId) {
       try {
-        await ctx.storage.delete(recipe.imageStorageId);
+        if (!await deleteTrackedAsset(ctx, userId, recipe.imageStorageId)) {
+          await ctx.storage.delete(recipe.imageStorageId);
+        }
       } catch (e) {
         console.warn(`[Cleanup] Could not delete image storage file:`, e);
       }
@@ -540,7 +708,9 @@ export const deleteRecipes = mutation({
       if (recipe && recipe.userId === userId) {
         if (recipe.imageStorageId) {
           try {
-            await ctx.storage.delete(recipe.imageStorageId);
+            if (!await deleteTrackedAsset(ctx, userId, recipe.imageStorageId)) {
+              await ctx.storage.delete(recipe.imageStorageId);
+            }
           } catch (e) {
             console.warn(`[Batch Cleanup] Could not delete image:`, e);
           }
@@ -715,14 +885,6 @@ export const importSeedData = mutation({
 export const createFromAI = create;
 export const updateRecipe = update;
 
-export const generateImageUploadUrl = mutation({
-  args: {},
-  handler: async (ctx) => {
-    await getAuthenticatedUserId(ctx);
-    return await ctx.storage.generateUploadUrl();
-  },
-});
-
 // Delete a storage file
 export const deleteStorageFile = mutation({
   args: { storageId: v.id("_storage") },
@@ -738,7 +900,9 @@ export const deleteStorageFile = mutation({
     if (!ownsImage) throw new Error("Not authorized to delete this file");
 
     try {
-      await ctx.storage.delete(args.storageId);
+      if (!await deleteTrackedAsset(ctx, userId, args.storageId)) {
+        await ctx.storage.delete(args.storageId);
+      }
     } catch (e) {
       console.warn('Storage file already deleted or not found:', e);
     }
@@ -758,98 +922,6 @@ export const getStorageUrl = query({
       throw new Error("Not authorized");
     }
     return await ctx.storage.getUrl(args.storageId);
-  },
-});
-
-// Generate AI image URL
-export const generateAndStoreAiImage = action({
-  args: { recipeTitle: v.string() },
-  handler: async (ctx, args): Promise<{ url: string; storageId: Id<"_storage"> }> => {
-    const authUserId = await getAuthUserId(ctx);
-    if (!authUserId) throw new Error("Not authenticated");
-
-    const seed = getConsistentSeed(args.recipeTitle);
-    const pollinationsUrl = buildRecipeImageUrl(args.recipeTitle, seed);
-
-    const response = await fetch(pollinationsUrl, {
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-      signal: AbortSignal.timeout(20000),
-    });
-    if (!response.ok) {
-      throw new Error(`AI image generation failed: ${response.status}`);
-    }
-
-    const contentType = response.headers.get("content-type") || "image/jpeg";
-    if (!contentType.startsWith("image/")) {
-      throw new Error("AI image generation did not return an image.");
-    }
-
-    const imageBuffer = await response.arrayBuffer();
-    const storageId = await ctx.storage.store(new Blob([imageBuffer], { type: contentType }));
-    const storageUrl = await ctx.storage.getUrl(storageId);
-    if (!storageUrl) throw new Error("Stored AI image URL could not be loaded.");
-
-    return { url: storageUrl, storageId };
-  },
-});
-
-// Proxy external image to Convex Storage
-export const proxyExternalImage = action({
-  args: { recipeId: v.id("recipes") },
-  handler: async (ctx, args): Promise<{ success: boolean; imageStorageId?: Id<"_storage">; imageUrl?: string }> => {
-    const timer = createImportTimer("image_proxy", { recipeId: args.recipeId });
-    const authUserId = await getAuthUserId(ctx);
-    if (!authUserId) throw new Error("Not authenticated");
-    timer.mark("authenticated");
-
-    const recipe = await ctx.runQuery(api.recipes.get, { id: args.recipeId });
-    if (!recipe) throw new Error("Recipe not found or access denied");
-    timer.mark("recipe_loaded");
-
-    if (recipe.imageStorageId) {
-      timer.mark("already_proxied");
-      timer.summary({ result: "skipped_already_proxied" });
-      return { success: false };
-    }
-    let sourceImageUrl = recipe.sourceImageUrl;
-    if (!sourceImageUrl) {
-      const seed = getConsistentSeed(recipe.title || "Delicious Food");
-      sourceImageUrl = buildRecipeImageUrl(recipe.title || "Delicious Food", seed);
-      timer.mark("fallback_image_generated");
-    }
-    sourceImageUrl = stripPollinationsApiKeyFromUrl(sourceImageUrl) ?? sourceImageUrl;
-
-    try {
-      const response = await fetch(sourceImageUrl, {
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-        signal: AbortSignal.timeout(12000),
-      });
-
-      if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
-      timer.mark("source_fetched");
-
-      const imageBuffer = await response.arrayBuffer();
-      const blob = new Blob([imageBuffer]);
-      const storageId = await ctx.storage.store(blob);
-      timer.mark("stored_in_convex");
-
-      const imageUrl = await ctx.storage.getUrl(storageId);
-      timer.mark("storage_url_loaded");
-      await ctx.runMutation(api.recipes.update, {
-        id: args.recipeId,
-        imageStorageId: storageId,
-        image: imageUrl || sourceImageUrl,
-        sourceImageUrl,
-      });
-      timer.mark("recipe_updated");
-      timer.summary({ result: "proxied" });
-      return { success: true, imageStorageId: storageId, imageUrl: imageUrl || undefined };
-
-    } catch (error) {
-      console.error('[proxyExternalImage] ❌ Failed:', error);
-      timer.summary({ result: "failed", error: error instanceof Error ? error.message : String(error) });
-      return { success: false };
-    }
   },
 });
 
@@ -889,29 +961,5 @@ export const cleanupPollinationsApiKeys = internalMutation({
     }
 
     return { scanned: recipes.length, updated };
-  },
-});
-
-// Batch proxy
-export const proxyExternalImages = action({
-  args: { recipeIds: v.array(v.id("recipes")) },
-  handler: async (ctx, args): Promise<{ proxied: number; failed: number }> => {
-    const authUserId = await getAuthUserId(ctx);
-    if (!authUserId) throw new Error("Not authenticated");
-
-    let proxied = 0;
-    let failed = 0;
-
-    for (const recipeId of args.recipeIds) {
-      try {
-        const result = await ctx.runAction(api.recipes.proxyExternalImage, { recipeId });
-        if (result.success) proxied++;
-      } catch (error) {
-        console.error(`[proxyExternalImages] Failed for recipe ${recipeId}:`, error);
-        failed++;
-      }
-    }
-
-    return { proxied, failed };
   },
 });

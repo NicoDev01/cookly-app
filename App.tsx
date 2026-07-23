@@ -16,16 +16,16 @@ import { ModalProvider, useModal } from './contexts/ModalContext';
 import { QueryCacheProvider } from './contexts/QueryCacheContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import { createNotificationChannel } from './utils/notifications';
+import { logger } from './utils/logger';
+import { PageLoader } from './components/PageLoader';
+import { AnalyticsLifecycle } from './components/AnalyticsLifecycle';
+import { PushLifecycle } from './components/PushLifecycle';
+import { InAppCampaign } from './components/InAppCampaign';
+import { AdSlot } from './components/AdSlot';
 
-const CategoriesPage = React.lazy(() => import('./pages/CategoriesPage'));
 const CategoryRecipesPage = React.lazy(() => import('./pages/CategoryRecipesPage'));
 const RecipePage = React.lazy(() => import('./pages/RecipePage'));
-const FavoritesPage = React.lazy(() => import('./pages/FavoritesPage'));
-const WeeklyPage = React.lazy(() => import('./pages/WeeklyPage'));
-const ShoppingPage = React.lazy(() => import('./pages/ShoppingPage'));
 const ShareTargetPage = React.lazy(() => import('./pages/ShareTargetPage'));
-const ProfilePage = React.lazy(() => import('./pages/ProfilePage'));
-const SubscribePage = React.lazy(() => import('./pages/SubscribePage'));
 const SignInPage = React.lazy(() => import('./pages/SignInPage'));
 const SignUpPage = React.lazy(() => import('./pages/SignUpPage'));
 const ForgotPasswordPage = React.lazy(() => import('./pages/ForgotPasswordPage'));
@@ -57,7 +57,7 @@ const AuthCallbackPage: React.FC = () => {
     signIn('google', { code })
       .then(() => navigate('/tabs/categories', { replace: true }))
       .catch((err) => {
-        console.error('[AuthCallback] Code exchange failed:', err);
+        logger.error('Auth', 'OAuth code exchange failed', err);
         navigate('/sign-in', { replace: true });
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -96,7 +96,7 @@ const ProtectedLayout: React.FC = () => {
   useEffect(() => {
     if (!isLoading && isAuthenticated && currentUser === null && !hasTriedSync) {
       setHasTriedSync(true);
-      createUser().catch(console.error);
+      createUser().catch((err) => logger.error('Auth', 'createOrSyncUser failed', err));
     }
   }, [isLoading, isAuthenticated, currentUser, hasTriedSync, createUser]);
 
@@ -114,7 +114,6 @@ const ProtectedLayout: React.FC = () => {
 const AppContent: React.FC = () => {
   const navigate = useNavigate();
   const intentCheckCountRef = useRef(0);
-  const lastIntentSignatureRef = useRef<string | null>(null);
 
   // Native Back Button Handler (Android)
   const { isAnyModalOpen, closeAllModals } = useModal();
@@ -141,10 +140,10 @@ const AppContent: React.FC = () => {
     LocalNotifications.addListener(
       'localNotificationActionPerformed',
       (notification: LocalNotificationActionPerformed) => {
-        console.log('[Notifications] Notification action performed:', notification);
+        logger.debug('Notifications', 'Notification action performed', notification);
         const extra = notification.notification.extra;
         if (extra?.recipeId && extra?.type === 'recipe-import') {
-          console.log('[Notifications] Navigating to recipe:', extra.recipeId);
+          logger.debug('Notifications', 'Navigating to recipe', { recipeId: extra.recipeId });
           navigateRef.current(`/recipe/${extra.recipeId}`);
         }
       }
@@ -157,18 +156,13 @@ const AppContent: React.FC = () => {
       try {
         intentCheckCountRef.current += 1;
         const checkId = intentCheckCountRef.current;
-        console.log(`[SendIntent] checkIntent #${checkId} (${source})`);
+        logger.debug('SendIntent', `checkIntent #${checkId} (${source})`);
 
         const result = await SendIntent.checkSendIntentReceived();
-        console.log(`[SendIntent] checkIntent #${checkId} result:`, result);
+        logger.debug('SendIntent', `checkIntent #${checkId} result`, result);
         if (result && (result.title || result.description || result.url)) {
-          console.log('SendIntent received:', result);
+          logger.debug('SendIntent', 'received', result);
           const { title, description, url } = result;
-
-          const signature = `${title ?? ''}|${description ?? ''}|${url ?? ''}`;
-          const isDuplicate = lastIntentSignatureRef.current === signature;
-          console.log(`[SendIntent] checkIntent #${checkId} has intent (duplicate=${isDuplicate})`, { signature });
-          lastIntentSignatureRef.current = signature;
 
           const params = new URLSearchParams();
           if (title) params.append('title', title);
@@ -182,7 +176,7 @@ const AppContent: React.FC = () => {
         if (err instanceof Error && err.message.includes('No processing needed')) {
           return;
         }
-        console.error('Error checking send intent:', err);
+        logger.error('SendIntent', 'Error checking send intent', err);
       }
     };
 
@@ -192,7 +186,7 @@ const AppContent: React.FC = () => {
     // Listen for App Resume (Warm Start)
     CapacitorApp.addListener('appStateChange', ({ isActive }) => {
       if (isActive) {
-        console.log('App resumed, checking for intent...');
+        logger.debug('App', 'App resumed, checking for intent');
         checkIntent('resume');
       }
     }).then((handle) => {
@@ -204,10 +198,10 @@ const AppContent: React.FC = () => {
       removeDeepLinkHandler();
       cleanupFns.forEach((fn) => fn());
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route index element={<RootRedirect />} />
         <Route path="/welcome" element={<WelcomePage />} />
@@ -241,7 +235,7 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => {
   const handleError = useCallback((error: Error, errorInfo: React.ErrorInfo) => {
-    console.error('Application Error:', error, errorInfo);
+    logger.error('App', 'Application error boundary', { error, errorInfo });
   }, []);
 
   const { isLoading: convexAuthLoading, isAuthenticated } = useConvexAuth();
@@ -268,20 +262,20 @@ const App: React.FC = () => {
         try {
           await SplashScreen.hide();
         } catch (e) {
-          console.warn('[Splash] SplashScreen.hide() failed:', e);
+          logger.warn('Splash', 'SplashScreen.hide() failed', e);
         }
         try {
           await LottieSplashScreen.hide();
         } catch (e) {
-          console.warn('[Splash] LottieSplashScreen.hide() failed:', e);
+          logger.warn('Splash', 'LottieSplashScreen.hide() failed', e);
         }
-        console.log('[Splash] Splash hidden - app visible');
+        logger.debug('Splash', 'Splash hidden - app visible');
       };
 
       const fadeTimeout = setTimeout(hideSplash, 300);
 
       const safetyTimeout = setTimeout(async () => {
-        console.warn('[Splash] Safety timeout triggered - forcing splash hide');
+        logger.warn('Splash', 'Safety timeout triggered - forcing splash hide');
         try { await SplashScreen.hide(); } catch { /* ignore */ }
         try { await LottieSplashScreen.hide(); } catch { /* ignore */ }
       }, 15000);
@@ -298,7 +292,11 @@ const App: React.FC = () => {
       <QueryCacheProvider>
         <ModalProvider>
           <NotificationProvider>
+            <AnalyticsLifecycle />
+            <PushLifecycle />
             <div className="antialiased text-gray-900 dark:text-gray-100 min-h-screen bg-background-light dark:bg-background-dark relative">
+              <InAppCampaign />
+              <AdSlot placement="home_feed" />
               <AppContent />
             </div>
           </NotificationProvider>

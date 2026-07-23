@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useMutation, useQuery, useAction } from "convex/react";
+import { useMutation, useQuery, useAction, useConvex } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Recipe } from '../types';
 import { Id } from "../convex/_generated/dataModel";
@@ -15,9 +15,15 @@ import {
 } from './addRecipeModal/recipeImage';
 import { encodeImageToBlurhash } from '../utils/blurhash';
 import { getAiScanErrorMessage } from '../utils/geminiRetry';
+import { getUserErrorMessage } from '../utils/userErrors';
 import ManualRecipeForm, { type ManualFormData } from './addRecipeModal/ManualRecipeForm';
 import UpgradeModal from './UpgradeModal';
 import { useModal } from '../contexts/ModalContext';
+import { logger } from '../utils/logger';
+import { waitForImport } from '../utils/importOperationClient';
+import { createUuid } from '../utils/uuid';
+import { capture, withCorrelation } from '../services/analytics';
+import { createRecipeFormData, PLACEHOLDER_RECIPE_IMAGE } from './addRecipeModal/recipeForm';
 
 interface AddRecipeModalProps {
   isOpen: boolean;
@@ -52,18 +58,23 @@ const parseStructuredError = (err: unknown): {
   }
 };
 
-const PLACEHOLDER_RECIPE_IMAGE = 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?q=80&w=2626&auto=format&fit=crop';
-
 const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initialData }) => {
   const { addModalImportUrl, addModalInitialTab } = useModal();
   const navigate = useNavigate();
+  const convex = useConvex();
   const createRecipe = useMutation(api.recipes.create);
   const updateRecipe = useMutation(api.recipes.updateRecipe);
-  const generateImageUploadUrl = useMutation(api.recipes.generateImageUploadUrl);
-  const generateAndStoreAiImage = useAction(api.recipes.generateAndStoreAiImage);
-  const scanRecipePhoto = useAction(api.photoScan.scanRecipePhoto);
+  const generateImageUploadUrl = useMutation(api.storageAssets.generateUploadUrl);
+  const registerUploadedAsset = useMutation(api.storageAssets.registerUploadedAsset);
+  const releasePendingAsset = useMutation(api.storageAssets.releasePendingAsset);
+  const generateAndStoreAiImage = useAction(api.remoteImages.generateAndStoreAiImage);
+  const startImport = useMutation(api.importOperations.startImport);
   const categoryStats = useQuery(api.recipes.getCategories);
   const existingCategories = categoryStats?.categories?.map(c => c.name) || [];
+
+  useEffect(() => {
+    if (isOpen && !initialData) capture('first_action_started', { entryPoint: 'add_recipe' });
+  }, [isOpen, initialData]);
 
   // ============================================================
   // NEU: Proaktive Limit Checks
@@ -81,11 +92,12 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
     isOpen: false,
     feature: 'manual_recipes',
     current: 0,
-    limit: 100,
+    limit: 60,
   });
 
   const [activeTab, setActiveTab] = useState<'ai' | 'manual'>('ai');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [photoImportOperationId, setPhotoImportOperationId] = useState<string | null>(null);
 
   // AI Analysis Progress States
   const [analysisStage, setAnalysisStage] = useState<'idle' | 'uploading' | 'analyzing' | 'retrying' | 'processing' | 'complete'>('idle');
@@ -128,6 +140,14 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
     height?: number;
     aspectRatio?: number;
   } | null>(null);
+
+  const handleClose = () => {
+    if (recipeImageStorageId && recipeImageStorageId !== originalImageData?.storageId) {
+      void releasePendingAsset({ storageId: recipeImageStorageId });
+    }
+    if (recipeImagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(recipeImagePreviewUrl);
+    onClose();
+  };
 
   useEffect(() => {
     if (!isImageActionMenuOpen) return;
@@ -177,7 +197,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         // Wait for image decoding once so the UI update appears instant/stable.
         nextMeta = await getImageDimensionsFromUrl(result.url);
       } catch (e) {
-        console.warn('Could not read AI image dimensions:', e);
+        logger.warn('AddRecipe', 'Could not read AI image dimensions', e);
       }
 
       // Clean up old preview URL
@@ -200,14 +220,14 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
       // Generate blurhash in background
       encodeImageToBlurhash(result.url)
         .then(hash => setRecipeImageBlurhash(hash))
-        .catch(e => console.warn('Could not generate blurhash:', e));
+        .catch(e => logger.warn('AddRecipe', 'Could not generate blurhash', e));
       if (navigator.vibrate) {
         navigator.vibrate([20, 30, 20]);
       }
 
     } catch (err: unknown) {
-      console.error('AI image generation error:', err);
-      setError('Fehler beim Bild erzeugen: ' + getErrorMessage(err));
+      logger.error('AddRecipe', 'AI image generation failed', err);
+      setError(getUserErrorMessage(err, 'image'));
     } finally {
       setAiImageGenerationStage('idle');
       setIsGeneratingAiImage(false);
@@ -224,51 +244,14 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
   }, [recipeImagePreviewUrl]);
 
   // Form State
-  const [formData, setFormData] = useState<ManualFormData>(() => {
-    if (initialData) {
-      return {
-        title: initialData.title,
-        category: initialData.category,
-        prepTimeMinutes: initialData.prepTimeMinutes,
-        difficulty: initialData.difficulty,
-        portions: initialData.portions,
-        ingredients: initialData.ingredients.length > 0 ? initialData.ingredients : [{ name: '', amount: '' }],
-        instructions: initialData.instructions.length > 0 ? sanitizeInstructionsIcons(initialData.instructions) : [{ text: '' }],
-        image: initialData.image || PLACEHOLDER_RECIPE_IMAGE,
-        imageAlt: initialData.imageAlt || '',
-        sourceImageUrl: initialData.sourceImageUrl || ''
-      };
-    }
-
-    return {
-      title: '',
-      category: 'Sonstiges',
-      prepTimeMinutes: 30,
-      difficulty: 'Mittel' as 'Einfach' | 'Mittel' | 'Schwer',
-      portions: 4,
-      ingredients: [{ name: '', amount: '' }],
-      instructions: [{ text: '' }],
-      image: PLACEHOLDER_RECIPE_IMAGE,
-      imageAlt: 'Leckeres Gericht',
-      sourceImageUrl: addModalImportUrl || ''
-    };
-  });
+  const [formData, setFormData] = useState<ManualFormData>(() =>
+    createRecipeFormData(initialData, addModalImportUrl || '')
+  );
 
   // Effect: Wenn initialData sich ändert (oder Modal öffnet), Formular befüllen
   useEffect(() => {
     if (initialData) {
-      setFormData({
-        title: initialData.title,
-        category: initialData.category,
-        prepTimeMinutes: initialData.prepTimeMinutes,
-        difficulty: initialData.difficulty,
-        portions: initialData.portions,
-        ingredients: initialData.ingredients.length > 0 ? initialData.ingredients : [{ name: '', amount: '' }],
-        instructions: initialData.instructions.length > 0 ? sanitizeInstructionsIcons(initialData.instructions) : [{ text: '' }],
-        image: initialData.image || PLACEHOLDER_RECIPE_IMAGE,
-        imageAlt: initialData.imageAlt || '',
-        sourceImageUrl: initialData.sourceImageUrl || ''
-      });
+      setFormData(createRecipeFormData(initialData));
       setRecipeImageStorageId(initialData.imageStorageId ?? null);
       setPendingImageBlob(null);
       setRecipeImageBlurhash(initialData.imageBlurhash ?? null);
@@ -300,19 +283,9 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
       setActiveTab('manual');
     } else {
       // Reset für "Neues Rezept"
-      setFormData({
-        title: '',
-        category: 'Sonstiges',
-        prepTimeMinutes: 30,
-        difficulty: 'Mittel',
-        portions: 4,
-        ingredients: [{ name: '', amount: '' }],
-        instructions: [{ text: '' }],
-        image: PLACEHOLDER_RECIPE_IMAGE,
-        imageAlt: 'Leckeres Gericht',
-        sourceImageUrl: addModalImportUrl || ''
-      });
+      setFormData(createRecipeFormData(null, addModalImportUrl || ''));
       setRecipeImageStorageId(null);
+      setPhotoImportOperationId(null);
       setRecipeImagePreviewUrl(null);
       setRecipeImageBlurhash(null);
       setAiImageGenerationStage('idle');
@@ -356,9 +329,24 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
 
   const uploadPhotoForScan = async (file: File): Promise<Id<"_storage">> => {
     const compressed = await compressImage(file, 2048, 0.9, 'image/jpeg');
-    const uploadUrl = await generateImageUploadUrl({});
+    const uploadUrl = await generateImageUploadUrl({ purpose: 'photo_scan' });
     const json = await uploadJpegToConvexStorage(uploadUrl, compressed);
-    return json.storageId as Id<"_storage">;
+    const storageId = json.storageId as Id<"_storage">;
+    await registerUploadedAsset({ storageId, purpose: 'photo_scan' });
+    return storageId;
+  };
+
+  const scanPhoto = async (storageId: Id<"_storage">) => {
+    const operationId = createUuid();
+    const started = await startImport({
+      operationId,
+      provider: 'photo_scan',
+      sourceAssetId: storageId,
+      input: getAiScanFallback(),
+    });
+    const operation = await waitForImport(convex, started.operationId);
+    if (!operation.resultDraft) throw new Error('IMPORT_RESULT_MISSING');
+    return { operationId: started.operationId, doc: operation.resultDraft as ManualFormData };
   };
 
   const handleAiScanFailure = (err: unknown) => {
@@ -414,10 +402,8 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         });
       }, 500);
 
-      const { doc } = await scanRecipePhoto({
-        storageId,
-        fallback: getAiScanFallback(),
-      });
+      const { doc, operationId } = await scanPhoto(storageId);
+      setPhotoImportOperationId(operationId);
 
       clearInterval(progressInterval);
       progressInterval = undefined;
@@ -438,7 +424,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         getImageDimensionsFromUrl(doc.image)
           .then((meta) => setRecipeImageMeta(meta))
           .catch((e) => {
-            console.warn('Could not read AI-scan preview dimensions:', e);
+            logger.warn('AddRecipe', 'Could not read AI-scan preview dimensions', e);
             setRecipeImageMeta(null);
           });
       } else {
@@ -462,7 +448,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
           try {
             aiImageMeta = await getImageDimensionsFromUrl(doc.image);
           } catch (e) {
-            console.warn('Could not read AI-scan image dimensions:', e);
+            logger.warn('AddRecipe', 'Could not read AI-scan image dimensions', e);
           }
         }
 
@@ -475,6 +461,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
           imageAspectRatio: aiImageMeta?.aspectRatio,
           // WICHTIG: Der Marker signalisiert recipes.ts, dass es ein Foto-Scan ist.
           sourceImageUrl: '__AI_SCAN__',
+          importOperationId: operationId,
           isFavorite: false,
         });
         onClose();
@@ -485,7 +472,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         setAnalysisProgress(0);
       }
     } catch (err: unknown) {
-      console.error("AI Error:", err);
+      logger.error('AddRecipe', 'AI scan failed', err);
       handleAiScanFailure(err);
       setAnalysisStage('idle');
       setAnalysisProgress(0);
@@ -513,10 +500,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         try {
           // 1. Upload compressed image and start server-side analysis
           const storageId = await uploadPhotoForScan(file);
-          const { doc } = await scanRecipePhoto({
-            storageId,
-            fallback: getAiScanFallback(),
-          });
+          const { doc, operationId } = await scanPhoto(storageId);
 
           if (cancelBulkRef.current) return;
 
@@ -525,7 +509,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
             try {
               aiImageMeta = await getImageDimensionsFromUrl(doc.image);
             } catch (e) {
-              console.warn('Could not read bulk AI image dimensions:', e);
+              logger.warn('AddRecipe', 'Could not read bulk AI image dimensions', e);
             }
           }
 
@@ -542,6 +526,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
             imageAlt: doc.imageAlt,
             // WICHTIG: Marker-Wert statt base64 verwenden (base64 würde ausgefiltert)
             sourceImageUrl: '__AI_SCAN__',
+            importOperationId: operationId,
             prepTimeMinutes: doc.prepTimeMinutes,
             difficulty: doc.difficulty,
             portions: doc.portions,
@@ -552,7 +537,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
 
           createdIds.push(id);
         } catch (err) {
-          console.error('Bulk AI processing error:', err);
+          logger.error('AddRecipe', 'Bulk AI processing failed', err);
           handleAiScanFailure(err);
           errorCount++;
           setBulkErrors(errorCount);
@@ -561,28 +546,10 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         }
       };
 
-      // Process sequentially to avoid avoidable provider-side load spikes.
-      const CONCURRENCY_LIMIT = 1;
-      const queue = [...files];
-      const activePromises = new Set<Promise<void>>();
-
-      while (queue.length > 0 && !cancelBulkRef.current) {
-        // If we reached limit, wait for one to finish
-        if (activePromises.size >= CONCURRENCY_LIMIT) {
-          await Promise.race(activePromises);
-        }
-
-        const file = queue.shift();
-        if (file) {
-          const p = processFile(file).then(() => {
-            activePromises.delete(p);
-          });
-          activePromises.add(p);
-        }
+      for (const file of files) {
+        if (cancelBulkRef.current) break;
+        await processFile(file);
       }
-
-      // Wait for remaining
-      await Promise.all(activePromises);
 
       if (cancelBulkRef.current) {
         return;
@@ -667,12 +634,12 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         const hash = await encodeImageToBlurhash(preview);
         setRecipeImageBlurhash(hash);
       } catch (hashErr) {
-        console.warn('Failed to generate blurhash:', hashErr);
+        logger.warn('AddRecipe', 'Failed to generate blurhash', hashErr);
       }
     } catch (err: unknown) {
-      console.error('Image processing error:', err);
+      logger.error('AddRecipe', 'Image processing failed', err);
       setRecipeImageMeta(null);
-      setError('Fehler bei der Bildverarbeitung: ' + getErrorMessage(err));
+      setError(getUserErrorMessage(err, 'image'));
     } finally {
       setIsUploadingRecipeImage(false);
     }
@@ -711,16 +678,16 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         const hash = await encodeImageToBlurhash(preview);
         setRecipeImageBlurhash(hash);
       } catch (hashErr) {
-        console.warn('Failed to generate blurhash:', hashErr);
+        logger.warn('AddRecipe', 'Failed to generate blurhash', hashErr);
       }
 
       // ImageEditor schließen
       setIsImageEditorOpen(false);
       setError(null);
     } catch (err: unknown) {
-      console.error('Image editor apply error:', err);
+      logger.error('AddRecipe', 'Image editor apply failed', err);
       setRecipeImageMeta(null);
-      setError('Fehler beim Speichern des bearbeiteten Bildes: ' + getErrorMessage(err));
+      setError(getUserErrorMessage(err, 'image'));
     } finally {
       setIsUploadingRecipeImage(false);
     }
@@ -750,6 +717,11 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
   const handleSave = async () => {
     setIsSaving(true);
     setError(null);
+    const correlationId = withCorrelation(photoImportOperationId ?? createUuid());
+    capture(initialData ? 'recipe_edited' : 'recipe_create_started', {
+      correlationId,
+      source: addModalImportUrl ? 'link' : activeTab === 'ai' ? 'photo_scan' : 'manual',
+    });
 
     try {
       // ============================================================
@@ -800,13 +772,14 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
           try {
             imageMetaToSave = await getImageDimensionsFromBlob(pendingImageBlob);
           } catch (e) {
-            console.warn('Could not read pending image dimensions:', e);
+            logger.warn('AddRecipe', 'Could not read pending image dimensions', e);
           }
         }
 
-        const uploadUrl = await generateImageUploadUrl({});
+        const uploadUrl = await generateImageUploadUrl({ purpose: 'recipe_image' });
         const json = await uploadJpegToConvexStorage(uploadUrl, pendingImageBlob);
         nextImageStorageId = json.storageId as Id<'_storage'>;
+        await registerUploadedAsset({ storageId: nextImageStorageId, purpose: 'recipe_image' });
         setRecipeImageStorageId(nextImageStorageId);
         setPendingImageBlob(null);
       }
@@ -826,7 +799,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         try {
           imageMetaToSave = await getImageDimensionsFromUrl(imageUrl);
         } catch (e) {
-          console.warn('Could not read final image dimensions from URL:', e);
+          logger.warn('AddRecipe', 'Could not read final image dimensions from URL', e);
         }
       }
 
@@ -866,6 +839,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         }
 
         await updateRecipe(updateData);
+        capture('recipe_edited', { recipeId: initialData._id, correlationId });
       } else {
         // CREATE - Immer alle Daten senden
         await createRecipe({
@@ -878,7 +852,13 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
           imageHeight: imageMetaToSave?.height,
           imageAspectRatio: imageMetaToSave?.aspectRatio,
           sourceImageUrl,
+          importOperationId: photoImportOperationId ?? undefined,
           isFavorite: false,
+        });
+        capture('recipe_saved', {
+          correlationId,
+          source: addModalImportUrl ? 'link' : activeTab === 'ai' ? 'photo_scan' : 'manual',
+          category: formData.category,
         });
       }
       // ObjectURL aufräumen, falls vorhanden
@@ -887,6 +867,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
       }
       onClose();
     } catch (err: unknown) {
+      capture('recipe_create_failed', { correlationId, errorCode: 'SAVE_FAILED' });
       // ============================================================
       // STRUKTURIERTES ERROR HANDLING
       // ============================================================
@@ -926,11 +907,11 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         }
 
         // Fallback: Normale Nachricht anzeigen
-        setError("Fehler beim Speichern: " + errorMessage);
+        setError(getUserErrorMessage(err, 'save'));
 
       } catch {
         // Kein JSON-Error, normale Nachricht anzeigen
-        setError("Fehler beim Speichern: " + errorMessage);
+        setError(getUserErrorMessage(err, 'save'));
       }
     } finally {
       setIsSaving(false);
@@ -950,11 +931,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
           <button
             onClick={() => {
               cancelBulkRef.current = true;
-              // ObjectURL aufräumen, falls vorhanden
-              if (recipeImagePreviewUrl && recipeImagePreviewUrl.startsWith('blob:')) {
-                URL.revokeObjectURL(recipeImagePreviewUrl);
-              }
-              onClose();
+              handleClose();
             }}
             className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
           >
@@ -1007,7 +984,6 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
             />
           ) : (
             <ManualRecipeForm
-              initialData={!!initialData}
               formData={formData}
               setFormData={setFormData}
               existingCategories={existingCategories}
@@ -1038,13 +1014,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         {/* Footer */}
         <div className="p-4 border-t border-gray-200 dark:border-gray-800 flex justify-end gap-3">
           <button
-            onClick={() => {
-              // ObjectURL aufräumen, falls vorhanden
-              if (recipeImagePreviewUrl && recipeImagePreviewUrl.startsWith('blob:')) {
-                URL.revokeObjectURL(recipeImagePreviewUrl);
-              }
-              onClose();
-            }}
+            onClick={handleClose}
             className="px-4 py-2 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-white/5 rounded-lg"
           >
             Abbrechen

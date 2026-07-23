@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cookly Admin</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header>
+      <div><small>COOKLY CONTROL CENTER</small><h1>Wachstum und Zuverlässigkeit</h1></div>
+      <button id="refresh">Aktualisieren</button>
+    </header>
+    <nav id="nav"></nav>
+    <main>
+      <section id="overview"><h2>Executive Overview</h2><div id="cards" class="cards"></div></section>
+      <section id="funnels"><h2>Funnels</h2><div id="funnel-grid" class="grid"></div></section>
+      <section id="diagnosis"><h2>Optimierung</h2><div id="diagnosis-table"></div></section>
+      <section id="marketing"><h2>Marketing und Kampagnen</h2><div id="marketing-content"></div></section>
+      <section id="experiments"><h2>Feature Flags und Experimente</h2><div id="flags"></div></section>
+      <section id="revenue"><h2>Umsatz</h2><div id="revenue-content"></div></section>
+      <section id="reliability"><h2>Zuverlässigkeit</h2><div id="issues"></div></section>
+      <section id="quality"><h2>Datenqualität</h2><div id="quality-content"></div></section>
+      <section id="users"><h2>Nutzer</h2><form id="user-search"><input name="search" placeholder="Name, E-Mail oder ID"><button>Suchen</button></form><div id="user-results"></div></section>
+    </main>
+    <template id="error"><p class="error"></p></template>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

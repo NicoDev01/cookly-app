@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Blurhash } from 'react-blurhash';
+import { capture } from '../services/analytics';
+import { logger } from '../utils/logger';
 
 const MAX_LOADED_IMAGE_CACHE = 200;
 const loadedImageUrls = new Set<string>();
@@ -32,71 +34,35 @@ const ImageWithBlurhash: React.FC<ImageWithBlurhashProps> = ({
   className,
   fit = 'cover',
   forceLoad = false,
+  decoding = 'async',
   ...props
 }) => {
-  const [isLoaded, setIsLoaded] = useState(() => loadedImageUrls.has(src));
-  const [hasError, setHasError] = useState(false);
+  const [loadedSrc, setLoadedSrc] = useState<string | undefined>(() => loadedImageUrls.has(src) ? src : undefined);
+  const [failedSrc, setFailedSrc] = useState<string>();
+  const [requestedSrc, setRequestedSrc] = useState<string>();
   const imgRef = useRef<HTMLImageElement>(null);
-  const observerRef = useRef<IntersectionObserver | null>(null);
+  const loadStartedAt = useRef(0);
   const shouldInstantRender = forceLoad;
+  const isLoaded = loadedSrc === src || loadedImageUrls.has(src);
+  const hasError = failedSrc === src;
 
-  // Preload image with proper error handling
   useEffect(() => {
-    if (!src) return;
-
-    if (loadedImageUrls.has(src)) {
-      setHasError(false);
-      setIsLoaded(true);
-      return;
-    }
-
-    setIsLoaded(false);
-    setHasError(false);
-
-    const img = new Image();
-    img.referrerPolicy = "no-referrer";
-
-    img.onload = () => {
-      rememberLoadedImage(src);
-      setIsLoaded(true);
-    };
-    img.onerror = (e) => {
-      console.warn('[ImageWithBlurhash] Image failed to load:', src);
-      setHasError(true);
-      setIsLoaded(true); // Still show loaded state to hide blurhash
-    };
-
-    img.src = src;
-  }, [src]);
-
-  // Intersection Observer for lazy loading (only when not in modal/forceLoad)
-  useEffect(() => {
+    loadStartedAt.current = performance.now();
     if (forceLoad || !imgRef.current) return;
+    const image = imgRef.current;
 
     const observer = new IntersectionObserver(
       (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting && imgRef.current) {
-            // Image is in view, ensure src is set
-            const currentSrc = imgRef.current.src;
-            if (!currentSrc || currentSrc === window.location.href) {
-              imgRef.current.src = src;
-            }
-            observer.unobserve(imgRef.current);
-          }
-        });
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setRequestedSrc(src);
+          observer.disconnect();
+        }
       },
-      { rootMargin: '50px' }
+      { rootMargin: '200px 0px' }
     );
 
-    observer.observe(imgRef.current);
-    observerRef.current = observer;
-
-    return () => {
-      if (observerRef.current && imgRef.current) {
-        observerRef.current.unobserve(imgRef.current);
-      }
-    };
+    observer.observe(image);
+    return () => observer.disconnect();
   }, [src, forceLoad]);
 
   if (!src) return null;
@@ -120,19 +86,30 @@ const ImageWithBlurhash: React.FC<ImageWithBlurhashProps> = ({
       )}
       <img
         ref={imgRef}
-        src={forceLoad ? src : undefined}
+        src={forceLoad || requestedSrc === src ? src : undefined}
         data-src={forceLoad ? undefined : src}
         alt={alt}
         referrerPolicy="no-referrer"
         loading={forceLoad ? 'eager' : 'lazy'}
+        decoding={decoding}
         className={`w-full h-full ${fit === 'contain' ? 'object-contain' : 'object-cover'} ${shouldInstantRender ? 'opacity-100 transition-none' : `transition-opacity duration-150 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}`}
         onLoad={() => {
+          const cacheHit = loadedImageUrls.has(src);
           rememberLoadedImage(src);
-          setIsLoaded(true);
+          setFailedSrc(undefined);
+          setLoadedSrc(src);
+          capture('image_load_completed', {
+            durationMs: Math.round(performance.now() - loadStartedAt.current),
+            cacheHit,
+          });
         }}
         onError={() => {
-          setHasError(true);
-          setIsLoaded(true);
+          logger.warn('Image', 'Image failed to load', { src });
+          setFailedSrc(src);
+          setLoadedSrc(src);
+          capture('image_load_failed', {
+            durationMs: Math.round(performance.now() - loadStartedAt.current),
+          });
         }}
         {...props}
       />

@@ -2193,4 +2193,10 @@ When making changes, always:
 2. Follow the established patterns for new features
 3. Test both free and Pro user flows
 4. Verify counter increments only on success
+# Hinweis zum aktuellen Stand
+
+Diese historische Detaildokumentation enthält frühere Beispielwerte. Verbindlich
+ist `convex/constants.ts`: manuelle Rezepte sind unbegrenzt, Linkimporte und
+Foto-Scans sind für Free-Nutzer auf jeweils 60 lebenslange erfolgreiche
+Nutzungen begrenzt.
 

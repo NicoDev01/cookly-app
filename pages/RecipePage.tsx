@@ -11,6 +11,8 @@ import RecipeMeta from '../components/RecipeMeta';
 import Ingredients from '../components/Ingredients';
 import Instructions from '../components/Instructions';
 import { Recipe } from '../types';
+import { ModalLoader } from '../components/PageLoader';
+import { capture } from '../services/analytics';
 
 const AddRecipeModal = React.lazy(() => import('../components/AddRecipeModal'));
 
@@ -50,6 +52,7 @@ const RecipeSlideContent = React.memo(({
   onDelete: (id: Id<"recipes">) => void;
   onSidebarToggle: () => void;
 }) => {
+  const [highlightedIngredientIndex, setHighlightedIngredientIndex] = useState<number | null>(null);
   const { data: recipe } = useCachedQuery<Recipe | null>(
     api.recipes.get,
     { id: recipeId },
@@ -59,7 +62,7 @@ const RecipeSlideContent = React.memo(({
   if (!recipe) {
     const hasHeroPreview = !!heroPreview?.image;
     return (
-      <main className="relative z-10 flex-1 min-h-full bg-white">
+      <main className="relative z-10 flex min-h-full flex-1 flex-col bg-white">
         <div className="relative w-full bg-white overflow-hidden" style={{ maxHeight: "70vh" }}>
           {hasHeroPreview ? (
             <img
@@ -76,7 +79,7 @@ const RecipeSlideContent = React.memo(({
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-b from-transparent to-white" />
         </div>
 
-        <div className="relative z-20 -mt-3 mb-6 mx-2 p-6 rounded-3xl glassmorphism bg-white/60 backdrop-blur-xl shadow-neo-light-convex border border-gray-100 md:mx-auto md:max-w-2xl lg:max-w-3xl">
+        <div className="relative z-20 -mt-3 mx-2 mb-2 flex-1 p-6 rounded-3xl glassmorphism bg-white/60 backdrop-blur-xl shadow-neo-light-convex border border-gray-100 md:mx-auto md:max-w-2xl lg:max-w-3xl">
           <div className="space-y-3 animate-pulse">
             <div className="h-7 w-2/3 rounded-lg bg-gray-200" />
             <div className="h-4 w-1/3 rounded bg-gray-200" />
@@ -89,17 +92,29 @@ const RecipeSlideContent = React.memo(({
   }
 
   return (
-    <main className="relative z-10 flex-1 min-h-full bg-white">
+    <main className="relative z-10 flex min-h-full flex-1 flex-col bg-white">
       <RecipeHero
         recipe={recipe}
         onSidebarToggle={onSidebarToggle}
         onEdit={() => onEdit(recipe)}
         onDelete={() => onDelete(recipe._id)}
       />
-      <div className="relative z-20 -mt-3 mb-6 mx-2 p-6 rounded-3xl glassmorphism bg-white/60 backdrop-blur-xl shadow-neo-light-convex border border-gray-100 md:mx-auto md:max-w-2xl lg:max-w-3xl">
+      <div className="relative z-20 -mt-3 mx-2 mb-2 flex-1 p-6 rounded-3xl glassmorphism bg-white/60 backdrop-blur-xl shadow-neo-light-convex border border-gray-100 md:mx-auto md:max-w-2xl lg:max-w-3xl">
         <RecipeMeta recipe={recipe} />
-        <Ingredients ingredients={recipe.ingredients} recipeId={recipe._id} recipeTitle={recipe.title} />
-        <Instructions instructions={recipe.instructions} ingredients={recipe.ingredients} />
+        <Ingredients
+          ingredients={recipe.ingredients}
+          highlightedIndex={highlightedIngredientIndex}
+          recipeId={recipe._id}
+          recipeTitle={recipe.title}
+        />
+        <Instructions
+          instructions={recipe.instructions}
+          ingredients={recipe.ingredients}
+          highlightedIndex={highlightedIngredientIndex}
+          onToggleHighlight={(index) => {
+            setHighlightedIngredientIndex((current) => current === index ? null : index);
+          }}
+        />
       </div>
     </main>
   );
@@ -107,7 +122,6 @@ const RecipeSlideContent = React.memo(({
 
 const RecipeSlide = ({ 
   id, 
-  index,
   isVisible, 
   heroPreview,
   onEdit, 
@@ -115,7 +129,6 @@ const RecipeSlide = ({
   onSidebarToggle,
 }: { 
   id: Id<"recipes">;
-  index: number;
   isVisible: boolean;
   heroPreview?: RecipeNavState["heroPreview"];
   onEdit: (recipe: Recipe) => void;
@@ -217,15 +230,14 @@ const RecipePage: React.FC = () => {
   const heroPreview = (location.state as RecipeNavState | null)?.heroPreview;
 
   // Determine the list of IDs to show
+  const navRecipeIds = (location.state as RecipeNavState | null)?.nav?.ids;
+  const sourceRecipeIds = navRecipeIds
+    ?? (isFavoritesMode ? favoriteRecipeIds : undefined)
+    ?? (isWeeklyMode ? weeklyRecipeIds : undefined)
+    ?? allRecipeIds;
   const recipeIds = useMemo<Id<"recipes">[] | undefined>(() => {
-    const navState = location.state as RecipeNavState | null;
-    const ids = navState?.nav?.ids
-      ?? (isFavoritesMode ? favoriteRecipeIds : undefined)
-      ?? (isWeeklyMode ? weeklyRecipeIds : undefined)
-      ?? allRecipeIds;
-
-    return ids?.map((recipeId) => recipeId as Id<"recipes">);
-  }, [location.state, isFavoritesMode, isWeeklyMode, favoriteRecipeIds, weeklyRecipeIds, allRecipeIds]);
+    return sourceRecipeIds?.map((recipeId) => recipeId as Id<"recipes">);
+  }, [sourceRecipeIds]);
 
   // Find the index of the currently requested recipe
   const initialIndex = useMemo(() => {
@@ -243,11 +255,30 @@ const RecipePage: React.FC = () => {
   });
 
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const activeRecipeIdRef = useRef(routeRecipeId);
+
+  useEffect(() => {
+    activeRecipeIdRef.current = routeRecipeId;
+  }, [routeRecipeId]);
+
+  useEffect(() => {
+    const recipeId = recipeIds?.[currentIndex];
+    if (!recipeId) return;
+    const key = `cookly.recipeOpened.${recipeId}`;
+    const lastOpened = Number(localStorage.getItem(key) || 0);
+    const now = Date.now();
+    capture(lastOpened && now - lastOpened >= 86_400_000 ? 'recipe_reopened' : 'recipe_opened', {
+      recipeId,
+      recipeAgeDays: lastOpened ? Math.floor((now - lastOpened) / 86_400_000) : 0,
+    });
+    localStorage.setItem(key, String(now));
+  }, [recipeIds, currentIndex]);
 
   // Ensure we jump to the correct slide when data loads
   useEffect(() => {
-    if (emblaApi && recipeIds && routeRecipeId) {
-      const idx = recipeIds.findIndex((rId) => rId === routeRecipeId);
+    const activeRecipeId = activeRecipeIdRef.current;
+    if (emblaApi && recipeIds && activeRecipeId) {
+      const idx = recipeIds.findIndex((rId) => rId === activeRecipeId);
       if (idx >= 0 && emblaApi.selectedScrollSnap() !== idx) {
         emblaApi.scrollTo(idx, true);
         setCurrentIndex(idx);
@@ -265,19 +296,13 @@ const RecipePage: React.FC = () => {
       const recipeId = recipeIds[index];
       
       // Only update URL if we are on a different recipe than the URL says.
-      // We use replaceState to avoid cluttering the history stack with every swipe.
-      if (recipeId && recipeId !== routeRecipeId) {
-        // Preserve the state (e.g. from: 'favorites') when updating the URL
+      // Keep Embla mounted: HashRouter navigation would replace the animated page.
+      if (recipeId && recipeId !== activeRecipeIdRef.current) {
+        activeRecipeIdRef.current = recipeId;
         window.history.replaceState(
-          { 
-            ...window.history.state, 
-            usr: { 
-              ...window.history.state?.usr, 
-              from: isFavoritesMode ? 'favorites' : (isWeeklyMode ? 'weekly' : undefined) 
-            } 
-          }, 
-          '', 
-          `/recipe/${recipeId}`
+          window.history.state,
+          '',
+          `#/recipe/${recipeId}`,
         );
       }
     };
@@ -289,17 +314,7 @@ const RecipePage: React.FC = () => {
     return () => {
       emblaApi.off('select', onSelect);
     };
-  }, [emblaApi, recipeIds, routeRecipeId, isFavoritesMode, isWeeklyMode]);
-
-  // Handle external navigation (e.g. clicking a link to another recipe)
-  // This ensures the carousel jumps to the correct slide if the ID changes via props/router.
-  useEffect(() => {
-    if (!emblaApi) return;
-    const currentSnap = emblaApi.selectedScrollSnap();
-    if (currentSnap !== initialIndex) {
-      emblaApi.scrollTo(initialIndex);
-    }
-  }, [initialIndex, emblaApi]);
+  }, [emblaApi, recipeIds]);
 
   const deleteRecipe = useMutation(api.recipes.deleteRecipe);
 
@@ -368,7 +383,6 @@ const RecipePage: React.FC = () => {
               <RecipeSlideWrapper key={rId} isActive={index === currentIndex}>
                 <RecipeSlide 
                   id={rId}
-                  index={index}
                   isVisible={Math.abs(currentIndex - index) <= 1}
                   heroPreview={heroPreview?.id === rId ? heroPreview : undefined}
                   onEdit={handleEdit}
@@ -382,7 +396,7 @@ const RecipePage: React.FC = () => {
       </div>
 
       {isAddModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ModalLoader label="Rezeptformular lädt..." />}>
           <AddRecipeModal
             isOpen={isAddModalOpen}
             onClose={handleCloseModal}

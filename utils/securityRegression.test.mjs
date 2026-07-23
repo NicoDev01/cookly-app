@@ -13,7 +13,6 @@ const read = (path) => readFileSync(join(root, path), 'utf8');
 test('Gemini credentials are not exposed through Vite or client source', () => {
   const files = [
     'components/AddRecipeModal.tsx',
-    'components/addRecipeModal/aiScanRecipe.ts',
     'vite.config.ts',
     '.env.local',
     '.env.production',
@@ -29,10 +28,7 @@ test('Gemini credentials are not exposed through Vite or client source', () => {
     );
   }
 
-  const clientSource = [
-    read('components/AddRecipeModal.tsx'),
-    read('components/addRecipeModal/aiScanRecipe.ts'),
-  ].join('\n');
+  const clientSource = read('components/AddRecipeModal.tsx');
 
   assert.equal(
     /@google\/genai|createGeminiClient/.test(clientSource),
@@ -155,4 +151,15 @@ test('index preconnect comments do not reference removed auth providers', () => 
   const source = read('index.html');
 
   assert.doesNotMatch(source, /Auth0|Clerk/);
+});
+
+test('remote image proxy pins a validated reachable address safely', () => {
+  const source = read('convex/remoteImages.ts');
+  const validation = source.indexOf('assertPublicAddresses');
+  const selection = source.indexOf('addresses.find(({ family }) => family === 4)');
+
+  assert.ok(validation >= 0 && selection > validation);
+  assert.match(source, /hostname:\s*address\.address/);
+  assert.match(source, /servername:\s*url\.hostname/);
+  assert.match(source, /checkServerIdentity\(url\.hostname, certificate\)/);
 });

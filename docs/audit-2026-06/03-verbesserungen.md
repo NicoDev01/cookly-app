@@ -110,6 +110,12 @@ technisch ist alles vorbereitet (Limits zentral, `UpgradeModal` vorhanden).
 
 ## V6 – Logging-Hygiene
 
+> ✅ **Client-Teil erledigt (2026-06-12) – ersetzt durch [08-ux-fehlertexte-performance.md → Teil 4](08-ux-fehlertexte-performance.md).**
+> Der gesamte Frontend-`console.*` läuft jetzt über `utils/logger.ts` (Ringpuffer, in Prod
+> stumm, Sentry-Sink vorbereitet). **Offen bleibt nur der Convex-Server-Teil:** ImportTiming
+> per Env-Flag (`IMPORT_TIMING_VERBOSE`) auf Summary-only reduzieren; Backend-`console.log`
+> gegen das Convex-Log-Kontingent im Blick behalten.
+
 ### Befund
 Sehr viele `console.log` in Produktionspfaden (Deep-Link-Handler, SendIntent-Checks, Convex-
 Functions inkl. ImportTiming). Im Client kosten sie nichts Kritisches, erschweren aber Debugging

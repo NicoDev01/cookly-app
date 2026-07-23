@@ -11,8 +11,7 @@ interface UpgradeModalProps {
 export default function UpgradeModal({
   isOpen,
   onClose,
-  currentCount = 0,
-  limit = 100,
+  limit = 60,
   feature = 'manual_recipes'
 }: UpgradeModalProps) {
   const navigate = useNavigate();

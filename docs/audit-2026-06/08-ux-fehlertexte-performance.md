@@ -9,6 +9,14 @@
 
 # Teil 1: Fehlertexte – „kryptisch" systematisch abschaffen
 
+## Umsetzungsstatus 2026-06-12
+
+| Punkt | Status | Umsetzung | Offen |
+|---|---|---|---|
+| U1 | ✅ umgesetzt | Fehler-Oberflächen aus dem Inventar bereinigt: Signup, Forgot Password, Profile, Subscribe, Weekly, AddRecipeModal und ShareTarget zeigen keine rohen Backend-Texte mehr | Manuelle Gerätetests: falsches Passwort, doppelte Registrierung, falscher Code, Flugmodus-Speichern |
+| U2 | ✅ umgesetzt | Neues zentrales Modul `utils/userErrors.ts` mit Convex-Noise-Stripping, strukturierten Backend-Fehlern, Auth-, Netzwerk-, Import-, Bild-, Billing- und Save-Fallbacks; `utils/authErrors.ts` delegiert darauf | Spätere Erweiterung um Sentry-Kontext aus Teil 4 |
+| U3 | ✅ umgesetzt | `NotificationContext` unterstützt generische `showToast(message, tone)`-Toasts; alle `alert()`-Stellen in App-Code ersetzt | Visueller Smoke-Test der Toasts auf kleinem Android-Viewport |
+
 ## U1 – Ist-Zustand: Inventar aller Fehler-Oberflächen
 
 | Oberfläche | Stelle | Ist-Zustand | Problem |
@@ -57,9 +65,9 @@ getUserErrorMessage(error: unknown, context: 'auth-signin' | 'auth-signup' |
    `getAiScanErrorMessage` bleibt (delegiert für Nicht-Gemini-Fälle an das neue Modul).
 
 ### Definition of Done
-- [ ] Suche `grep -rn "err.message\|error.message\|errorMessage" pages components` zeigt keine
+- [x] Suche `grep -rn "err.message\|error.message\|errorMessage" pages components` zeigt keine
   Stelle mehr, die Rohtext rendert (nur noch console/Sentry)
-- [ ] `alert(` kommt im Code nicht mehr vor
+- [x] `alert(` kommt im App-Code nicht mehr vor
 - [ ] Manuelle Tests: falsches Passwort, doppelte Registrierung, falscher Verify-Code,
   Flugmodus-Speichern → überall verständliche deutsche Texte
 
@@ -81,6 +89,13 @@ getUserErrorMessage(error: unknown, context: 'auth-signin' | 'auth-signup' |
 ---
 
 # Teil 2: Loading-Flow & Animationen
+
+## Umsetzungsstatus 2026-06-12
+
+| Punkt | Status | Umsetzung | Offen |
+|---|---|---|---|
+| U4 | ✅ umgesetzt | `PageLoader` und `ModalLoader` eingeführt; `App`, `TabsLayout`, `RecipePage` und `RecipeHero` nutzen keine `fallback={null}`-Suspense-Grenzen mehr | Slow-3G-Smoke-Test im Browser und Gerätetest auf Android |
+| U5 | ✅ Kern umgesetzt | Motion-Tokens in Tailwind/CSS ergänzt, zentrale Animationen darauf umgestellt, globale `prefers-reduced-motion`-Regel ergänzt, ShareTarget-Phasen auf Mindestanzeigezeit gekoppelt | Optionale Detailarbeit: echte Modal-Exit-Animationen für hart unmountende Bottom-Sheets |
 
 ## U4 – Blank Screens durch `fallback={null}` beseitigen
 
@@ -134,6 +149,14 @@ Vorhandene Basis ist gut (`page-enter`, `animate-in`, Blurhash-Fades, Haptics, g
 
 # Teil 3: Effizienz – Smooth bleiben, ohne Kosten/Gerät zu überladen
 
+## Umsetzungsstatus 2026-06-12
+
+| Punkt | Status | Umsetzung | Offen |
+|---|---|---|---|
+| E1 | ✅ umgesetzt | `recipes.listPreviews` eingeführt; `TabsLayout` lädt keine Rezeptliste mehr; `MealPlanModal`, `FavoritesPage` und `CategoryRecipesPage` nutzen Preview-Queries ohne `ingredients`/`instructions`; `CategoriesPage` nutzt Voll-Query nur noch für aktiven Zutatenfilter | Convex-Dashboard: Bandwidth vorher/nachher manuell notieren |
+| E2 | ✅ umgesetzt | Subscription-Budget-Regeln in `CLAUDE.md` festgehalten | Optional: später PostHog/Usage-Dashboard für Kosten-Proxys |
+| E3 | ✅ umgesetzt | App-Start-Bildprefetch entfernt; `prefetchRecipeImages` auf 6 Bilder begrenzt und Data-Saver-aware gemacht; Listenbilder defaulten auf `decoding="async"` | Realgerät-Smoke-Test mit Data Saver / Mobilfunk |
+
 ## E1 – Größter Kostenhebel: `recipes.list` wird komplett und dauerhaft abonniert 🔴
 
 ### Befund
@@ -162,7 +185,7 @@ vermeiden willst.
 4. Zusammen mit R3 (echte Pagination) ist das der komplette Bandbreiten-Fix.
 
 ### Definition of Done
-- [ ] Kein dauerhaft aktives Abo mehr, das `ingredients`/`instructions` aller Rezepte enthält
+- [x] Kein dauerhaft aktives Abo mehr, das `ingredients`/`instructions` aller Rezepte enthält
 - [ ] Convex-Dashboard → Usage: Bandbreite pro Tag vor/nach dem Umbau notiert (Erfolg messbar)
 
 **Aufwand:** ~0,5–1 Tag. **Impact:** der mit Abstand größte Kosten-/Effizienz-Gewinn.
@@ -226,6 +249,26 @@ Kosten – die beiden Ziele zahlen hier aufeinander ein statt gegeneinander.
 > freundlicher Text für den Nutzer, einmal als vollständiger Datensatz für den Entwickler.
 > Die Schichten sind strikt getrennt.
 
+## Umsetzungsstatus 2026-06-12
+
+| Bereich | Status | Umsetzung |
+|---|---|---|
+| Logger-Kern (Schicht 3) | ✅ umgesetzt | `utils/logger.ts`: Ringpuffer (200), Dev-Konsole/Prod-stumm, `serializeLogData`, `getRecentLogLines`; pure Helfer in `utils/logger.test.mjs` (9 Tests) |
+| Sentry-Hook (Schicht 2) | ✅ vorbereitet | `registerLogSink(sink)` leitet warn/error an Sinks weiter. **Sentry selbst ist NICHT verdrahtet** (gehört zu P1) – Anbindung ist ein Einzeiler, keine Call-Site muss erneut angefasst werden |
+| Call-Sites umgestellt | ✅ vollständig | **0 rohe `console.*` mehr im gesamten App-Code** (`pages/`, `components/`, `services/`, `hooks/`, `contexts/`, `utils/`, `App.tsx`, `index.tsx`) – inkl. beider ErrorBoundaries + globaler `window.onerror`/`unhandledrejection`-Handler |
+| WebView-Debugging | ✅ umgesetzt | `capacitor.config.ts`: `webContentsDebuggingEnabled` standardmäßig AUS; Opt-in via `COOKLY_DEBUG_WEBVIEW=1` (bewusst kein NODE_ENV-Default, da `cap sync` eigener Prozess) |
+| Debug-Menü | ✅ umgesetzt | `components/DebugSheet.tsx` + 7×-Tap auf die Versionsnummer in der ProfilePage; zeigt Version/Plattform/gekürzte User-ID + Ringpuffer-Logs, Buttons „kopieren"/„per E-Mail"/„Puffer leeren". App-Version via Vite-`define` aus `build.gradle` (`utils/appInfo.ts`, `__APP_VERSION__`) |
+
+**Verifiziert:** `npx tsc -p tsconfig.app.json --noEmit` grün · `node --test …` 74/74 grün ·
+`npm run build:check` grün · Version `1.4.8` im Bundle · `grep "console\."` über den App-Code = 0
+(verbleibende console-Referenzen in den Bundles: der Dev-Zweig des Loggers selbst – in Prod via
+`isDev=false` nie aufgerufen – sowie Drittbibliotheken wie convex/auth).
+
+**Offen (gehört zu P1):** Sentry-Account/SDK + `registerLogSink`-Anbindung (warn/error →
+Breadcrumb, error → captureException + Ringpuffer als Attachment); Convex-Exception-Reporting.
+**Offen (Gerätetest):** Debug-APK mit `COOKLY_DEBUG_WEBVIEW=1` über `chrome://inspect` prüfen;
+7×-Tap-Menü auf echtem Gerät öffnen.
+
 ## Schicht 1 – Nutzer: Nur gemappte Texte + Graceful Degradation
 
 Bereits geplant in U1–U3. Ergänzend als Regel: Jede Fehlerstelle entscheidet sich für eine
@@ -281,10 +324,12 @@ Entwicklung, ohne dass je etwas beim Nutzer aufpoppt oder dauerhaft Logs gesende
    („schick mir mal deine Logs"), ohne irgendetwas für normale Nutzer zu ändern.
 
 ### Definition of Done
-- [ ] `utils/logger.ts` existiert, ShareTargetPage + AddRecipeModal + Auth-Seiten umgestellt
-- [ ] Prod-Build: Konsole still, Sentry-Report enthält Breadcrumbs + Ringpuffer
-- [ ] Debug-APK über `chrome://inspect` inspizierbar, Release-APK nicht
-- [ ] V6 (Logging-Hygiene) aus 03-verbesserungen ist damit abgedeckt und kann dort als
-  „ersetzt durch 08/Teil 4" markiert werden
+- [x] `utils/logger.ts` existiert, ShareTargetPage + AddRecipeModal + Auth-Seiten umgestellt
+  (darüber hinaus: gesamter App-Code, beide ErrorBoundaries, globale Handler)
+- [x] Prod-Build: unsere Logs sind still (Logger-`isDev`-Guard); Ringpuffer + `registerLogSink`
+  für Sentry vorbereitet — **Sentry-Anbindung selbst offen (P1)**
+- [x] Code-Pfad für „Debug-APK inspizierbar, Release nicht" umgesetzt (`COOKLY_DEBUG_WEBVIEW`);
+  Gerätetest mit `chrome://inspect` steht aus
+- [x] V6 (Logging-Hygiene) aus 03-verbesserungen abgedeckt → dort als „ersetzt durch 08/Teil 4" markiert
 
 **Aufwand:** ~1 Tag (ohne Debug-Menü), Voraussetzung: Sentry aus P1.

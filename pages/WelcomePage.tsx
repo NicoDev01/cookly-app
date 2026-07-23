@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { useConvexAuth } from 'convex/react';
-import { Capacitor } from '@capacitor/core';
-import { Browser } from '@capacitor/browser';
+import { logger } from '../utils/logger';
 import { Button } from '../components/ui/cookly';
 import BottomSheet from '../components/BottomSheet';
+import { startGoogleOAuth } from '../services/googleOAuth';
 
 /**
  * WelcomePage - Minimalistische Landing-Page für unangemeldete User
@@ -29,24 +29,9 @@ export const WelcomePage: React.FC = () => {
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
     try {
-      if (Capacitor.isNativePlatform()) {
-        // Native Android: signIn('google') gibt ein FormData-Objekt zurück mit einer redirect URL.
-        // Diese URL muss im externen Browser geöffnet werden (Google blockiert WebViews).
-        // Nach dem Login: Google → Convex Auth → com.cookly.recipe://auth-callback → App.
-        const result = await signIn('google', { redirectTo: 'com.cookly.recipe://auth-callback' });
-        if (result instanceof Response) {
-          const redirectUrl = result.headers.get('Location') || result.url;
-          if (redirectUrl) {
-            await Browser.open({ url: redirectUrl });
-            return; // Browser übernimmt, Loading-State bleibt bis Deep Link zurückkommt
-          }
-        }
-        setIsGoogleLoading(false);
-      } else {
-        await signIn('google');
-      }
+      await startGoogleOAuth(() => signIn('google'));
     } catch (error) {
-      console.error('[WelcomePage] Google OAuth Error:', error);
+      logger.warn('Auth', 'Google OAuth failed (welcome)', error);
       setIsGoogleLoading(false);
     }
   };

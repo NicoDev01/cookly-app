@@ -4,6 +4,9 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { FREE_LIMITS } from "./constants";
 import type { QueryCtx, MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
+import { hasProAccess, setProviderStatus, upsertEntitlement } from "./billing";
+import { internal } from "./_generated/api";
+import { enqueueIntegration } from "./integrations";
 
 // ============================================================
 // HELPER
@@ -35,6 +38,17 @@ async function getUserByAuthUserId(ctx: QueryCtx | MutationCtx, authUserId: stri
 
   return await ctx.db.get(authUserId as Id<"users">);
 }
+
+async function activeImports(ctx: QueryCtx, userId: Id<"users">, feature: "link_imports" | "photo_scans") {
+  const rows = await Promise.all(["reserved", "running"].map((status) =>
+    ctx.db.query("importOperations")
+      .withIndex("by_user_feature_status", (q) => q.eq("userId", userId).eq("feature", feature).eq("status", status as "reserved" | "running"))
+      .collect()
+  ));
+  return rows[0].length + rows[1].length;
+}
+
+const stripeEnvironment = () => process.env.STRIPE_SECRET_KEY?.startsWith("sk_live_") ? "production" as const : "sandbox" as const;
 
 // ============================================================
 // PUBLIC QUERIES
@@ -68,21 +82,13 @@ export const canCreateManualRecipe = query({
   handler: async (ctx) => {
     const user = await getCurrentUserFromCtx(ctx);
     if (!user) return { canProceed: false, error: "NOT_AUTHENTICATED" };
-    const subscription = user.subscription ?? "free";
-
-    if (subscription !== "free") {
-      return { canProceed: true, isPro: true, subscription };
-    }
-
-    const current = user.usageStats?.manualRecipes || 0;
-    const limit = FREE_LIMITS.MANUAL_RECIPES;
     return {
-      canProceed: current < limit,
-      isPro: false,
-      subscription: "free" as const,
-      current,
-      limit,
-      remaining: Math.max(0, limit - current),
+      canProceed: true,
+      isPro: await hasProAccess(ctx, user._id),
+      subscription: user.subscription ?? "free",
+      current: user.usageStats?.manualRecipes ?? 0,
+      limit: null,
+      remaining: null,
       feature: "manual_recipes" as const,
     };
   },
@@ -96,13 +102,13 @@ export const canImportFromLink = query({
   handler: async (ctx) => {
     const user = await getCurrentUserFromCtx(ctx);
     if (!user) return { canProceed: false, error: "NOT_AUTHENTICATED" };
-    const subscription = user.subscription ?? "free";
+    const subscription = await hasProAccess(ctx, user._id) ? (user.subscription === "pro_yearly" ? "pro_yearly" : "pro_monthly") : "free";
 
     if (subscription !== "free") {
       return { canProceed: true, isPro: true, subscription };
     }
 
-    const current = user.usageStats?.linkImports || 0;
+    const current = (user.usageStats?.linkImports || 0) + await activeImports(ctx, user._id, "link_imports");
     const limit = FREE_LIMITS.LINK_IMPORTS;
     return {
       canProceed: current < limit,
@@ -124,13 +130,13 @@ export const canScanPhoto = query({
   handler: async (ctx) => {
     const user = await getCurrentUserFromCtx(ctx);
     if (!user) return { canProceed: false, error: "NOT_AUTHENTICATED" };
-    const subscription = user.subscription ?? "free";
+    const subscription = await hasProAccess(ctx, user._id) ? (user.subscription === "pro_yearly" ? "pro_yearly" : "pro_monthly") : "free";
 
     if (subscription !== "free") {
       return { canProceed: true, isPro: true, subscription };
     }
 
-    const current = user.usageStats?.photoScans || 0;
+    const current = (user.usageStats?.photoScans || 0) + await activeImports(ctx, user._id, "photo_scans");
     const limit = FREE_LIMITS.PHOTO_SCANS;
     return {
       canProceed: current < limit,
@@ -153,12 +159,12 @@ export const getUsageStats = query({
     const user = await getCurrentUserFromCtx(ctx);
     if (!user) return null;
 
-    const isPro = (user.subscription ?? "free") !== "free";
+    const isPro = await hasProAccess(ctx, user._id);
     return {
       usage: user.usageStats,
       isPro,
       limits: {
-        recipes: FREE_LIMITS.MANUAL_RECIPES,
+        recipes: null,
         imports: FREE_LIMITS.LINK_IMPORTS,
         scans: FREE_LIMITS.PHOTO_SCANS,
       },
@@ -187,11 +193,18 @@ export const createOrSyncUser = mutation({
       .withIndex("by_authUserId", (q) => q.eq("authUserId", authUserId.toString()))
       .first();
 
-    if (existing) return existing._id;
+    if (existing) {
+      if (!existing.billingUserId) {
+        await ctx.db.patch(existing._id, { billingUserId: crypto.randomUUID(), updatedAt: Date.now() });
+      }
+      await ctx.db.patch(existing._id, { lastActiveAt: Date.now(), updatedAt: Date.now() });
+      return existing._id;
+    }
 
     const authUserDoc = await ctx.db.get(authUserId as Id<"users">);
     if (authUserDoc) {
       const now = Date.now();
+      const billingUserId = authUserDoc.billingUserId ?? crypto.randomUUID();
       const identity = await ctx.auth.getUserIdentity();
       const email = identity?.email ?? undefined;
       const name = identity?.name ?? email?.split("@")[0] ?? "User";
@@ -199,6 +212,7 @@ export const createOrSyncUser = mutation({
 
       await ctx.db.patch(authUserDoc._id, {
         authUserId: authUserId.toString(),
+        billingUserId,
         email: authUserDoc.email ?? email,
         name: authUserDoc.name ?? name,
         avatar: authUserDoc.avatar ?? avatar,
@@ -215,8 +229,26 @@ export const createOrSyncUser = mutation({
           resetOnDowngrade: false,
         },
         createdAt: authUserDoc.createdAt ?? now,
+        firstSeenAt: authUserDoc.firstSeenAt ?? now,
+        lastActiveAt: now,
+        lifecycleStage: authUserDoc.lifecycleStage ?? "registered",
         updatedAt: now,
       });
+
+      if (email) {
+        await enqueueIntegration(ctx, "brevo", "contact", `contact:${authUserDoc._id}:sync:${now}`, {
+          email,
+          updateEnabled: true,
+          attributes: {
+            COOKLY_USER_ID: billingUserId,
+            FIRSTNAME: name,
+            CREATED_AT: new Date(authUserDoc.createdAt ?? now).toISOString(),
+            PLAN: authUserDoc.subscription ?? "free",
+            LIFECYCLE_STAGE: authUserDoc.lifecycleStage ?? "registered",
+          },
+        });
+        await ctx.scheduler.runAfter(0, internal.integrations.processJobs);
+      }
 
       return authUserDoc._id;
     }
@@ -228,8 +260,10 @@ export const createOrSyncUser = mutation({
     const avatar = identity?.pictureUrl ?? undefined;
 
     const now = Date.now();
+    const billingUserId = crypto.randomUUID();
     const userId = await ctx.db.insert("users", {
       authUserId: authUserId.toString(),
+      billingUserId,
       email,
       name,
       avatar,
@@ -246,11 +280,41 @@ export const createOrSyncUser = mutation({
         resetOnDowngrade: false,
       },
       createdAt: now,
+      firstSeenAt: now,
+      lastActiveAt: now,
+      lifecycleStage: "registered",
       updatedAt: now,
     });
 
+    if (email) {
+      await enqueueIntegration(ctx, "brevo", "contact", `contact:${userId}:created`, {
+        email,
+        updateEnabled: true,
+        attributes: {
+          COOKLY_USER_ID: billingUserId,
+          FIRSTNAME: name,
+          CREATED_AT: new Date(now).toISOString(),
+          PLAN: "free",
+          LIFECYCLE_STAGE: "registered",
+        },
+      });
+      await ctx.scheduler.runAfter(0, internal.integrations.processJobs);
+    }
+
     console.log(`[UserSync] ✅ Created user ${authUserId} in Convex`);
     return userId;
+  },
+});
+
+export const ensureBillingUserId = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getCurrentUserFromCtx(ctx);
+    if (!user) throw new Error("NOT_AUTHENTICATED");
+    if (user.billingUserId) return user.billingUserId;
+    const billingUserId = crypto.randomUUID();
+    await ctx.db.patch(user._id, { billingUserId, updatedAt: Date.now() });
+    return billingUserId;
   },
 });
 
@@ -260,9 +324,10 @@ export const createOrSyncUser = mutation({
 export const updateOnboarding = mutation({
   args: {
     name: v.optional(v.string()),
+    onboardingGoal: v.optional(v.string()),
     cookingFrequency: v.optional(v.string()),
     preferredCuisines: v.optional(v.array(v.string())),
-    notificationsEnabled: v.boolean(),
+    notificationsEnabled: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUserFromCtx(ctx);
@@ -270,11 +335,52 @@ export const updateOnboarding = mutation({
 
     await ctx.db.patch(user._id, {
       name: args.name ?? user.name,
+      onboardingGoal: args.onboardingGoal ?? user.onboardingGoal,
       cookingFrequency: args.cookingFrequency ?? user.cookingFrequency,
       preferredCuisines: args.preferredCuisines ?? user.preferredCuisines,
-      notificationsEnabled: args.notificationsEnabled,
+      notificationsEnabled: args.notificationsEnabled ?? user.notificationsEnabled,
       updatedAt: Date.now(),
     });
+    if (user.email) {
+      await enqueueIntegration(ctx, "brevo", "contact", `contact:${user._id}:onboarding:${Date.now()}`, {
+        email: user.email,
+        updateEnabled: true,
+        attributes: {
+          COOKLY_USER_ID: user.billingUserId ?? String(user._id),
+          FIRSTNAME: args.name ?? user.name,
+          ONBOARDING_GOAL: args.onboardingGoal ?? user.onboardingGoal,
+          PLAN: user.subscription ?? "free",
+          LIFECYCLE_STAGE: "onboarding",
+        },
+      });
+      await ctx.scheduler.runAfter(0, internal.integrations.processJobs);
+    }
+  },
+});
+
+export const updateNotificationPreference = mutation({
+  args: { enabled: v.boolean() },
+  handler: async (ctx, { enabled }) => {
+    const user = await getCurrentUserFromCtx(ctx);
+    if (!user) throw new Error("NOT_AUTHENTICATED");
+    await ctx.db.patch(user._id, { notificationsEnabled: enabled, updatedAt: Date.now() });
+  },
+});
+
+/**
+ * Compatibility endpoint for installed clients released before accountDeletion.requestDeletion.
+ * The deletion continues server-side after the legacy client signs out.
+ */
+export const deleteCurrentUser = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const authUserId = await getAuthUserId(ctx);
+    if (!authUserId) throw new Error("NOT_AUTHENTICATED");
+    await ctx.scheduler.runAfter(0, internal.accountDeletion.requestDeletionForAuth, {
+      authUserId: authUserId.toString(),
+      requestId: crypto.randomUUID(),
+    });
+    return { status: "scheduled" as const };
   },
 });
 
@@ -289,6 +395,98 @@ export const completeOnboarding = mutation({
 
     await ctx.db.patch(user._id, {
       onboardingCompleted: true,
+      lifecycleStage: "activated",
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const touchActivity = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getCurrentUserFromCtx(ctx);
+    if (!user) return;
+    const now = Date.now();
+    if ((user.lastActiveAt ?? 0) > now - 15 * 60_000) return;
+    const reactivated = user.lifecycleStage === "dormant";
+    await ctx.db.patch(user._id, {
+      lastActiveAt: now,
+      lifecycleStage: reactivated ? "engaged" : user.lifecycleStage,
+      updatedAt: now,
+    });
+    if (reactivated && user.email) {
+      await enqueueIntegration(ctx, "brevo", "event", `reactivated:${user._id}:${now}`, {
+        event_name: "cookly_user_reactivated",
+        identifiers: { email_id: user.email },
+        contact_properties: { COOKLY_USER_ID: user.billingUserId ?? String(user._id) },
+      });
+      await ctx.scheduler.runAfter(0, internal.integrations.processJobs);
+    }
+  },
+});
+
+const attributionTouch = v.object({
+  source: v.optional(v.string()),
+  medium: v.optional(v.string()),
+  campaign: v.optional(v.string()),
+  adSet: v.optional(v.string()),
+  creative: v.optional(v.string()),
+  keyword: v.optional(v.string()),
+  clickId: v.optional(v.string()),
+  referrer: v.optional(v.string()),
+  landingPage: v.optional(v.string()),
+  capturedAt: v.number(),
+});
+
+const attributionFields = [
+  "source",
+  "medium",
+  "campaign",
+  "adSet",
+  "creative",
+  "keyword",
+  "clickId",
+  "referrer",
+  "landingPage",
+  "capturedAt",
+] as const;
+
+const sameAttributionTouch = (current: unknown, next: unknown) => {
+  if (!current || typeof current !== "object" || !next || typeof next !== "object") {
+    return false;
+  }
+  const left = current as Record<string, unknown>;
+  const right = next as Record<string, unknown>;
+  return attributionFields.every((field) => left[field] === right[field]);
+};
+
+export const recordAttribution = mutation({
+  args: { touch: attributionTouch },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUserFromCtx(ctx);
+    if (!user) return;
+
+    const acquisitionSource = user.acquisitionSource ?? args.touch.source;
+    const acquisitionMedium = user.acquisitionMedium ?? args.touch.medium;
+    const acquisitionCampaign = user.acquisitionCampaign ?? args.touch.campaign;
+    const acquisitionFirstTouch = user.acquisitionFirstTouch ?? args.touch;
+
+    if (
+      user.acquisitionSource === acquisitionSource &&
+      user.acquisitionMedium === acquisitionMedium &&
+      user.acquisitionCampaign === acquisitionCampaign &&
+      sameAttributionTouch(user.acquisitionFirstTouch, acquisitionFirstTouch) &&
+      sameAttributionTouch(user.acquisitionLastTouch, args.touch)
+    ) {
+      return;
+    }
+
+    await ctx.db.patch(user._id, {
+      acquisitionSource,
+      acquisitionMedium,
+      acquisitionCampaign,
+      acquisitionFirstTouch,
+      acquisitionLastTouch: args.touch,
       updatedAt: Date.now(),
     });
   },
@@ -318,152 +516,6 @@ export const updateSubscription = mutation({
   },
 });
 
-/**
- * Delete user account (GDPR compliant)
- * Called when user deletes their own account
- */
-export const deleteCurrentUser = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const authUserId = await getAuthUserId(ctx);
-    if (!authUserId) throw new Error("Not authenticated");
-
-    const currentUser = await getCurrentUserFromCtx(ctx);
-    if (!currentUser) throw new Error("Not authenticated");
-
-    const authUserDoc = await ctx.db.get(authUserId as Id<"users">);
-    const userIds = Array.from(
-      new Set(
-        [currentUser._id, authUserDoc?._id]
-          .filter(Boolean)
-          .map((id) => id as Id<"users">),
-      ),
-    );
-
-    for (const userId of userIds) {
-      const recipes = await ctx.db
-        .query("recipes")
-        .withIndex("by_user", (q) => q.eq("userId", userId))
-        .collect();
-      for (const recipe of recipes) {
-        if (recipe.imageStorageId) {
-          try {
-            await ctx.storage.delete(recipe.imageStorageId);
-          } catch {
-            // ignore orphaned files
-          }
-        }
-        await ctx.db.delete(recipe._id);
-      }
-
-      const weeklyMeals = await ctx.db
-        .query("weeklyMeals")
-        .withIndex("by_user_date", (q) => q.eq("userId", userId))
-        .collect();
-      for (const meal of weeklyMeals) {
-        await ctx.db.delete(meal._id);
-      }
-
-      const shoppingItems = await ctx.db
-        .query("shoppingItems")
-        .withIndex("by_user", (q) => q.eq("userId", userId))
-        .collect();
-      for (const item of shoppingItems) {
-        await ctx.db.delete(item._id);
-      }
-
-      const categories = await ctx.db
-        .query("categories")
-        .withIndex("by_user", (q) => q.eq("userId", userId))
-        .collect();
-      for (const cat of categories) {
-        if (cat.imageStorageId) {
-          try {
-            await ctx.storage.delete(cat.imageStorageId);
-          } catch {
-            // ignore orphaned files
-          }
-        }
-        await ctx.db.delete(cat._id);
-      }
-
-      const categoryStats = await ctx.db
-        .query("categoryStats")
-        .withIndex("by_user_category", (q) => q.eq("userId", userId))
-        .collect();
-      for (const stat of categoryStats) {
-        await ctx.db.delete(stat._id);
-      }
-    }
-
-    const identifiers = new Set<string>();
-    identifiers.add(authUserId.toString());
-    if (currentUser.email) identifiers.add(currentUser.email);
-    if (authUserDoc?.email) identifiers.add(authUserDoc.email);
-
-    for (const userId of userIds) {
-      const sessions = await ctx.db
-        .query("authSessions")
-        .withIndex("userId", (q) => q.eq("userId", userId))
-        .collect();
-      for (const session of sessions) {
-        const refreshTokens = await ctx.db
-          .query("authRefreshTokens")
-          .withIndex("sessionId", (q) => q.eq("sessionId", session._id))
-          .collect();
-        for (const token of refreshTokens) {
-          await ctx.db.delete(token._id);
-        }
-
-        const verifiers = await ctx.db
-          .query("authVerifiers")
-          .filter((q) => q.eq(q.field("sessionId"), session._id))
-          .collect();
-        for (const verifier of verifiers) {
-          await ctx.db.delete(verifier._id);
-        }
-
-        await ctx.db.delete(session._id);
-      }
-
-      const accounts = await ctx.db
-        .query("authAccounts")
-        .filter((q) => q.eq(q.field("userId"), userId))
-        .collect();
-      for (const account of accounts) {
-        const verificationCodes = await ctx.db
-          .query("authVerificationCodes")
-          .withIndex("accountId", (q) => q.eq("accountId", account._id))
-          .collect();
-        for (const code of verificationCodes) {
-          await ctx.db.delete(code._id);
-        }
-        await ctx.db.delete(account._id);
-      }
-    }
-
-    for (const identifier of identifiers) {
-      const rateLimitRows = await ctx.db
-        .query("authRateLimits")
-        .withIndex("identifier", (q) => q.eq("identifier", identifier))
-        .collect();
-      for (const row of rateLimitRows) {
-        await ctx.db.delete(row._id);
-      }
-    }
-
-    for (const userId of userIds) {
-      const user = await ctx.db.get(userId);
-      if (user) {
-        await ctx.db.delete(userId);
-      }
-    }
-
-    console.log(`[DeleteUser] ✅ Deleted user data and auth state for ${authUserId}`);
-    return { success: true };
-  },
-});
-
 // ============================================================
 // INTERNAL MUTATIONS
 // ============================================================
@@ -486,7 +538,7 @@ export const incrementUsageCounter = internalMutation({
     if (!user) throw new Error("User not found");
 
     // Pro User brauchen keine Counter
-    if ((user.subscription ?? "free") !== "free") return;
+    if (await hasProAccess(ctx, user._id)) return;
 
     const currentStats = user.usageStats || {
       manualRecipes: 0,
@@ -500,8 +552,7 @@ export const incrementUsageCounter = internalMutation({
     const updates: Record<string, unknown> = {};
     switch (args.feature) {
       case "manual_recipes":
-        updates.usageStats = { ...currentStats, manualRecipes: (currentStats.manualRecipes || 0) + 1 };
-        break;
+        return;
       case "link_imports":
         updates.usageStats = { ...currentStats, linkImports: (currentStats.linkImports || 0) + 1 };
         break;
@@ -520,7 +571,7 @@ export const getPhotoScanLimitStatusByAuthUserId = internalQuery({
     const user = await getUserByAuthUserId(ctx, args.authUserId);
     if (!user) throw new Error("NOT_AUTHENTICATED");
 
-    const subscription = user.subscription ?? "free";
+    const subscription = await hasProAccess(ctx, user._id) ? (user.subscription === "pro_yearly" ? "pro_yearly" : "pro_monthly") : "free";
     const current = user.usageStats?.photoScans || 0;
     const limit = FREE_LIMITS.PHOTO_SCANS;
 
@@ -549,26 +600,24 @@ export const getPhotoScanLimitStatusByAuthUserId = internalQuery({
 });
 
 /**
- * Setzt alle Counter auf 0 (bei Downgrade Pro→Free)
+ * Lebenslange Free-Counter bleiben beim Downgrade erhalten.
  */
 export const resetUsageCounters = internalMutation({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     if (!user) return;
+    if (await hasProAccess(ctx, user._id)) return;
 
     await ctx.db.patch(user._id, {
       usageStats: {
-        manualRecipes: 0,
-        linkImports: 0,
-        photoScans: 0,
-        subscriptionStartDate: undefined,
+        ...user.usageStats,
         subscriptionEndDate: undefined,
         resetOnDowngrade: false,
       },
       updatedAt: Date.now(),
     });
-    console.log(`[Reset] Usage counters reset for user ${args.userId}`);
+    console.log(`[Reset] Downgrade marker cleared for user ${args.userId}`);
   },
 });
 
@@ -616,6 +665,9 @@ export const markForDowngradeByStripeCustomer = internalMutation({
       },
       updatedAt: Date.now(),
     });
+    for (const entitlement of await ctx.db.query("billingEntitlements").withIndex("by_user_provider", (q) => q.eq("userId", user._id).eq("provider", "stripe")).collect()) {
+      await ctx.db.patch(entitlement._id, { willRenew: false, updatedAt: Date.now() });
+    }
     console.log(`[Downgrade] Customer ${args.stripeCustomerId} marked for reset at ${new Date(args.subscriptionEndDate).toISOString()}`);
   },
 });
@@ -645,6 +697,9 @@ export const clearDowngradeMarkByStripeCustomer = internalMutation({
       },
       updatedAt: Date.now(),
     });
+    for (const entitlement of await ctx.db.query("billingEntitlements").withIndex("by_user_provider", (q) => q.eq("userId", user._id).eq("provider", "stripe")).collect()) {
+      await ctx.db.patch(entitlement._id, { willRenew: true, updatedAt: Date.now() });
+    }
   },
 });
 
@@ -677,6 +732,7 @@ export const downgradeToFreeByStripeCustomer = internalMutation({
       stripeSubscriptionId: undefined,
       updatedAt: Date.now(),
     });
+    await setProviderStatus(ctx, user._id, "stripe", "expired");
   },
 });
 
@@ -724,6 +780,20 @@ export const updateSubscriptionByConvexUserId = internalMutation({
       stripeSubscriptionId: args.stripeSubscriptionId ?? user.stripeSubscriptionId,
       updatedAt: Date.now(),
     });
+    if (args.subscription !== "free") {
+      await upsertEntitlement(ctx, {
+        userId: user._id,
+        provider: "stripe",
+        externalCustomerId: args.stripeCustomerId ?? user.stripeCustomerId,
+        externalSubscriptionId: args.stripeSubscriptionId ?? user.stripeSubscriptionId,
+        productId: args.subscription,
+        plan: args.subscription,
+        status: args.subscriptionStatus,
+        periodEnd: args.subscriptionEndDate,
+        willRenew: args.subscriptionStatus === "active",
+        environment: stripeEnvironment(),
+      });
+    }
   },
 });
 
@@ -778,6 +848,21 @@ export const updateSubscriptionByStripeCustomer = internalMutation({
     }
 
     await ctx.db.patch(user._id, updates);
+    const plan = args.subscription === "pro_yearly" || (args.subscription === undefined && user.subscription === "pro_yearly")
+      ? "pro_yearly" as const
+      : "pro_monthly" as const;
+    await upsertEntitlement(ctx, {
+      userId: user._id,
+      provider: "stripe",
+      externalCustomerId: args.stripeCustomerId,
+      externalSubscriptionId: args.stripeSubscriptionId ?? user.stripeSubscriptionId,
+      productId: plan,
+      plan,
+      status: args.subscriptionStatus ?? (user.subscriptionStatus === "canceled" ? "canceled" : user.subscriptionStatus === "past_due" ? "past_due" : "active"),
+      periodEnd: args.subscriptionEndDate ?? user.subscriptionEnd ?? user.usageStats?.subscriptionEndDate,
+      willRenew: !(user.usageStats?.resetOnDowngrade ?? false),
+      environment: stripeEnvironment(),
+    });
   },
 });
 
@@ -807,6 +892,19 @@ export const updateSubscriptionStatusByStripeCustomer = internalMutation({
     await ctx.db.patch(user._id, {
       subscriptionStatus: args.subscriptionStatus,
       updatedAt: Date.now(),
+    });
+    const plan = user.subscription === "pro_yearly" ? "pro_yearly" : "pro_monthly";
+    await upsertEntitlement(ctx, {
+      userId: user._id,
+      provider: "stripe",
+      externalCustomerId: args.stripeCustomerId,
+      externalSubscriptionId: user.stripeSubscriptionId,
+      productId: plan,
+      plan,
+      status: args.subscriptionStatus,
+      periodEnd: user.subscriptionEnd ?? user.usageStats?.subscriptionEndDate,
+      willRenew: args.subscriptionStatus === "active",
+      environment: stripeEnvironment(),
     });
   },
 });

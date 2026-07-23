@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { logger } from '../utils/logger';
+import { createToastState, hiddenToastState, type ToastState, type ToastTone } from '../utils/toastState';
 
 /**
  * NotificationContext - Global State für Import-Notifications
@@ -8,16 +10,11 @@ import { useNavigate } from 'react-router-dom';
  * Jetzt ist der Toast app-weit verfügbar, egal auf welcher Seite der User ist.
  */
 
-interface ToastState {
-  visible: boolean;
-  recipeId: string | null;
-  message: string;
-}
-
 interface NotificationContextType {
   // Toast State
   toast: ToastState;
   showImportToast: (recipeId: string, message?: string) => void;
+  showToast: (message: string, tone?: ToastTone) => void;
   hideImportToast: () => void;
 }
 
@@ -31,12 +28,14 @@ const GlobalImportToast: React.FC<{
   visible: boolean;
   recipeId: string | null;
   message: string;
+  title: string;
+  tone: ToastTone;
   onNavigate: () => void;
   onDismiss: () => void;
-}> = ({ visible, recipeId, message, onNavigate, onDismiss }) => {
+}> = ({ visible, recipeId, message, title, tone, onNavigate, onDismiss }) => {
   useEffect(() => {
     if (visible) {
-      console.log('[NotificationContext] Toast visible, recipeId:', recipeId);
+      logger.debug('Toast', 'Toast visible', { recipeId });
       // Auto-dismiss nach 6 Sekunden
       const timer = setTimeout(onDismiss, 6000);
       return () => clearTimeout(timer);
@@ -45,20 +44,27 @@ const GlobalImportToast: React.FC<{
 
   if (!visible) return null;
 
+  const toneClasses = {
+    success: 'bg-green-500 text-white shadow-green-500/30',
+    error: 'bg-red-500 text-white shadow-red-500/30',
+    info: 'bg-primary text-white shadow-primary/30',
+  }[tone];
+  const icon = tone === 'success' ? 'check_circle' : tone === 'error' ? 'error' : 'info';
+
   return (
     <div 
       className="fixed bottom-24 left-4 right-4 z-[100] animate-in slide-in-from-bottom-4 duration-300"
       onClick={onNavigate}
     >
-      <div className="bg-green-500 text-white px-4 py-4 rounded-2xl shadow-lg shadow-green-500/30 flex items-center gap-3 active:scale-[0.98] transition-transform cursor-pointer">
+      <div className={`${toneClasses} px-4 py-4 rounded-2xl shadow-lg flex items-center gap-3 active:scale-[0.98] transition-transform cursor-pointer`}>
         <div className="size-10 rounded-xl bg-white/20 flex items-center justify-center">
-          <span className="material-symbols-outlined text-2xl">check_circle</span>
+          <span className="material-symbols-outlined text-2xl">{icon}</span>
         </div>
         <div className="flex-1">
-          <p className="font-bold">Rezept importiert! ✨</p>
+          <p className="font-bold">{title}</p>
           <p className="text-sm text-white/80">{message || 'Tippe zum Ansehen'}</p>
         </div>
-        <span className="material-symbols-outlined text-white/60">arrow_forward</span>
+        {recipeId && <span className="material-symbols-outlined text-white/60">arrow_forward</span>}
       </div>
     </div>
   );
@@ -67,30 +73,26 @@ const GlobalImportToast: React.FC<{
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const navigate = useNavigate();
   
-  const [toast, setToast] = useState<ToastState>({
-    visible: false,
-    recipeId: null,
-    message: 'Tippe zum Ansehen',
-  });
+  const [toast, setToast] = useState<ToastState>(hiddenToastState);
 
   /**
    * Zeigt den Import-Toast an
    * Kann von überall in der App aufgerufen werden
    */
   const showImportToast = useCallback((recipeId: string, message?: string) => {
-    console.log('[NotificationContext] showImportToast called with recipeId:', recipeId);
-    setToast({
-      visible: true,
-      recipeId,
-      message: message || 'Tippe zum Ansehen',
-    });
+    logger.debug('Toast', 'showImportToast called', { recipeId });
+    setToast(createToastState(message || 'Tippe zum Ansehen', 'success', recipeId));
+  }, []);
+
+  const showToast = useCallback((message: string, tone: ToastTone = 'info') => {
+    setToast(createToastState(message, tone));
   }, []);
 
   /**
    * Versteckt den Toast
    */
   const hideImportToast = useCallback(() => {
-    console.log('[NotificationContext] hideImportToast called');
+    logger.debug('Toast', 'hideImportToast called');
     setToast(prev => ({ ...prev, visible: false }));
   }, []);
 
@@ -99,14 +101,16 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
    */
   const handleToastNavigate = useCallback(() => {
     if (toast.recipeId) {
-      console.log('[NotificationContext] Navigating to recipe:', toast.recipeId);
+      logger.debug('Toast', 'Navigating to recipe', { recipeId: toast.recipeId });
       navigate(`/recipe/${toast.recipeId}`);
       hideImportToast();
+      return;
     }
+    hideImportToast();
   }, [toast.recipeId, navigate, hideImportToast]);
 
   return (
-    <NotificationContext.Provider value={{ toast, showImportToast, hideImportToast }}>
+    <NotificationContext.Provider value={{ toast, showImportToast, showToast, hideImportToast }}>
       {children}
       
       {/* Global Toast - immer verfügbar */}
@@ -114,6 +118,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         visible={toast.visible}
         recipeId={toast.recipeId}
         message={toast.message}
+        title={toast.title}
+        tone={toast.tone}
         onNavigate={handleToastNavigate}
         onDismiss={hideImportToast}
       />

@@ -3,5 +3,6 @@
     <color name="colorPrimary">#b2c8ba</color>
     <color name="colorPrimaryDark">#9ab3a4</color>
     <color name="colorAccent">#b2c8ba</color>
-    <color name="splash_background">#FFFFFF</color>
+    <color name="app_background">#F0F2F5</color>
+    <color name="splash_background">@color/app_background</color>
 </resources>

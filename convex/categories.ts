@@ -1,23 +1,7 @@
 import { query, mutation } from "./_generated/server";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
-import { getAuthUserId } from "@convex-dev/auth/server";
-import { Id } from "./_generated/dataModel";
-
-async function getAuthenticatedUserId(ctx: QueryCtx | MutationCtx): Promise<Id<"users">> {
-  const authUserId = await getAuthUserId(ctx);
-  if (!authUserId) throw new Error("Not authenticated");
-  const linkedUser = await ctx.db
-    .query("users")
-    .withIndex("by_authUserId", (q) => q.eq("authUserId", authUserId.toString()))
-    .first();
-  if (linkedUser) return linkedUser._id;
-
-  const authUser = await ctx.db.get(authUserId as Id<"users">);
-  if (authUser) return authUser._id;
-
-  throw new Error("User not found");
-}
+import { deleteTrackedAsset } from "./storageAssets";
+import { getAuthenticatedUserId } from "./lib/authUser";
 
 export const list = query({
   args: {},
@@ -148,7 +132,9 @@ export const deleteCategory = mutation({
 
     if (category.imageStorageId) {
       try {
-        await ctx.storage.delete(category.imageStorageId);
+        if (!await deleteTrackedAsset(ctx, userId, category.imageStorageId)) {
+          await ctx.storage.delete(category.imageStorageId);
+        }
       } catch (e) {
         console.warn(`[Delete Category] Could not delete storage image:`, e);
       }

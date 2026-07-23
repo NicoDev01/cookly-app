@@ -1,41 +1,66 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useAuthActions } from '@convex-dev/auth/react';
+import { Capacitor } from '@capacitor/core';
 import { useQuery, useAction, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import {
   AlertTriangle,
-  BookOpen,
   Link2,
   Sparkles,
   CheckCircle2,
   LucideIcon
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useNotification } from '../contexts/NotificationContext';
+import { getUserErrorMessage } from '../utils/userErrors';
+import { clearLogs, logger } from '../utils/logger';
+import { APP_VERSION } from '../utils/appInfo';
+import { createUuid } from '../utils/uuid';
+import DebugSheet from '../components/DebugSheet';
+import { useQueryCache } from '../contexts/QueryCacheContext';
 
 import { cn } from "@/lib/utils";
+import { resetAnalyticsIdentity } from "../services/analytics";
+import { ensureNotificationPermission } from "../utils/notifications";
 
 export const ProfilePage: React.FC = () => {
   const { signOut } = useAuthActions();
   const navigate = useNavigate();
+  const { showToast } = useNotification();
+  const { clearCache } = useQueryCache();
 
   const currentUser = useQuery(api.users.getCurrentUser);
   const cancelSubscription = useAction(api.stripe.cancelSubscription);
-  const deleteCurrentUser = useMutation(api.users.deleteCurrentUser);
+  const requestAccountDeletion = useAction(api.accountDeletion.requestDeletion);
+  const updateNotificationPreference = useMutation(api.users.updateNotificationPreference);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isUpdatingNotifications, setIsUpdatingNotifications] = useState(false);
+
+  // Verstecktes Debug-Menü: 7× auf die Versionsnummer tippen.
+  const debugTapsRef = useRef(0);
+  const deletionRequestIdRef = useRef<string | null>(null);
+  const [showDebugSheet, setShowDebugSheet] = useState(false);
+  const handleVersionTap = () => {
+    debugTapsRef.current += 1;
+    if (debugTapsRef.current >= 7) {
+      debugTapsRef.current = 0;
+      setShowDebugSheet(true);
+    }
+  };
 
   // Usage Stats
-  const manualLimit = useQuery(api.users.canCreateManualRecipe);
   const linkLimit = useQuery(api.users.canImportFromLink);
   const scanLimit = useQuery(api.users.canScanPhoto);
 
   const handleSignOut = async () => {
+    resetAnalyticsIdentity();
     await signOut();
     navigate('/sign-in', { replace: true });
   };
@@ -44,15 +69,19 @@ export const ProfilePage: React.FC = () => {
     if (deleteConfirmText !== 'LÖSCHEN') return;
     setIsDeleting(true);
     try {
-      await deleteCurrentUser();
+      deletionRequestIdRef.current ??= createUuid();
+      await requestAccountDeletion({ requestId: deletionRequestIdRef.current });
+      clearCache();
+      clearLogs();
+      resetAnalyticsIdentity();
       await signOut();
       navigate('/sign-in', { replace: true });
+      setShowDeleteModal(false);
     } catch (error: unknown) {
-      console.error('Error deleting account:', error);
-      alert(`Fehler beim Löschen: ${error instanceof Error ? error.message : 'Unbekannter Fehler'}`);
+      logger.error('AccountDeletion', 'Delete account failed', error);
+      showToast(getUserErrorMessage(error, 'generic'), 'error');
     } finally {
       setIsDeleting(false);
-      setShowDeleteModal(false);
     }
   };
 
@@ -61,12 +90,39 @@ export const ProfilePage: React.FC = () => {
     try {
       await cancelSubscription();
       setShowCancelModal(false);
-      window.location.reload();
+      const until = subscriptionEndDate
+        ? ` Deine Vorteile bleiben bis zum ${subscriptionEndDate.toLocaleDateString('de-DE')} aktiv.`
+        : '';
+      showToast(`Abo gekündigt.${until}`, 'success');
     } catch (error: unknown) {
-      console.error('Error cancelling subscription:', error);
-      alert(`Fehler beim Kündigen: ${error instanceof Error ? error.message : 'Unbekannter Fehler'}`);
+      logger.error('Billing', 'Cancel subscription failed', error);
+      showToast(getUserErrorMessage(error, 'billing'), 'error');
     } finally {
       setIsCancelling(false);
+    }
+  };
+
+  const handleNotificationToggle = async () => {
+    const enabled = !currentUser?.notificationsEnabled;
+    setIsUpdatingNotifications(true);
+    try {
+      if (enabled && !await ensureNotificationPermission('profile')) {
+        showToast('Bitte erlaube Benachrichtigungen in den Android-Einstellungen.', 'error');
+        return;
+      }
+      await updateNotificationPreference({ enabled });
+      if (enabled) {
+        window.dispatchEvent(new Event('cookly:notification-permission-granted'));
+      }
+      showToast(
+        enabled ? 'Benachrichtigungen aktiviert.' : 'Benachrichtigungen deaktiviert.',
+        'success',
+      );
+    } catch (error: unknown) {
+      logger.error('Notifications', 'Preference update failed', error);
+      showToast(getUserErrorMessage(error, 'generic'), 'error');
+    } finally {
+      setIsUpdatingNotifications(false);
     }
   };
 
@@ -80,7 +136,7 @@ export const ProfilePage: React.FC = () => {
 
   const safeCurrentUser = currentUser ?? {
     subscription: 'free' as const,
-    usageStats: { manualRecipes: 0, linkImports: 0, photoScans: 0 },
+    usageStats: { linkImports: 0, photoScans: 0 },
   };
 
   const isPro = safeCurrentUser.subscription !== 'free';
@@ -140,7 +196,7 @@ export const ProfilePage: React.FC = () => {
                     <span className="material-symbols-outlined">settings</span>
                     Abo verwalten
                   </button>
-                  {!isMarkedForCancel && (
+                  {!Capacitor.isNativePlatform() && !isMarkedForCancel && (
                     <button
                       onClick={() => setShowCancelModal(true)}
                       className="text-xs font-bold text-text-secondary-light dark:text-text-secondary-dark active:text-destructive transition-colors uppercase tracking-widest py-2"
@@ -154,14 +210,6 @@ export const ProfilePage: React.FC = () => {
               // FREE CONTENT - Each UsageRow in its own card
               <div className="space-y-4">
                 {/* Usage Cards - each in its own card */}
-                <div className="bg-card-light dark:bg-card-dark rounded-xl shadow-neo-light-convex p-4">
-                  <UsageRow
-                    label="Manuelle Rezepte"
-                    current={manualLimit?.current ?? 0}
-                    limit={manualLimit?.limit ?? 0} // Sync with backend
-                    icon={BookOpen}
-                  />
-                </div>
                 <div className="bg-card-light dark:bg-card-dark rounded-xl shadow-neo-light-convex p-4">
                   <UsageRow
                     label="IG / FB / Website Importe"
@@ -209,11 +257,43 @@ export const ProfilePage: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setShowDeleteModal(true)}
+              onClick={() => {
+                deletionRequestIdRef.current = null;
+                setDeleteConfirmText('');
+                setShowDeleteModal(true);
+              }}
               className="w-64 flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-card-light dark:bg-card-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all touch-btn text-body font-semibold text-destructive hover:text-destructive/80"
             >
               <span className="material-symbols-outlined">delete_forever</span>
               Konto löschen
+            </button>
+
+            <button
+              type="button"
+              role="switch"
+              aria-label="Benachrichtigungen ein- oder ausschalten"
+              aria-checked={currentUser.notificationsEnabled === true}
+              disabled={isUpdatingNotifications}
+              onClick={handleNotificationToggle}
+              className="min-h-12 flex items-center justify-center gap-4 px-2 py-2 bg-transparent touch-manipulation text-text-primary-light dark:text-text-primary-dark disabled:opacity-60"
+            >
+              <span className="material-symbols-outlined" aria-hidden="true">
+                {currentUser.notificationsEnabled ? "notifications_active" : "notifications_off"}
+              </span>
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "relative h-7 w-12 shrink-0 rounded-full transition-colors",
+                  currentUser.notificationsEnabled ? "bg-primary" : "bg-black/20 dark:bg-white/20",
+                )}
+              >
+                <span
+                  className={cn(
+                    "absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform",
+                    currentUser.notificationsEnabled && "translate-x-5",
+                  )}
+                />
+              </span>
             </button>
           </div>
 
@@ -225,6 +305,12 @@ export const ProfilePage: React.FC = () => {
              >
                Datenschutz & Impressum
              </a>
+             <p
+               onClick={handleVersionTap}
+               className="mt-3 text-[11px] text-text-secondary-light/60 dark:text-text-secondary-dark/60 select-none cursor-default"
+             >
+               Version {APP_VERSION}
+             </p>
           </div>
         </div>
       </div>
@@ -267,7 +353,8 @@ export const ProfilePage: React.FC = () => {
             <div className="w-12 h-1.5 bg-text-secondary-light/30 dark:bg-text-secondary-dark/30 rounded-full mx-auto mb-6" />
             <h2 className="text-2xl font-bold mb-3 text-destructive text-center">Konto löschen?</h2>
             <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-6 leading-relaxed text-center">
-              Diese Aktion ist unwiderruflich. Alle deine Rezepte gehen verloren.
+              Diese Aktion ist unwiderruflich. Konto und Rezepte werden gelöscht; ein Stripe-Abo endet sofort.
+              Abos über Google Play oder den App Store musst du zusätzlich dort verwalten.
             </p>
             <div className="relative mb-8">
                 <input
@@ -286,7 +373,11 @@ export const ProfilePage: React.FC = () => {
               </button>
               <button
                 className="w-full h-14 text-lg font-bold rounded-xl bg-card-light dark:bg-card-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all text-text-primary-light dark:text-text-primary-dark"
-                onClick={() => setShowDeleteModal(false)}
+                disabled={isDeleting}
+                onClick={() => {
+                  deletionRequestIdRef.current = null;
+                  setShowDeleteModal(false);
+                }}
               >
                 Abbrechen
               </button>
@@ -294,6 +385,12 @@ export const ProfilePage: React.FC = () => {
           </div>
         </div>
       )}
+
+      <DebugSheet
+        isOpen={showDebugSheet}
+        onClose={() => setShowDebugSheet(false)}
+        userId={currentUser?._id}
+      />
     </div>
   );
 };

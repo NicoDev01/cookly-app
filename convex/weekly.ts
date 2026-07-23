@@ -1,22 +1,8 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { Id } from "./_generated/dataModel";
-
-async function getAuthenticatedUserId(ctx: any): Promise<Id<"users">> {
-  const authUserId = await getAuthUserId(ctx);
-  if (!authUserId) throw new Error("Not authenticated");
-  const linkedUser = await ctx.db
-    .query("users")
-    .withIndex("by_authUserId", (q: any) => q.eq("authUserId", authUserId.toString()))
-    .first();
-  if (linkedUser) return linkedUser._id;
-
-  const authUser = await ctx.db.get(authUserId as Id<"users">);
-  if (authUser) return authUser._id;
-
-  throw new Error("User not found");
-}
+import { storeAnalyticsEvent } from "./analytics";
+import { getAuthenticatedUserId } from "./lib/authUser";
 
 export const getWeek = query({
   args: {
@@ -26,41 +12,36 @@ export const getWeek = query({
   handler: async (ctx, args) => {
     const userId = await getAuthenticatedUserId(ctx);
 
-    const allMeals = await ctx.db
+    const meals = await ctx.db
       .query("weeklyMeals")
-      .withIndex("by_user_date", (q) => q.eq("userId", userId))
+      .withIndex("by_user_date", (q) => q
+        .eq("userId", userId)
+        .gte("date", args.startDate)
+        .lte("date", args.endDate))
       .collect();
 
-    const filteredMeals = allMeals.filter(meal =>
-      meal.date >= args.startDate && meal.date <= args.endDate
-    );
-
-    const recipeIds = filteredMeals.map(meal => meal.recipeId);
-    const recipes = new Map();
-    for (const recipeId of recipeIds) {
+    const recipeIds = [...new Set(meals.map((meal) => meal.recipeId))];
+    const recipeEntries = await Promise.all(recipeIds.map(async (recipeId) => {
       const recipe = await ctx.db.get(recipeId);
-      if (recipe && recipe.userId === userId) recipes.set(recipeId, recipe);
-    }
+      if (!recipe || recipe.userId !== userId) return null;
+      const storedImage = recipe.imageStorageId
+        ? await ctx.storage.getUrl(recipe.imageStorageId)
+        : null;
+      return [recipeId, { ...recipe, image: storedImage ?? recipe.image }] as const;
+    }));
+    const recipes = new Map(recipeEntries.filter(
+      (entry): entry is NonNullable<typeof entry> => entry !== null
+    ));
 
-    const result: any[] = [];
-    for (const meal of filteredMeals) {
+    return meals.flatMap((meal) => {
       const recipe = recipes.get(meal.recipeId);
-      if (recipe) {
-        let imageUrl = recipe.image;
-        if (recipe.imageStorageId) {
-          const url = await ctx.storage.getUrl(recipe.imageStorageId);
-          if (url) imageUrl = url;
-        }
-        result.push({
-          mealId: meal._id,
-          date: meal.date,
-          scope: meal.scope,
-          recipe: { ...recipe, _id: recipe._id, image: imageUrl },
-        });
-      }
-    }
-
-    return result;
+      return recipe ? [{
+        mealId: meal._id,
+        date: meal.date,
+        scope: meal.scope,
+        recipe,
+      }] : [];
+    });
   },
 });
 
@@ -81,7 +62,7 @@ export const addMeal = mutation({
     const cleanDate = args.date.replace('#WEEKLY', '');
     const now = Date.now();
 
-    return await ctx.db.insert("weeklyMeals", {
+    const mealId = await ctx.db.insert("weeklyMeals", {
       userId,
       recipeId: args.recipeId,
       date: cleanDate,
@@ -89,6 +70,18 @@ export const addMeal = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    const user = await ctx.db.get(userId);
+    await storeAnalyticsEvent(ctx, {
+      eventId: `weekly:${mealId}:added`,
+      name: "weekly_meal_added",
+      version: 1,
+      userId,
+      billingUserId: user?.billingUserId,
+      platform: "server",
+      properties: { recipeId: String(args.recipeId), scope },
+      occurredAt: now,
+    });
+    return mealId;
   },
 });
 
@@ -134,6 +127,17 @@ export const addMeals = mutation({
         updatedAt: now,
       });
       mealIds.push(mealId);
+      const user = await ctx.db.get(userId);
+      await storeAnalyticsEvent(ctx, {
+        eventId: `weekly:${mealId}:added`,
+        name: "weekly_meal_added",
+        version: 1,
+        userId,
+        billingUserId: user?.billingUserId,
+        platform: "server",
+        properties: { recipeId: String(recipeId), scope },
+        occurredAt: now,
+      });
     }
 
     return mealIds;

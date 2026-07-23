@@ -126,5 +126,5 @@ export function useBackButton({
     return () => {
       handler?.remove();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 }
