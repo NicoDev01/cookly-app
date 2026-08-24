@@ -1,0 +1,11 @@
+{
+  "_readme": [
+    "Notausgang für den Icon-Font-Subset (scripts/sync-fonts.mjs).",
+    "Hier eingetragene Namen kommen in den Font, auch wenn sie nicht in Googles",
+    "Codepoint-Liste stehen - z.B. ein zur Laufzeit zusammengebauter Name oder",
+    "ein Icon, das der Font führt, die Codepoint-Datei aber noch nicht kennt.",
+    "Normalfall ist leer: was im Code steht, findet der Scanner von allein.",
+    "Nach dem Bearbeiten: npm run fonts:sync"
+  ],
+  "icons": []
+}

@@ -22,7 +22,19 @@
 - Die Scraping-Phase ist auf 85 s gedeckelt. Vorher konnten zwei Actor-Versuche plus Untertitel das
   120-s-Client-Timeout überschreiten: der Nutzer sah einen Fehler, während der Server das Rezept noch schrieb.
 - Rezept-Kachel zeigte für TikTok-Quellen Globus + "Web" statt des TikTok-Icons.
-
+- Beim ersten Öffnen nach einem Kaltstart sah die App kurz verzerrt aus: Outfit und der
+  Material-Symbols-Font kamen von `fonts.googleapis.com` und fehlten bei leerem WebView-Cache
+  noch. Text stand dann in der Fallback-Schrift, und Icons rendern als Ligaturen — ohne Font
+  erschien statt des Icons der rohe Name ("account_balance_wallet", 256 px statt 24 px breit),
+  was das Layout zerriss. Offline blieb dieser Zustand dauerhaft.
+  Beide Fonts liegen jetzt im APK (`assets/fonts/`, erzeugt von `npm run fonts:sync`); der
+  Icon-Font ist dabei auf die 101 tatsächlich benutzten Glyphen subsettet (3,8 MB → 124 KB,
+  Variable-Achsen FILL/wght/GRAD/opsz bleiben erhalten). Zusätzlich wartet der Splashscreen
+  auf `document.fonts.ready`, sodass der erste sichtbare Frame garantiert fertig gesetzt ist.
+  `npm run fonts:check` läuft im Build und bricht ab, wenn ein Icon benutzt wird, das nicht
+  im Subset liegt; `utils/iconScanner.test.mjs` sichert zusätzlich ab, dass der Scanner beide
+  Icon-Allowlists (Frontend `utils/iconUtils.ts`, Backend `convex/socialImportShared.ts`)
+  vollständig sieht.
 
 ### ⚠️ Bekannte Issues
 - Ein TikTok-Import dauert 12–25 s; dominiert vom Actor-Boot bei Apify (gemessen 24.08.2026).

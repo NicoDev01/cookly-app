@@ -17,6 +17,7 @@ import { QueryCacheProvider } from './contexts/QueryCacheContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import { createNotificationChannel } from './utils/notifications';
 import { logger } from './utils/logger';
+import { waitForFonts } from './utils/fontsReady';
 import { PageLoader } from './components/PageLoader';
 import { AnalyticsLifecycle } from './components/AnalyticsLifecycle';
 import { PushLifecycle } from './components/PushLifecycle';
@@ -259,6 +260,9 @@ const App: React.FC = () => {
       splashHiddenRef.current = true;
 
       const hideSplash = async () => {
+        // Erst ausblenden, wenn die Fonts anliegen - sonst ist der erste
+        // sichtbare Frame der mit Fallback-Schrift und Icons als Ligatur-Text.
+        await waitForFonts();
         try {
           await SplashScreen.hide();
         } catch (e) {

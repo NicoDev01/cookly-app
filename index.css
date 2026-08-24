@@ -12,6 +12,10 @@
  * 4. Animationen und Utilities
  */
 
+/* Lokale Fonts (generiert von scripts/sync-fonts.mjs) - muss vor allem anderen
+   stehen, damit @font-face bereits beim ersten Layout bekannt ist. */
+@import "./styles/fonts.css";
+
 /* Cookly Design System Imports */
 @import "./styles/design-tokens.css";
 @import "./styles/components.css";

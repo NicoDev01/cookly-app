@@ -1,7 +1,9 @@
 // Explizite .ts-Endung, damit dieses Modul direkt in `node --test` importierbar bleibt.
 import { RECIPE_CATEGORIES } from "./constants.ts";
 
-const ALLOWED_MATERIAL_ICONS = new Set([
+// Exportiert für utils/iconScanner.test.mjs - der Font-Subset muss alle hier
+// erlaubten Icons enthalten, sonst rendert der Import rohen Ligatur-Text.
+export const ALLOWED_MATERIAL_ICONS = new Set([
   "outdoor_grill", "timer", "restaurant", "blender", "oven_gen", "skillet",
   "cookie", "local_pizza", "set_meal", "soup_kitchen", "flatware", "egg",
   "kitchen", "microwave",
