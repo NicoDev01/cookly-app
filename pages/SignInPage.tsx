@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { useConvexAuth } from 'convex/react';
+import { Capacitor } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
 import { Link, useNavigate } from 'react-router-dom';
 import { Input, IconButton } from '../components/ui/cookly';
 import { getPasswordSignInErrorMessage } from '../utils/authErrors';
@@ -25,6 +27,13 @@ export const SignInPage: React.FC = () => {
       navigate('/tabs/categories', { replace: true });
     }
   }, [isAuthenticated, navigate]);
+
+  React.useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    void StatusBar.setBackgroundColor({ color: '#f0f2f5' });
+    void StatusBar.setStyle({ style: Style.Dark });
+  }, []);
 
   const handleGoogleSignIn = async () => {
     capture('signin_started', { method: 'google' });

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Recipe } from '../types';
-import { FaFacebook, FaInstagram, FaGlobe } from 'react-icons/fa';
+import { FaFacebook, FaInstagram, FaTiktok, FaGlobe } from 'react-icons/fa';
 import { Play } from 'lucide-react';
 import type { IconType } from 'react-icons';
 
@@ -42,9 +42,10 @@ const RecipeMeta: React.FC<RecipeMetaProps> = ({ recipe }) => {
   const difficulty = typeof recipe.difficulty === 'string' ? recipe.difficulty : String(recipe.difficulty ?? '');
   const portions = typeof recipe.portions === 'number' ? recipe.portions : Number(recipe.portions) || 0;
 
-  // Determine source type (Instagram vs. Facebook vs. Website)
+  // Determine source type (Instagram vs. Facebook vs. TikTok vs. Website)
   const isInstagram = recipe.sourceUrl?.includes('instagram.com');
   const isFacebook = recipe.sourceUrl?.includes('facebook.com');
+  const isTiktok = recipe.sourceUrl?.includes('tiktok.com');
 
   // Use react-icons (Font Awesome) for reliable brand icons
   let SourceIcon: IconType = FaGlobe;
@@ -56,6 +57,9 @@ const RecipeMeta: React.FC<RecipeMetaProps> = ({ recipe }) => {
   } else if (isFacebook) {
     SourceIcon = FaFacebook;
     sourceLabel = 'FB';
+  } else if (isTiktok) {
+    SourceIcon = FaTiktok;
+    sourceLabel = 'TT';
   } else {
     SourceIcon = FaGlobe;
     sourceLabel = 'Web';

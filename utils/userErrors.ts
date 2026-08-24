@@ -95,6 +95,9 @@ const mapStructuredError = (errorData: StructuredError): string | null => {
   if (errorData.type === 'NO_RECIPE_CONTENT') {
     return errorData.message?.trim() || 'Im geteilten Inhalt wurde kein vollständiges Rezept gefunden.';
   }
+  if (errorData.type === 'POST_UNAVAILABLE') {
+    return errorData.message?.trim() || 'Dieser Beitrag ist privat oder wurde gelöscht.';
+  }
   return null;
 };
 
@@ -134,7 +137,7 @@ export const getUserErrorMessage = (error: unknown, context: UserErrorContext = 
   if (context === 'import') {
     if (includesAny(text, ['no data found', 'parse recipe data', 'no recipe'])) return 'Kein Rezept gefunden.';
     if (text.includes('jina ai request failed')) return 'Website konnte nicht geladen werden.';
-    if (includesAny(text, ['invalid_instagram_url', 'invalid_facebook_url'])) return 'Dieser Link wird nicht unterstützt.';
+    if (includesAny(text, ['invalid_instagram_url', 'invalid_facebook_url', 'invalid_tiktok_url'])) return 'Dieser Link wird nicht unterstützt.';
   }
 
   return fallbackByContext[context];

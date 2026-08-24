@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { FaFacebook, FaInstagram, FaGlobe } from 'react-icons/fa';
+import { FaFacebook, FaInstagram, FaGlobe, FaTiktok } from 'react-icons/fa';
 
 interface HowItWorksModalProps {
   isOpen: boolean;
@@ -9,9 +9,10 @@ interface HowItWorksModalProps {
 }
 
 const HowItWorksModal: React.FC<HowItWorksModalProps> = ({ isOpen, onClose, openAddModal }) => {
-  const [openDropdown, setOpenDropdown] = useState<'instagram' | 'facebook' | 'website' | 'photo' | 'manual' | null>(null);
+  const [openDropdown, setOpenDropdown] = useState<'instagram' | 'facebook' | 'tiktok' | 'website' | 'photo' | 'manual' | null>(null);
   const instagramRef = useRef<HTMLDivElement>(null);
   const facebookRef = useRef<HTMLDivElement>(null);
+  const tiktokRef = useRef<HTMLDivElement>(null);
   const websiteRef = useRef<HTMLDivElement>(null);
   const photoRef = useRef<HTMLDivElement>(null);
   const manualRef = useRef<HTMLDivElement>(null);
@@ -23,6 +24,7 @@ const HowItWorksModal: React.FC<HowItWorksModalProps> = ({ isOpen, onClose, open
       if (
         instagramRef.current && !instagramRef.current.contains(target) &&
         facebookRef.current && !facebookRef.current.contains(target) &&
+        tiktokRef.current && !tiktokRef.current.contains(target) &&
         websiteRef.current && !websiteRef.current.contains(target) &&
         photoRef.current && !photoRef.current.contains(target) &&
         manualRef.current && !manualRef.current.contains(target)
@@ -174,6 +176,49 @@ const HowItWorksModal: React.FC<HowItWorksModalProps> = ({ isOpen, onClose, open
                   </div>
                   <button
                     onClick={() => handleExternalLink('https://www.facebook.com/share/r/1AiDe5uE4M/')}
+                    className="mt-6 w-full py-3.5 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 active:scale-[0.97] transition-all"
+                  >
+                    Jetzt ausprobieren
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* TikTok */}
+            <div ref={tiktokRef} className="relative">
+              <button
+                onClick={() => setOpenDropdown(openDropdown === 'tiktok' ? null : 'tiktok')}
+                className="w-full flex items-center gap-4 p-4 rounded-2xl bg-card-light dark:bg-card-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:scale-[0.98] transition-all group"
+              >
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-gray-900 to-black flex items-center justify-center shadow-lg truncate flex-shrink-0">
+                  <FaTiktok className="text-2xl text-white" />
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-base font-bold text-text-primary-light dark:text-text-primary-dark group-hover:text-primary transition-colors">
+                    TikTok
+                  </p>
+                </div>
+                <span className={`material-symbols-outlined text-gray-400 transition-transform duration-300 ${openDropdown === 'tiktok' ? 'rotate-180' : ''}`}>
+                  expand_more
+                </span>
+              </button>
+              {openDropdown === 'tiktok' && (
+                <div className="mt-3 p-5 rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-xl animate-in fade-in slide-in-from-top-4 duration-300">
+                  <div className="space-y-4">
+                    <div className="flex gap-4">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 text-primary font-bold text-sm">1</div>
+                      <p className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">Bei TikTok auf 'Teilen' tippen</p>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 text-primary font-bold text-sm">2</div>
+                      <p className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">Cookly App auswählen</p>
+                    </div>
+                  </div>
+                  <p className="mt-4 text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                    Cookly liest auch die gesprochene Anleitung aus dem Video mit.
+                  </p>
+                  <button
+                    onClick={() => handleExternalLink('https://www.tiktok.com/@lukasgrett/video/7674633908985613601')}
                     className="mt-6 w-full py-3.5 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 active:scale-[0.97] transition-all"
                   >
                     Jetzt ausprobieren

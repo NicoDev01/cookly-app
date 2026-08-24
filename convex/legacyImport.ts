@@ -2,7 +2,7 @@ import type { ActionCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";
 
-type Provider = "instagram" | "facebook" | "website";
+type Provider = "instagram" | "facebook" | "tiktok" | "website";
 
 export async function runLegacyImport(
   ctx: ActionCtx,

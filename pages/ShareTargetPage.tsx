@@ -14,6 +14,7 @@ import { getStructuredUserError, getUserErrorMessage } from '../utils/userErrors
 import { createPhaseSequencer, type ShareTargetPhase } from '../utils/shareTargetPhases';
 import { waitForImport } from '../utils/importOperationClient';
 import { createUuid } from '../utils/uuid';
+import { detectImportTarget, type ImportProvider } from '../utils/importTarget';
 
 type LimitFeature = 'manual_recipes' | 'link_imports' | 'photo_scans';
 
@@ -61,7 +62,7 @@ const ShareTargetPage: React.FC = () => {
         }
     }, []);
 
-    const importLink = useCallback(async (provider: 'instagram' | 'facebook' | 'website', url: string) => {
+    const importLink = useCallback(async (provider: ImportProvider, url: string) => {
         const operationId = createUuid();
         return runWithReconnectRetry(async () => {
             const started = await startImport({ operationId, provider, url });
@@ -140,97 +141,41 @@ const ShareTargetPage: React.FC = () => {
 
             const combinedText = `${title || ''} ${text || ''} ${urlParam || ''}`;
             logger.debug('ShareTarget', `#${shareRunId} params`, { title, text, urlParam });
-            const instagramMatch = combinedText.match(/https?:\/\/(?:(?:www|m)\.)?instagram\.com\/(?:p\/[A-Za-z0-9_-]+|reel\/[A-Za-z0-9_-]+|share\/(?:p|reel)\/[A-Za-z0-9_-]+)(?:[^\s]*)/i);
-            const facebookMatch = combinedText.match(/https?:\/\/(?:(?:www|m)\.)?(?:facebook\.com|fb\.watch)\/[^\s]+/i);
-            const genericUrlMatch = combinedText.match(/(https?:\/\/[^\s]+)/);
+            const target = detectImportTarget(combinedText);
 
             try {
                 const phaseSequencer = createPhaseSequencer({ onPhase: setPhase });
 
-                if (instagramMatch) {
-                    const postUrl = instagramMatch[0];
-                    logger.debug('ShareTarget', `#${shareRunId} instagramMatch`, { postUrl });
-                    setStatus('analyzing');
-                    const startedAt = Date.now();
-
-                    // Phase 1: Analysieren
-                    await phaseSequencer.show('analyzing');
-
-                    // Phase 2: Extrahieren
-                    await phaseSequencer.show('extrahieren');
-
-                    const recipeId = await importLink('instagram', postUrl);
-                    logger.debug('ShareTarget', `#${shareRunId} scrapePost result`, { recipeId });
-
-                    // Phase 3: Importieren
-                    await phaseSequencer.show('importieren');
-
-                    setSavedRecipeId(recipeId);
-                    await phaseSequencer.finish();
-                    setStatus('success');
-                    showImportToast(recipeId); // Global Toast anzeigen
-                    void notifyImportSuccess(recipeId);
-                    logger.debug('ShareTarget', `#${shareRunId} instagram totalMs`, { totalMs: Date.now() - startedAt });
-                    if (selectedCategoryRef.current) {
-                        updateRecipe({ id: recipeId as Id<"recipes">, category: selectedCategoryRef.current }).catch(() => {});
-                    }
-                } else if (facebookMatch) {
-                    const postUrl = facebookMatch[0];
-                    logger.debug('ShareTarget', `#${shareRunId} facebookMatch`, { postUrl });
-                    setStatus('analyzing');
-                    const startedAt = Date.now();
-
-                    // Phase 1: Analysieren
-                    await phaseSequencer.show('analyzing');
-
-                    // Phase 2: Extrahieren
-                    await phaseSequencer.show('extrahieren');
-
-                    const recipeId = await importLink('facebook', postUrl);
-                    logger.debug('ShareTarget', `#${shareRunId} scrapeFacebookPost result`, { recipeId });
-
-                    // Phase 3: Importieren
-                    await phaseSequencer.show('importieren');
-
-                    setSavedRecipeId(recipeId);
-                    await phaseSequencer.finish();
-                    setStatus('success');
-                    showImportToast(recipeId); // Global Toast anzeigen
-                    void notifyImportSuccess(recipeId);
-                    logger.debug('ShareTarget', `#${shareRunId} facebook totalMs`, { totalMs: Date.now() - startedAt });
-                    if (selectedCategoryRef.current) {
-                        updateRecipe({ id: recipeId as Id<"recipes">, category: selectedCategoryRef.current }).catch(() => {});
-                    }
-                } else if (genericUrlMatch) {
-                    const websiteUrl = genericUrlMatch[1];
-                    logger.debug('ShareTarget', `#${shareRunId} genericUrlMatch`, { websiteUrl });
-                    setStatus('analyzing');
-                    const startedAt = Date.now();
-
-                    // Phase 1: Analysieren
-                    await phaseSequencer.show('analyzing');
-
-                    // Phase 2: Extrahieren
-                    await phaseSequencer.show('extrahieren');
-
-                    const recipeId = await importLink('website', websiteUrl);
-                    logger.debug('ShareTarget', `#${shareRunId} scrapeWebsite result`, { recipeId });
-
-                    // Phase 3: Importieren
-                    await phaseSequencer.show('importieren');
-
-                    setSavedRecipeId(recipeId);
-                    await phaseSequencer.finish();
-                    setStatus('success');
-                    showImportToast(recipeId); // Global Toast anzeigen
-                    void notifyImportSuccess(recipeId);
-                    logger.debug('ShareTarget', `#${shareRunId} website totalMs`, { totalMs: Date.now() - startedAt });
-                    if (selectedCategoryRef.current) {
-                        updateRecipe({ id: recipeId as Id<"recipes">, category: selectedCategoryRef.current }).catch(() => {});
-                    }
-                } else {
+                if (!target) {
                     setError("Kein gültiger Link gefunden. Bitte teile eine URL.");
                     setStatus('error');
+                    return;
+                }
+
+                logger.debug('ShareTarget', `#${shareRunId} target detected`, target);
+                setStatus('analyzing');
+                const startedAt = Date.now();
+
+                // Phase 1: Analysieren
+                await phaseSequencer.show('analyzing');
+
+                // Phase 2: Extrahieren
+                await phaseSequencer.show('extrahieren');
+
+                const recipeId = await importLink(target.provider, target.url);
+                logger.debug('ShareTarget', `#${shareRunId} import result`, { recipeId });
+
+                // Phase 3: Importieren
+                await phaseSequencer.show('importieren');
+
+                setSavedRecipeId(recipeId);
+                await phaseSequencer.finish();
+                setStatus('success');
+                showImportToast(recipeId); // Global Toast anzeigen
+                void notifyImportSuccess(recipeId);
+                logger.debug('ShareTarget', `#${shareRunId} ${target.provider} totalMs`, { totalMs: Date.now() - startedAt });
+                if (selectedCategoryRef.current) {
+                    updateRecipe({ id: recipeId as Id<"recipes">, category: selectedCategoryRef.current }).catch(() => {});
                 }
             } catch (err: unknown) {
                 logger.error('ShareTarget', 'Import failed', err);

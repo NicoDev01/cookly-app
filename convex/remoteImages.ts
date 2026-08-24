@@ -164,6 +164,7 @@ function getProvider(sourceUrl: string | undefined, imageUrl: string): RemoteIma
   if (hostMatchesSuffix(imageHost, "pollinations.ai")) return "pollinations";
   if (hostMatchesSuffix(sourceHost, "instagram.com")) return "instagram";
   if (hostMatchesSuffix(sourceHost, "facebook.com") || hostMatchesSuffix(sourceHost, "fb.watch")) return "facebook";
+  if (hostMatchesSuffix(sourceHost, "tiktok.com")) return "tiktok";
   return "website";
 }
 

@@ -1,6 +1,36 @@
 # Cookly Changelog
 
 
+## [Unreleased]
+
+### ✨ Neue Features
+- **TikTok-Import**: Rezepte lassen sich jetzt direkt aus der TikTok-App über „Teilen" nach Cookly
+  importieren — inklusive `vm.`/`vt.`-Kurzlinks. Zusätzlich zur Beschreibung liest Cookly die
+  TikTok-Untertitel (Spracherkennung) mit, weil bei Video-Rezepten die Anleitung oft nur gesprochen ist.
+
+### 🚀 Verbesserungen
+- Instagram-, Facebook- und TikTok-Import teilen sich eine Pipeline (`convex/socialImport.ts`,
+  Audit-Punkt R1). `instagram.ts` 1029 → 98 Zeilen, `facebook.ts` 948 → 115 Zeilen; eine weitere
+  Plattform ist jetzt ein Adapter statt einer Kopie.
+- Apify-Fehler-Items (privat, gelöscht, gesperrt) ergeben jetzt die Meldung „Beitrag ist privat oder
+  wurde gelöscht" statt eines generischen Importfehlers.
+- Provider-Erkennung im Share-Target liegt in `utils/importTarget.ts` und ist unit-getestet.
+
+### 🔧 Bugfixes
+- Bei Punktegleichstand zwischen Erst- und Transkriptions-Versuch gewann bisher der Erstversuch —
+  ausgerechnet der ohne Transkript. Die Kandidatenwahl bricht Gleichstände jetzt zugunsten von mehr Text.
+- Die Scraping-Phase ist auf 85 s gedeckelt. Vorher konnten zwei Actor-Versuche plus Untertitel das
+  120-s-Client-Timeout überschreiten: der Nutzer sah einen Fehler, während der Server das Rezept noch schrieb.
+- Rezept-Kachel zeigte für TikTok-Quellen Globus + "Web" statt des TikTok-Icons.
+
+
+### ⚠️ Bekannte Issues
+- Ein TikTok-Import dauert 12–25 s; dominiert vom Actor-Boot bei Apify (gemessen 24.08.2026).
+  Der Actor bietet keinen Standby-Modus, die Zeit lässt sich von uns aus nicht verkürzen.
+
+---
+
+
 ## [1.4.20] - 21.07.2026
 
 ### 🔧 Bugfixes

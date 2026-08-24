@@ -2,7 +2,7 @@
 
 import { BlockList, isIP } from "node:net";
 
-export type RemoteImageProvider = "instagram" | "facebook" | "website" | "pollinations";
+export type RemoteImageProvider = "instagram" | "facebook" | "tiktok" | "website" | "pollinations";
 export type RemoteImageErrorCode =
   | "REMOTE_IMAGE_BLOCKED"
   | "REMOTE_IMAGE_TOO_LARGE"
@@ -19,6 +19,7 @@ export const MAX_REMOTE_IMAGE_REDIRECTS = 3;
 const PROVIDER_HOSTS: Record<Exclude<RemoteImageProvider, "website">, readonly string[]> = {
   instagram: ["instagram.com", "cdninstagram.com", "fbcdn.net", "fbsbx.com"],
   facebook: ["facebook.com", "fb.watch", "fbcdn.net", "fbsbx.com"],
+  tiktok: ["tiktok.com", "tiktokcdn.com", "tiktokcdn-us.com", "tiktokcdn-eu.com", "ttwstatic.com", "muscdn.com"],
   pollinations: ["pollinations.ai"],
 };
 

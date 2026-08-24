@@ -8,7 +8,7 @@ const RATE_LIMIT = {
   WINDOW_MS: 60 * 1000,
 } as const;
 
-export type RateLimitBucket = "website" | "instagram" | "facebook" | "photo" | "upload" | "ai_image";
+export type RateLimitBucket = "website" | "instagram" | "facebook" | "tiktok" | "photo" | "upload" | "ai_image";
 export type ProviderBudget = "apify" | "jina" | "gemini" | "pollinations";
 
 export async function consumeRateLimit(ctx: MutationCtx, userId: Id<"users">, bucket: RateLimitBucket) {
@@ -56,6 +56,7 @@ export const checkAndConsumeRateLimit = internalMutation({
       v.literal("website"),
       v.literal("instagram"),
       v.literal("facebook"),
+      v.literal("tiktok"),
       v.literal("photo"),
       v.literal("upload"),
       v.literal("ai_image"),

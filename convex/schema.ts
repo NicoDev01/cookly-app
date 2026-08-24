@@ -212,6 +212,7 @@ export default defineSchema({
     provider: v.union(
       v.literal("instagram"),
       v.literal("facebook"),
+      v.literal("tiktok"),
       v.literal("website"),
       v.literal("photo_scan"),
     ),

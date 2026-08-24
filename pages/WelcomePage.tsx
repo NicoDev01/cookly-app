@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { useConvexAuth } from 'convex/react';
 import { logger } from '../utils/logger';
@@ -8,23 +10,31 @@ import BottomSheet from '../components/BottomSheet';
 import { startGoogleOAuth } from '../services/googleOAuth';
 
 /**
- * WelcomePage - Minimalistische Landing-Page für unangemeldete User
- *
- * Zeigt ein animiertes Logo-Video mit Call-to-Action Buttons.
- * Vollständig öffentlich - kein Auth-Check erforderlich.
+ * WelcomePage - Landing-Page für unangemeldete User
  */
 export const WelcomePage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { signIn } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const isPreview = import.meta.env.DEV && new URLSearchParams(location.search).has('preview');
 
   React.useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && !isPreview) {
       navigate('/tabs/categories', { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, isPreview, navigate]);
+
+  React.useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    void StatusBar.setBackgroundColor({ color: '#b2c9ba' });
+    void StatusBar.setStyle({ style: Style.Dark });
+
+    return () => void StatusBar.setBackgroundColor({ color: '#f0f2f5' });
+  }, []);
 
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
@@ -42,36 +52,77 @@ export const WelcomePage: React.FC = () => {
   };
 
   return (
-    <div className="cookly-page cookly-page--no-nav flex flex-col items-center justify-center min-h-screen bg-white dark:bg-background-dark animate-fade-in">
-      {/* Video Container */}
-      <div className="mb-20">
-        <video
-          autoPlay
-          loop
-          muted
-          playsInline
-          className="w-60 h-60 object-contain"
-          src="/welcome-video.webm"
-        />
+    <div className="cookly-page cookly-page--no-nav min-h-[100dvh] overflow-x-clip bg-background-light text-[#333333] animate-fade-in">
+      <div className="mx-auto flex min-h-[100dvh] w-full max-w-xl flex-col bg-background-light">
+      <header className="relative flex h-[43dvh] min-h-[290px] max-h-[430px] flex-col items-center justify-center overflow-hidden bg-[#b2c9ba] px-6 pb-14 pt-[max(1rem,var(--safe-area-inset-top))]">
+          <svg aria-hidden="true" className="absolute h-0 w-0">
+            <defs>
+              <filter id="cookly-mascot-edge" colorInterpolationFilters="sRGB">
+                <feComponentTransfer>
+                  <feFuncA type="gamma" amplitude="1" exponent="2.5" />
+                </feComponentTransfer>
+              </filter>
+            </defs>
+          </svg>
+          <img
+            src="/cookly-mascot.webp"
+            alt=""
+            className="w-[clamp(170px,45vw,230px)] object-contain"
+            style={{ filter: 'url(#cookly-mascot-edge)' }}
+          />
+          <img
+            src="/logo.png"
+            alt="Cookly"
+            className="mt-2 w-40 object-contain"
+          />
+
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 480 90"
+            preserveAspectRatio="none"
+            className="pointer-events-none absolute bottom-0 left-0 h-16 w-full"
+          >
+            <path
+              fill="#f0f2f5"
+              d="M0 52C100 8 185 60 285 48c75-8 140-30 195-48v90H0Z"
+            />
+          </svg>
+        </header>
+
+        <main className="flex flex-1 flex-col items-center px-6 pb-[calc(var(--safe-area-inset-bottom)+1.25rem)] pt-7 text-center">
+          <div className="max-w-sm">
+            <h1 className="text-3xl font-bold leading-tight tracking-tight">
+              Alle deine Lieblingsrezepte an einem{' '}
+              <span className="text-primary italic">Ort</span>
+            </h1>
+            <p className="mt-3 text-lg leading-snug text-gray-600">
+              Importiere deine Rezepte aus{' '}
+              <span className="text-primary italic">Instagram</span>,{' '}
+              <span className="text-primary italic">Facebook</span>,{' '}
+              <span className="text-primary italic">TikTok</span> oder einer{' '}
+              <span className="text-primary italic">Website</span>.
+            </p>
+          </div>
+
+          <div className="mt-auto w-full max-w-sm pt-8">
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={() => setIsBottomSheetOpen(true)}
+              className="min-h-[56px] w-full rounded-full bg-[#b2c8ba] px-8 text-lg font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              Los geht&apos;s!
+            </Button>
+
+            <button
+              onClick={() => navigate('/sign-in')}
+              className="mt-4 min-h-[48px] w-full text-base font-medium text-[#789383] hover:underline"
+            >
+              Ich habe bereits einen Account
+            </button>
+          </div>
+        </main>
       </div>
-
-      {/* CTA Button */}
-      <Button
-        variant="primary"
-        size="lg"
-        onClick={() => setIsBottomSheetOpen(true)}
-        className="rounded-full px-8 py-3 bg-[#b2c8ba] text-white font-medium hover:opacity-90 transition-opacity"
-      >
-        Jetzt starten
-      </Button>
-
-      {/* Sign In Link */}
-      <button
-        onClick={() => navigate('/sign-in')}
-        className="mt-4 text-base text-[#b2c8ba] hover:underline cookly-text-caption"
-      >
-        Anmelden
-      </button>
 
       {/* Registration Bottom Sheet */}
       <BottomSheet

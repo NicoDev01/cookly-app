@@ -12,6 +12,7 @@ import { enqueueIntegration } from "./integrations";
 const provider = v.union(
   v.literal("instagram"),
   v.literal("facebook"),
+  v.literal("tiktok"),
   v.literal("website"),
   v.literal("photo_scan"),
 );
@@ -27,7 +28,7 @@ const photoFallback = v.object({
 const ACTIVE_TTL_MS = 15 * 60_000;
 const RESULT_TTL_MS = 24 * 60 * 60_000;
 
-type Provider = "instagram" | "facebook" | "website" | "photo_scan";
+type Provider = "instagram" | "facebook" | "tiktok" | "website" | "photo_scan";
 type Feature = "link_imports" | "photo_scans";
 
 async function resolveUserId(ctx: QueryCtx | MutationCtx, authUserId: Id<"users">) {
@@ -52,6 +53,7 @@ function supportsProvider(value: Exclude<Provider, "photo_scan">, sourceUrl: str
   const host = new URL(sourceUrl).hostname;
   if (value === "instagram") return host === "instagram.com" || host.endsWith(".instagram.com");
   if (value === "facebook") return host === "facebook.com" || host.endsWith(".facebook.com") || host === "fb.watch";
+  if (value === "tiktok") return host === "tiktok.com" || host.endsWith(".tiktok.com");
   return true;
 }
 
@@ -96,6 +98,8 @@ function providerCosts(value: Provider): ProviderBudget[] {
   if (value === "website") return ["jina", "gemini"];
   if (value === "photo_scan") return ["gemini", "gemini", "gemini"];
   if (value === "instagram") return ["apify", "apify", "gemini", "gemini"];
+  // TikTok: ein Actor-Run, optional ein zweiter mit Transkription.
+  if (value === "tiktok") return ["apify", "apify", "gemini", "gemini"];
   return ["apify", "apify", "gemini"];
 }
 
@@ -415,11 +419,13 @@ export const runImport = internalAction({
         await ctx.runMutation(internal.importOperations.completePhoto, { ...args, resultDraft: result.doc });
         return;
       }
-      const target = operation.provider === "instagram"
-        ? internal.instagram.scrapePostInternal
-        : operation.provider === "facebook"
-          ? internal.facebook.scrapePostInternal
-          : internal.website.scrapeWebsiteInternal;
+      const linkImporters = {
+        instagram: internal.instagram.scrapePostInternal,
+        facebook: internal.facebook.scrapePostInternal,
+        tiktok: internal.tiktok.scrapePostInternal,
+      } as const;
+      const target = linkImporters[operation.provider as keyof typeof linkImporters]
+        ?? internal.website.scrapeWebsiteInternal;
       const result = await ctx.runAction(target, { userId: args.userId, url: operation.sourceUrl! });
       await ctx.runMutation(internal.importOperations.completeLink, { ...args, ...result });
     } catch (error) {

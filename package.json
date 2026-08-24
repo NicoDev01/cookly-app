@@ -38,6 +38,7 @@
     "@capacitor/local-notifications": "^8.2.0",
     "@capacitor/push-notifications": "^8.1.2",
     "@capacitor/splash-screen": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.3",
     "@convex-dev/auth": "^0.0.91",
     "@google/genai": "^1.52.0",
     "@radix-ui/react-separator": "^1.1.8",

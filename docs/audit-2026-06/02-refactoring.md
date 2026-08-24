@@ -37,11 +37,22 @@ verdreifachen.
    `deriveTitleFromCaption`, `scoreCandidate`, `normalizeRecipeData`.
 
 ### Definition of Done
-- [ ] Beide Actions nutzen denselben Pipeline-Code, Dateien je < 300 Zeilen
-- [ ] Unit-Tests für die extrahierten Helfer grün
+- [x] Beide Actions nutzen denselben Pipeline-Code, Dateien je < 300 Zeilen
+- [x] Unit-Tests für die extrahierten Helfer grün
 - [ ] Manueller Test: je 1 Instagram-Post, 1 Reel, 1 Facebook-Post, 1 Facebook-Reel importieren
 
 **Aufwand:** ~2–3 Tage.
+
+### ✅ Umgesetzt am 24.08.2026 (zusammen mit dem TikTok-Import)
+- `convex/socialImport.ts` — Pipeline-Engine + `SocialPlatform`-Adaptertyp
+- `convex/socialImportShared.ts` — reine Helfer (Scoring, Normalisierung, Extraktion)
+- `convex/socialImportPrompts.ts` — Prompt-Vorlagen
+- `convex/lib/socialUrls.ts`, `convex/lib/tiktokContent.ts` — Convex-freie, unit-getestete URL-/Content-Logik
+- `instagram.ts` 1029 → 98 Zeilen, `facebook.ts` 948 → 115 Zeilen, neu `tiktok.ts` 156 Zeilen
+- Tests: `utils/socialImportPipeline.test.mjs`, `utils/importTarget.test.mjs`
+
+**Offen:** Der manuelle Regressionstest für Instagram/Facebook auf dem Gerät steht noch aus —
+die Adapter wurden verhaltensgleich portiert, aber nicht gegen echte Posts nachgemessen.
 
 ---
 
