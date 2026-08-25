@@ -3,6 +3,9 @@
 > Ersetzt das veraltete `docs/IOS_GUIDE.md` (das noch Clerk referenzierte – Auth läuft heute
 > über `@convex-dev/auth`). Stand: Juni 2026, Capacitor 8, App-Version 1.4.8.
 >
+> **VERALTET (25.08.2026):** K1 und K2 sind inzwischen umgesetzt, RevenueCat ist integriert.
+> Aktive Arbeitsgrundlage: [../IOS_PORT_2026-08.md](../IOS_PORT_2026-08.md).
+>
 > **Grundsatz:** Der React/Vite-Code läuft auf iOS unverändert. Der Aufwand steckt in
 > (1) Payments, (2) Share Extension, (3) nativer Konfiguration und (4) App-Store-Review.
 

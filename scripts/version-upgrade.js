@@ -23,6 +23,7 @@ import { execSync } from 'child_process';
 // ============================================================
 const BUILD_GRADLE_PATH = 'android/app/build.gradle';
 const CHANGELOG_PATH = 'CHANGELOG.md';
+const IOS_PBXPROJ_PATH = 'ios/App/App.xcodeproj/project.pbxproj';
 
 // Get version type from CLI args
 const versionType = process.argv[2] || 'patch';
@@ -76,6 +77,38 @@ function updateBuildGradle() {
   fs.writeFileSync(BUILD_GRADLE_PATH, updated);
 
   return { versionCode: newVersionCode, versionName: newVersionName };
+}
+
+// ============================================================
+// UPDATE IOS PROJECT (project.pbxproj)
+// ============================================================
+function updateIosProject(versionCode, versionName) {
+  if (!fs.existsSync(IOS_PBXPROJ_PATH)) {
+    console.log('ℹ️  iOS project not found — skipping (run `npx cap add ios` on the Mac first).');
+    return null;
+  }
+
+  console.log('📱 Updating project.pbxproj...');
+
+  const pbxproj = fs.readFileSync(IOS_PBXPROJ_PATH, 'utf8');
+  const marketingEntries = pbxproj.match(/MARKETING_VERSION = [^;]+;/g);
+  const buildEntries = pbxproj.match(/CURRENT_PROJECT_VERSION = [^;]+;/g);
+
+  if (!marketingEntries?.length || !buildEntries?.length) {
+    console.log('   ⚠️  No MARKETING_VERSION / CURRENT_PROJECT_VERSION entries found — skipped.');
+    return null;
+  }
+
+  const updated = pbxproj
+    .replace(/MARKETING_VERSION = [^;]+;/g, `MARKETING_VERSION = ${versionName};`)
+    .replace(/CURRENT_PROJECT_VERSION = [^;]+;/g, `CURRENT_PROJECT_VERSION = ${versionCode};`);
+
+  fs.writeFileSync(IOS_PBXPROJ_PATH, updated);
+
+  console.log(`   MARKETING_VERSION: → ${versionName} (${marketingEntries.length} entries)`);
+  console.log(`   CURRENT_PROJECT_VERSION: → ${versionCode} (${buildEntries.length} entries)`);
+
+  return { original: pbxproj };
 }
 
 // ============================================================
@@ -188,6 +221,7 @@ const originalBuildGradle = fs.readFileSync(BUILD_GRADLE_PATH, 'utf8');
 const changelogExisted = fs.existsSync(CHANGELOG_PATH);
 const originalChangelog = changelogExisted ? fs.readFileSync(CHANGELOG_PATH, 'utf8') : '';
 let versionChanged = false;
+let iosUpdate = null;
 
 try {
   preflight();
@@ -200,6 +234,8 @@ try {
         versionName: currentBuildGradle.match(/versionName "([^"]+)"/)[1],
       }
     : updateBuildGradle();
+
+  iosUpdate = updateIosProject(release.versionCode, release.versionName);
 
   if (!buildOnly) {
     updateChangelog(release.versionName);
@@ -230,6 +266,10 @@ try {
     if (changelogExisted) fs.writeFileSync(CHANGELOG_PATH, originalChangelog);
     else if (fs.existsSync(CHANGELOG_PATH)) fs.rmSync(CHANGELOG_PATH);
     console.error('↩️  Version und Changelog wurden zurückgesetzt.');
+  }
+  if (iosUpdate) {
+    fs.writeFileSync(IOS_PBXPROJ_PATH, iosUpdate.original);
+    console.error('↩️  iOS project.pbxproj wurde zurückgesetzt.');
   }
   console.error('');
   console.error('❌ ERROR:', error.message);

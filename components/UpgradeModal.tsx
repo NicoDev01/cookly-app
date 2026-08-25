@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { showsExternalPaymentBranding } from '../utils/paymentBranding';
 
 interface UpgradeModalProps {
   isOpen: boolean;
@@ -109,7 +110,7 @@ export default function UpgradeModal({
           </div>
 
           <p className="mt-6 text-[10px] uppercase tracking-widest font-black text-text-secondary-light/40 dark:text-text-secondary-dark/40">
-            Sichere Zahlung via Stripe
+            {showsExternalPaymentBranding ? "Sichere Zahlung via Stripe" : "Sichere Zahlung"}
           </p>
         </div>
       </div>

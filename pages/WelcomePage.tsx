@@ -5,6 +5,8 @@ import { StatusBar, Style } from '@capacitor/status-bar';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { useConvexAuth } from 'convex/react';
 import { logger } from '../utils/logger';
+import { LEGAL_LINKS } from '../utils/legalLinks';
+import ExternalLink from '../components/ExternalLink';
 import { Button } from '../components/ui/cookly';
 import BottomSheet from '../components/BottomSheet';
 import { startGoogleOAuth } from '../services/googleOAuth';
@@ -29,11 +31,14 @@ export const WelcomePage: React.FC = () => {
 
   React.useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
+    const isAndroid = Capacitor.getPlatform() === 'android';
 
-    void StatusBar.setBackgroundColor({ color: '#b2c9ba' });
+    if (isAndroid) void StatusBar.setBackgroundColor({ color: '#b2c9ba' });
     void StatusBar.setStyle({ style: Style.Dark });
 
-    return () => void StatusBar.setBackgroundColor({ color: '#f0f2f5' });
+    return () => {
+      if (isAndroid) void StatusBar.setBackgroundColor({ color: '#f0f2f5' });
+    };
   }, []);
 
   const handleGoogleSignIn = async () => {
@@ -178,13 +183,13 @@ export const WelcomePage: React.FC = () => {
           {/* Terms */}
           <p className="text-center text-xs text-gray-500 dark:text-gray-400 pt-2">
             Mit der Registrierung stimmst du unseren{' '}
-            <a href="/terms" className="text-[#b2c8ba] hover:underline">
+            <ExternalLink href={LEGAL_LINKS.terms} className="text-[#b2c8ba] hover:underline">
               Nutzungsbedingungen
-            </a>{' '}
+            </ExternalLink>{' '}
             und der{' '}
-            <a href="/privacy" className="text-[#b2c8ba] hover:underline">
+            <ExternalLink href={LEGAL_LINKS.privacy} className="text-[#b2c8ba] hover:underline">
               Datenschutzerklärung
-            </a>{' '}
+            </ExternalLink>{' '}
             zu.
           </p>
         </div>

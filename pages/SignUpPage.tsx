@@ -5,6 +5,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Input, IconButton } from '../components/ui/cookly';
 import { getUserErrorMessage } from '../utils/userErrors';
 import { logger } from '../utils/logger';
+import { LEGAL_LINKS } from '../utils/legalLinks';
+import ExternalLink from '../components/ExternalLink';
 import { capture } from '../services/analytics';
 
 export const SignUpPage: React.FC = () => {
@@ -222,13 +224,13 @@ export const SignUpPage: React.FC = () => {
         <div className="text-center mt-12">
           <p className="cookly-text-caption text-xs">
             Mit der Registrierung stimmst du unseren{' '}
-            <a href="/terms" className="text-[#b2c8ba] hover:underline">
+            <ExternalLink href={LEGAL_LINKS.terms} className="text-[#b2c8ba] hover:underline">
               Nutzungsbedingungen
-            </a>{' '}
+            </ExternalLink>{' '}
             und der{' '}
-            <a href="/privacy" className="text-[#b2c8ba] hover:underline">
+            <ExternalLink href={LEGAL_LINKS.privacy} className="text-[#b2c8ba] hover:underline">
               Datenschutzerklärung
-            </a>{' '}
+            </ExternalLink>{' '}
             zu.
           </p>
         </div>

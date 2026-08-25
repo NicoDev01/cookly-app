@@ -34,6 +34,15 @@ dist-ssr
 # Android signing credentials (contains passwords!)
 android/gradle.properties
 
+# iOS (Xcode-Projekt selbst wird committed, wie android/)
+ios/App/Pods/
+ios/App/App/public/
+ios/App/App.xcworkspace/xcuserdata/
+ios/App/App.xcodeproj/xcuserdata/
+*.mobileprovision
+*.p12
+*.p8
+
 # Windows reserved device names
 nul
 out.txt

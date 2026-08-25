@@ -2,6 +2,8 @@ import { Browser } from "@capacitor/browser";
 import { Capacitor } from "@capacitor/core";
 import type { PurchasesPackage } from "@revenuecat/purchases-capacitor";
 
+import { resolveNativeBilling } from "./nativeBillingConfig";
+
 export type PlanId = "pro_monthly" | "pro_yearly";
 
 type WebActions = {
@@ -9,14 +11,16 @@ type WebActions = {
   portal: (args: { returnUrl: string }) => Promise<{ portalUrl?: string | null }>;
 };
 
-const android = Capacitor.getPlatform() === "android";
-const nativeEnabled = android && import.meta.env.VITE_NATIVE_BILLING_ENABLED === "true" && !!import.meta.env.VITE_REVENUECAT_GOOGLE_API_KEY;
+const nativeBillingConfig = resolveNativeBilling(Capacitor.getPlatform(), import.meta.env);
+const nativeEnabled = nativeBillingConfig.enabled;
 let configuredUserId: string | undefined;
 
 async function nativePurchases(billingUserId: string) {
   const { Purchases } = await import("@revenuecat/purchases-capacitor");
+  const { apiKey } = nativeBillingConfig;
+  if (!apiKey) throw new Error("NATIVE_BILLING_NOT_CONFIGURED");
   if (!configuredUserId) {
-    await Purchases.configure({ apiKey: import.meta.env.VITE_REVENUECAT_GOOGLE_API_KEY, appUserID: billingUserId });
+    await Purchases.configure({ apiKey, appUserID: billingUserId });
   } else if (configuredUserId !== billingUserId) {
     await Purchases.logIn({ appUserID: billingUserId });
   }

@@ -14,6 +14,10 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   server: {
     androidScheme: 'https', // Oder 'cookly'
+    // https statt capacitor://: gleicher Origin wie Android/Web, damit localStorage
+    // (Convex-Auth-Token) geteilt bleibt — Login-Persistenz muss auf dem Mac gegen
+    // den echten Convex-Login getestet werden.
+    iosScheme: 'https',
     hostname: 'cookly-app.com',
     allowNavigation: [
       'cookly-app.com',
@@ -45,6 +49,9 @@ const config: CapacitorConfig = {
     allowMixedContent: false, // SECURITY: Only HTTPS in production
     captureInput: false, // FIX: Enable keyboard autocomplete suggestions
     webContentsDebuggingEnabled,
+  },
+  ios: {
+    contentInset: 'always',
   },
 };
 

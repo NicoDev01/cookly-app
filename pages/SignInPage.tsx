@@ -7,6 +7,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Input, IconButton } from '../components/ui/cookly';
 import { getPasswordSignInErrorMessage } from '../utils/authErrors';
 import { logger } from '../utils/logger';
+import { LEGAL_LINKS } from '../utils/legalLinks';
+import ExternalLink from '../components/ExternalLink';
 import { capture } from '../services/analytics';
 import { startGoogleOAuth } from '../services/googleOAuth';
 
@@ -31,7 +33,7 @@ export const SignInPage: React.FC = () => {
   React.useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
 
-    void StatusBar.setBackgroundColor({ color: '#f0f2f5' });
+    if (Capacitor.getPlatform() === 'android') void StatusBar.setBackgroundColor({ color: '#f0f2f5' });
     void StatusBar.setStyle({ style: Style.Dark });
   }, []);
 
@@ -191,13 +193,13 @@ export const SignInPage: React.FC = () => {
         <div className="text-center mt-12">
           <p className="cookly-text-caption text-xs">
             Mit der Anmeldung stimmst du unseren{' '}
-            <a href="/terms" className="text-[#b2c8ba] hover:underline">
+            <ExternalLink href={LEGAL_LINKS.terms} className="text-[#b2c8ba] hover:underline">
               Nutzungsbedingungen
-            </a>{' '}
+            </ExternalLink>{' '}
             und der{' '}
-            <a href="/privacy" className="text-[#b2c8ba] hover:underline">
+            <ExternalLink href={LEGAL_LINKS.privacy} className="text-[#b2c8ba] hover:underline">
               Datenschutzerklärung
-            </a>{' '}
+            </ExternalLink>{' '}
             zu.
           </p>
         </div>

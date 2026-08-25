@@ -21,6 +21,7 @@ import { useNotification } from "@/contexts/NotificationContext";
 import { getUserErrorMessage } from "@/utils/userErrors";
 import { createBillingClient } from "@/services/billing";
 import { capture } from "@/services/analytics";
+import { showsExternalPaymentBranding } from "@/utils/paymentBranding";
 
 const PRO_FEATURES_MONTHLY = [
   "Unlimitierte Rezepte speichern",
@@ -311,32 +312,36 @@ export default function SubscribePage() {
             <div className="flex flex-col items-center gap-1 opacity-50 grayscale hover:grayscale-0 transition-all">
               <span className="material-symbols-outlined text-4xl">payments</span>
               <span className="text-[10px] font-bold uppercase tracking-widest">
-                {nativeBillingUnavailable ? "Store Billing" : "Stripe"}
+                {showsExternalPaymentBranding ? "Stripe" : "Store Billing"}
               </span>
             </div>
             <div className="flex flex-col items-center gap-1 opacity-50 grayscale hover:grayscale-0 transition-all">
               <span className="material-symbols-outlined text-4xl">verified</span>
               <span className="text-[10px] font-bold uppercase tracking-widest">Garantie</span>
             </div>
-            <div className="flex flex-col items-center gap-1 opacity-50 grayscale hover:grayscale-0 transition-all">
-              <span className="material-symbols-outlined text-4xl">account_balance_wallet</span>
-              <span className="text-[10px] font-bold uppercase tracking-widest">PayPal</span>
-            </div>
-            <div className="flex flex-col items-center gap-1 opacity-50 grayscale hover:grayscale-0 transition-all">
-              <span className="material-symbols-outlined text-4xl">contactless</span>
-              <span className="text-[10px] font-bold uppercase tracking-widest">Google Pay</span>
-            </div>
+            {showsExternalPaymentBranding && (
+              <div className="flex flex-col items-center gap-1 opacity-50 grayscale hover:grayscale-0 transition-all">
+                <span className="material-symbols-outlined text-4xl">account_balance_wallet</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest">PayPal</span>
+              </div>
+            )}
+            {showsExternalPaymentBranding && (
+              <div className="flex flex-col items-center gap-1 opacity-50 grayscale hover:grayscale-0 transition-all">
+                <span className="material-symbols-outlined text-4xl">contactless</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest">Google Pay</span>
+              </div>
+            )}
           </div>
           <p className="text-sm text-muted-foreground">
-            {nativeBillingUnavailable ? "Abos in der App werden über den jeweiligen Store bereitgestellt." : "Sichere Zahlung über Stripe. Deine Daten werden verschlüsselt übertragen."}
+            {showsExternalPaymentBranding ? "Sichere Zahlung über Stripe. Deine Daten werden verschlüsselt übertragen." : "Abos in der App werden über den jeweiligen Store bereitgestellt."}
             Jederzeit kündbar über die Profileinstellungen.
           </p>
           <div className="pt-4">
             <a 
-              href="mailto:support@cookly.de" 
+              href="mailto:aimpact.agency@gmail.com"
               className="text-xs font-bold text-primary hover:underline underline-offset-4"
             >
-              Fragen? Support@Cookly.de
+              Fragen? aimpact.agency@gmail.com
             </a>
           </div>
         </div>

@@ -38,7 +38,7 @@ const DebugSheet: React.FC<DebugSheetProps> = ({ isOpen, onClose, userId }) => {
   };
 
   const mailtoHref =
-    `mailto:support@cookly.de?subject=${encodeURIComponent(`Cookly Logs ${APP_VERSION}`)}` +
+    `mailto:aimpact.agency@gmail.com?subject=${encodeURIComponent(`Cookly Logs ${APP_VERSION}`)}` +
     `&body=${encodeURIComponent(`${header}\n\n${(logs || '(keine Logs)').split('\n').slice(-50).join('\n')}`)}`;
 
   return (

@@ -19,7 +19,10 @@ import { clearLogs, logger } from '../utils/logger';
 import { APP_VERSION } from '../utils/appInfo';
 import { createUuid } from '../utils/uuid';
 import DebugSheet from '../components/DebugSheet';
+import ExternalLink from '../components/ExternalLink';
 import { useQueryCache } from '../contexts/QueryCacheContext';
+import { showsExternalPaymentBranding } from '../utils/paymentBranding';
+import { LEGAL_LINKS } from '../utils/legalLinks';
 
 import { cn } from "@/lib/utils";
 import { resetAnalyticsIdentity } from "../services/analytics";
@@ -299,12 +302,12 @@ export const ProfilePage: React.FC = () => {
 
           {/* Footer Info */}
           <div className="pt-8 pb-6 text-center animate-in fade-in slide-in-from-bottom-4 duration-500 delay-400">
-             <a
-               href="#/legal"
+             <ExternalLink
+               href={LEGAL_LINKS.impressum}
                className="text-xs font-bold text-primary active:underline underline-offset-4"
              >
                Datenschutz & Impressum
-             </a>
+             </ExternalLink>
              <p
                onClick={handleVersionTap}
                className="mt-3 text-[11px] text-text-secondary-light/60 dark:text-text-secondary-dark/60 select-none cursor-default"
@@ -353,7 +356,9 @@ export const ProfilePage: React.FC = () => {
             <div className="w-12 h-1.5 bg-text-secondary-light/30 dark:bg-text-secondary-dark/30 rounded-full mx-auto mb-6" />
             <h2 className="text-2xl font-bold mb-3 text-destructive text-center">Konto löschen?</h2>
             <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-6 leading-relaxed text-center">
-              Diese Aktion ist unwiderruflich. Konto und Rezepte werden gelöscht; ein Stripe-Abo endet sofort.
+              {showsExternalPaymentBranding
+                ? "Diese Aktion ist unwiderruflich. Konto und Rezepte werden gelöscht; ein Stripe-Abo endet sofort."
+                : "Diese Aktion ist unwiderruflich. Konto und Rezepte werden gelöscht; ein laufendes Abo endet sofort."}
               Abos über Google Play oder den App Store musst du zusätzlich dort verwalten.
             </p>
             <div className="relative mb-8">

@@ -13,6 +13,9 @@
     "ios/**",
     "convex/_generated/**"
   ],
+  "ignoreDependencies": [
+    "@capacitor/ios"
+  ],
   "vite": {
     "config": [
       "vite.config.ts"
