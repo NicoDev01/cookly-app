@@ -232,7 +232,7 @@ const WeeklyPage: React.FC = () => {
       <div className="flex flex-col flex-1">
 
         {/* Header */}
-        <div className="flex flex-col px-6 pt-6 pb-4 gap-4" style={{ paddingTop: 'max(1.5rem, var(--safe-area-inset-top))' }}>
+        <div className="flex flex-col px-6 pb-4 gap-4" style={{ paddingTop: 'calc(var(--safe-area-inset-top, 0px) + 0.75rem)' }}>
           {/* Title Row */}
           <div className="flex items-center justify-between">
             <h1 className="text-[28px] font-bold text-text-primary-light dark:text-text-primary-dark tracking-tight">

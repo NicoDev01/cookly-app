@@ -186,8 +186,7 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
     <div className="relative flex h-auto w-full flex-col group/design-root overflow-x-hidden bg-background-light dark:bg-background-dark font-display pb-nav">
       <div className="flex flex-col flex-1">
         
-        {/* Header */}
-        <div className="flex items-center px-6 py-4 pt-[calc(max(1rem,var(--safe-area-inset-top))+1rem)] justify-between relative z-30 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md sticky top-0">
+        <div className="flex items-center px-6 pb-4 justify-between relative z-30 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md sticky top-0" style={{ paddingTop: 'calc(var(--safe-area-inset-top, 0px) + 0.75rem)' }}>
           <div className="flex items-center gap-4">
             <IconButton
               icon="arrow_back"

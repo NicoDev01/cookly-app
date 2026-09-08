@@ -9,7 +9,10 @@ const EmptyState: React.FC<EmptyStateProps> = ({ openAddModal }) => {
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false);
 
   return (
-    <div className="flex flex-col items-center justify-center px-6 py-8 animate-in fade-in">
+    <div
+      className="flex flex-col items-center justify-center px-6 py-8 animate-in fade-in"
+      style={{ paddingTop: 'calc(var(--safe-area-inset-top, 0px) + 1.5rem)' }}
+    >
       {/* Headline - oben, groß, zentriert */}
       <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-center mb-6">
         Willkommen bei <br />

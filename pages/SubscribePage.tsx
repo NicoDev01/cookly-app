@@ -152,7 +152,7 @@ export default function SubscribePage() {
       {/* Wave Background Decorative Element */}
       <div className="absolute inset-0 -z-10 h-full w-full bg-white dark:bg-slate-950 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)]"></div>
 
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 pb-8" style={{ paddingTop: 'calc(var(--safe-area-inset-top, 0px) + 1rem)' }}>
         {/* Header */}
         <div className="flex items-center justify-between mb-12">
           <Button

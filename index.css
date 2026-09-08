@@ -353,7 +353,7 @@
     padding-bottom: calc(
       var(--nav-height) + var(--safe-area-inset-bottom, 0px)
     );
-    padding-top: max(1rem, var(--safe-area-inset-top));
+    padding-top: calc(var(--safe-area-inset-top, 0px) + 0.75rem);
   }
 
   :root {

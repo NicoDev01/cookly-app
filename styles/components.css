@@ -15,7 +15,7 @@
   min-height: 100dvh;
   background-color: var(--color-bg-secondary, #f9fafb);
   color: var(--color-text-primary, #111827);
-  padding-bottom: var(--nav-height, 80px);
+  padding-bottom: calc(var(--nav-height, 80px) + var(--safe-area-inset-bottom, 0px));
 }
 
 .dark .cookly-page {

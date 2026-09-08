@@ -170,7 +170,7 @@ const FavoritesPage: React.FC = () => {
       <div className="flex flex-col flex-1">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-3 gap-4" style={{ paddingTop: 'max(1.5rem, var(--safe-area-inset-top))' }}>
+        <div className="flex items-center justify-between px-6 pb-3 gap-4" style={{ paddingTop: 'calc(var(--safe-area-inset-top, 0px) + 0.75rem)' }}>
           <h1 className="text-headline text-text-primary-light dark:text-text-primary-dark">
             Favoriten
           </h1>

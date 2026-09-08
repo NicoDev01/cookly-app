@@ -78,7 +78,7 @@ export const ForgotPasswordPage: React.FC = () => {
   };
 
   return (
-    <div className="cookly-page cookly-page--no-nav flex items-center justify-center">
+    <div className="cookly-page cookly-page--no-nav flex items-center justify-center pt-safe-offset pb-safe-offset">
       <div className="w-full max-w-md px-4">
         {/* Logo Header */}
         <div className="flex justify-center mb-8">

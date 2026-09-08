@@ -21,7 +21,7 @@ export const OfflineBanner: React.FC = () => {
   }
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-[100] bg-amber-500 text-white px-4 py-2 flex items-center justify-center gap-2 shadow-lg animate-in slide-in-from-top">
+    <div className="fixed top-0 left-0 right-0 z-[100] bg-amber-500 text-white px-4 pb-2 flex items-center justify-center gap-2 shadow-lg animate-in slide-in-from-top" style={{ paddingTop: 'calc(var(--safe-area-inset-top, 0px) + 0.5rem)' }}>
       <span className="material-symbols-outlined text-xl">wifi_off</span>
       <span className="text-sm font-medium">
         Du bist offline. Einige Funktionen stehen nicht zur Verfügung.
