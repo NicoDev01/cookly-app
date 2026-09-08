@@ -54,6 +54,11 @@
 }
 
 /* === Scroll Utilities === */
+.scroll-touch,
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;

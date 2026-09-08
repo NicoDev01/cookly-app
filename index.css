@@ -293,9 +293,11 @@
 }
 
 @layer base {
+  html,
   body {
     min-height: 100dvh;
     -webkit-tap-highlight-color: transparent;
+    -webkit-overflow-scrolling: touch;
     overscroll-behavior: none;
   }
 
