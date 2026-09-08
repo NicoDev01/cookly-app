@@ -18,7 +18,7 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		5070D5214C957B11218B2A46 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 3D2F9F43D340B085DB0FAB2B /* PrivacyInfo.xcprivacy */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
-		91A4890E5F642A9F5C9C04CD /* CooklyShare.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = F4EC20080043E47D2F904F98 /* CooklyShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, CodeSignOnCopy, ); }; };
+		91A4890E5F642A9F5C9C04CD /* CooklyShare.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = F4EC20080043E47D2F904F98 /* CooklyShare.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -49,7 +49,7 @@
 		281CE3ADDB5F9AE4D1DCA87B /* ShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		310378F440AE030D150BE8CD /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
-		3D2F9F43D340B085DB0FAB2B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		3D2F9F43D340B085DB0FAB2B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -143,7 +143,6 @@
 				F3BB751A8B92DF439E182900 /* Info.plist */,
 				E86DFCBA54214AD7AC9956FC /* CooklyShare.entitlements */,
 			);
-			name = CooklyShare;
 			path = CooklyShare;
 			sourceTree = "<group>";
 		};
@@ -321,6 +320,7 @@
 				CODE_SIGN_ENTITLEMENTS = CooklyShare/CooklyShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X8LYFSW6LP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CooklyShare/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -456,6 +456,7 @@
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X8LYFSW6LP;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -479,6 +480,7 @@
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X8LYFSW6LP;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -501,6 +503,7 @@
 				CODE_SIGN_ENTITLEMENTS = CooklyShare/CooklyShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X8LYFSW6LP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CooklyShare/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;

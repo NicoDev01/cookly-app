@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 class ShareViewController: UIViewController {
 
-    private let appGroupId = "group.com.cookly.recipe"
+    private let appGroupId = "group.com.cookly-app.recipe"
     private let urlScheme = "cookly://share-target"
 
     override func viewDidLoad() {
