@@ -86,21 +86,21 @@ const ShareTargetPage: React.FC = () => {
     const updateRecipe = useMutation(api.recipes.updateRecipe);
 
     const handleClose = useCallback(async () => {
-        if (Capacitor.isNativePlatform()) {
+        if (Capacitor.getPlatform() === 'android') {
             try {
-                // This specifically closes the current activity stack. 
+                // This specifically closes the current activity stack on Android. 
                 // Since SendIntent usually launches a new activity/task, this returns to the previous app.
                 await CapacitorApp.exitApp();
+                return;
             } catch (e) {
-                logger.error('ShareTarget', 'Could not exit app', e);
-                window.history.back();
+                logger.error('ShareTarget', 'Could not exit app on Android', e);
             }
+        }
+
+        if (window.history.length > 1) {
+            window.history.back();
         } else {
-            if (window.history.length > 1) {
-                window.history.back();
-            } else {
-                navigate('/', { replace: true });
-            }
+            navigate('/', { replace: true });
         }
     }, [navigate]);
 

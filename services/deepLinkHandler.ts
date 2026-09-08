@@ -47,10 +47,30 @@ export function initDeepLinkHandler(navigate: NavigateFunction) {
         return;
       }
 
+      // Share Target Deep Link (z.B. cookly://share-target?url=... oder com.cookly.recipe://share-target?url=...)
+      const isShareTarget =
+        url.host === 'share-target' ||
+        url.pathname?.includes('share-target');
+
+      if (isShareTarget) {
+        logger.debug('DeepLink', 'Share target detected');
+        const params = url.search || '';
+        navigate(`/share-target${params}`);
+        return;
+      }
+
       // Allgemeine Deep-Links
-      const path = url.pathname || '/';
-      logger.debug('DeepLink', 'General deep link, navigating', { path });
-      navigate(path);
+      let targetPath = '/';
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        targetPath = `${url.pathname || '/'}${url.search || ''}`;
+      } else {
+        // Custom URL Scheme (z.B. cookly://recipes/123)
+        const hostAndPath = url.host ? `/${url.host}${url.pathname || ''}` : (url.pathname || '/');
+        targetPath = `${hostAndPath}${url.search || ''}`;
+      }
+
+      logger.debug('DeepLink', 'General deep link, navigating', { targetPath });
+      navigate(targetPath);
     } catch (err) {
       logger.error('DeepLink', 'Error parsing URL', { err, url: event.url });
     }

@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/patch-send-intent.mjs",
     "dev": "vite",
     "test": "node --test utils/*.test.mjs components/addRecipeModal/*.test.mjs services/*.test.mjs",
     "build": "vite build",

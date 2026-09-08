@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
 const SKIP_DIRS = new Set([
-  'node_modules', 'dist', 'android', '.git', 'graphify-out',
+  'node_modules', 'dist', 'android', 'ios', '.git', 'graphify-out',
   'build', 'coverage', 'admin-dashboard',
 ]);
 const SOURCE_EXT = /\.(tsx|ts|jsx|js|mjs)$/;
@@ -67,13 +67,16 @@ export const collectIconNames = () => {
       else stringsIn(body).forEach((n) => add(n, rel));
     }
 
-    // B) Props, die einen Icon-Namen durchreichen: icon="add", leftIcon={'search'} ...
-    for (const m of src.matchAll(/\b(?:icon|leftIcon|rightIcon|iconName|activeIcon)\s*=\s*\{?\s*['"]([a-z0-9_]+)['"]/g)) {
+    // B) Props, die einen Icon-Namen durchreichen: icon="add", leftIcon={'search'}, icon={cond ? a : b} ...
+    for (const m of src.matchAll(/\b(?:icon|leftIcon|rightIcon|iconName|activeIcon)\s*=\s*\{([^}]+)\}/g)) {
+      stringsIn(m[1]).forEach((n) => add(n, rel));
+    }
+    for (const m of src.matchAll(/\b(?:icon|leftIcon|rightIcon|iconName|activeIcon)\s*=\s*['"]([a-z0-9_]+)['"]/g)) {
       add(m[1], rel);
     }
 
     // C) Objekt-Literale: { icon: 'restaurant' }
-    for (const m of src.matchAll(/\bicon\s*:\s*['"]([a-z0-9_]+)['"]/g)) {
+    for (const m of src.matchAll(/\b(?:icon|leftIcon|rightIcon)\s*:\s*['"]([a-z0-9_]+)['"]/g)) {
       add(m[1], rel);
     }
 

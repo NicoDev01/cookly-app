@@ -194,6 +194,14 @@ const AppContent: React.FC = () => {
       cleanupFns.push(() => handle.remove());
     });
 
+    // Listen for SendIntent plugin event (insb. auf iOS bei triggerSendIntent)
+    const onSendIntentReceived = () => {
+      logger.debug('App', 'sendIntentReceived window event, checking intent');
+      checkIntent('resume');
+    };
+    window.addEventListener('sendIntentReceived', onSendIntentReceived);
+    cleanupFns.push(() => window.removeEventListener('sendIntentReceived', onSendIntentReceived));
+
     // Cleanup NUR bei Unmount
     return () => {
       removeDeepLinkHandler();

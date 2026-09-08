@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-24T19:44:07.643Z",
+  "generatedAt": "2026-09-08T18:03:56.041Z",
   "axes": "opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200",
   "icons": [
     "ac_unit",
@@ -97,6 +97,10 @@
     "timer",
     "upload",
     "verified",
+    "view_agenda",
+    "view_module",
+    "visibility",
+    "visibility_off",
     "water_drop",
     "whatshot",
     "widgets",
@@ -106,6 +110,7 @@
   ],
   "ignored": [
     "daily",
+    "large",
     "nicht_erlaubt"
   ]
 }

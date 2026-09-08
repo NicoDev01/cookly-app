@@ -22,6 +22,8 @@ import { getUserErrorMessage } from "@/utils/userErrors";
 import { createBillingClient } from "@/services/billing";
 import { capture } from "@/services/analytics";
 import { showsExternalPaymentBranding } from "@/utils/paymentBranding";
+import ExternalLink from "@/components/ExternalLink";
+import { LEGAL_LINKS } from "@/utils/legalLinks";
 
 const PRO_FEATURES_MONTHLY = [
   "Unlimitierte Rezepte speichern",
@@ -336,7 +338,16 @@ export default function SubscribePage() {
             {showsExternalPaymentBranding ? "Sichere Zahlung über Stripe. Deine Daten werden verschlüsselt übertragen." : "Abos in der App werden über den jeweiligen Store bereitgestellt."}
             Jederzeit kündbar über die Profileinstellungen.
           </p>
-          <div className="pt-4">
+          <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground pt-1">
+            <ExternalLink href={LEGAL_LINKS.terms} className="hover:underline">
+              Nutzungsbedingungen (EULA)
+            </ExternalLink>
+            <span>•</span>
+            <ExternalLink href={LEGAL_LINKS.privacy} className="hover:underline">
+              Datenschutzerklärung
+            </ExternalLink>
+          </div>
+          <div className="pt-2">
             <a 
               href="mailto:aimpact.agency@gmail.com"
               className="text-xs font-bold text-primary hover:underline underline-offset-4"
