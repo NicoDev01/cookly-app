@@ -51,7 +51,11 @@ const config: CapacitorConfig = {
     webContentsDebuggingEnabled,
   },
   ios: {
-    contentInset: 'always',
+    // Default in Capacitor ist 'never' (UIScrollViewContentInsetAdjustmentNever).
+    // Bewusst 'never' statt 'always': Cookly nutzt viewport-fit=cover und handhabt
+    // Safe Areas (Notch, Home-Indicator) selbst per CSS (env(safe-area-inset-*)).
+    // 'always' würde die WKWebView künstlich einrücken und zu doppelten Insets führen.
+    contentInset: 'never',
   },
 };
 
