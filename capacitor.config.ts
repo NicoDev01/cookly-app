@@ -56,6 +56,8 @@ const config: CapacitorConfig = {
     // Safe Areas (Notch, Home-Indicator) selbst per CSS (env(safe-area-inset-*)).
     // 'always' würde die WKWebView künstlich einrücken und zu doppelten Insets führen.
     contentInset: 'never',
+    // Gleiche Farbe wie LaunchScreen.storyboard und App-Hintergrund: kein weißer Blitz beim Start.
+    backgroundColor: '#f0f2f5',
   },
 };
 
