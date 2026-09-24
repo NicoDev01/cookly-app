@@ -1,5 +1,6 @@
 import React, { Suspense, useEffect, useCallback, useRef, useState } from 'react';
 import { SendIntent } from '@supernotes/capacitor-send-intent';
+import { StatusBar, Style } from '@capacitor/status-bar';
 import { Capacitor } from '@capacitor/core';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { LottieSplashScreen } from 'capacitor-lottie-splash-screen';
@@ -27,6 +28,10 @@ import { AdSlot } from './components/AdSlot';
 const CategoryRecipesPage = React.lazy(() => import('./pages/CategoryRecipesPage'));
 const RecipePage = React.lazy(() => import('./pages/RecipePage'));
 const ShareTargetPage = React.lazy(() => import('./pages/ShareTargetPage'));
+
+// Jeder neue Share (neue Navigation) startet die Seite frisch – sonst bleibt sie nach
+// dem ersten Ergebnis im Status success/error und ignoriert weitere geteilte Links.
+const ShareTargetRoute = () => <ShareTargetPage key={useLocation().key} />;
 const SignInPage = React.lazy(() => import('./pages/SignInPage'));
 const SignUpPage = React.lazy(() => import('./pages/SignUpPage'));
 const ForgotPasswordPage = React.lazy(() => import('./pages/ForgotPasswordPage'));
@@ -128,6 +133,9 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
 
+    // Cookly hat nur ein helles Theme: dunkle Statusleisten-Schrift, unabhängig vom System-Dark-Mode.
+    void StatusBar.setStyle({ style: Style.Light });
+
     // Deep Link Handler registrieren
     initDeepLinkHandler((path: string) => navigateRef.current(path));
 
@@ -224,7 +232,7 @@ const AppContent: React.FC = () => {
           <Route element={<TabsLayout />}>
             <Route path="category/:category" element={<CategoryRecipesPage />} />
             <Route path="recipe/:id" element={<RecipePage />} />
-            <Route path="share-target" element={<ShareTargetPage />} />
+            <Route path="share-target" element={<ShareTargetRoute />} />
 
             <Route path="favorites" element={<Navigate to="/tabs/favorites" replace />} />
             <Route path="weekly" element={<Navigate to="/tabs/weekly" replace />} />

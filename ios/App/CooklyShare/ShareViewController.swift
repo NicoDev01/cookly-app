@@ -4,7 +4,6 @@ import UniformTypeIdentifiers
 
 class ShareViewController: UIViewController {
 
-    private let appGroupId = "group.com.cookly-app.recipe"
     private let urlScheme = "cookly://share-target"
 
     override func viewDidLoad() {
@@ -69,17 +68,6 @@ class ShareViewController: UIViewController {
         let targetUrlString = foundUrl ?? ""
         let targetTextString = foundText ?? ""
         let targetTitleString = foundTitle ?? ""
-
-        // Im App Group Container speichern für Zuverlässigkeit
-        if let sharedDefaults = UserDefaults(suiteName: appGroupId) {
-            sharedDefaults.set([
-                "url": targetUrlString,
-                "text": targetTextString,
-                "title": targetTitleString,
-                "timestamp": Date().timeIntervalSince1970
-            ], forKey: "latestShare")
-            sharedDefaults.synchronize()
-        }
 
         // Deep Link zusammenbauen
         var components = URLComponents(string: urlScheme)

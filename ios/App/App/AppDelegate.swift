@@ -1,12 +1,10 @@
 import UIKit
 import Capacitor
-import SendIntentPlugin
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
-    let store = ShareStore.store
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
@@ -37,33 +35,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
         // Called when the app was launched with a url.
-        let success = ApplicationDelegateProxy.shared.application(app, open: url, options: options)
-
-        // SendIntent URL Parameter verarbeiten (für Share Extension & Custom Schemes)
-        if let components = NSURLComponents(url: url, resolvingAgainstBaseURL: true),
-           let params = components.queryItems {
-            let titles = params.filter { $0.name == "title" }
-            let descriptions = params.filter { $0.name == "description" }
-            let types = params.filter { $0.name == "type" }
-            let urls = params.filter { $0.name == "url" }
-
-            if titles.count > 0 || urls.count > 0 || descriptions.count > 0 {
-                store.shareItems.removeAll()
-                let count = max(titles.count, max(urls.count, descriptions.count))
-                for index in 0..<count {
-                    var shareItem: JSObject = JSObject()
-                    if index < titles.count { shareItem["title"] = titles[index].value ?? "" }
-                    if index < descriptions.count { shareItem["description"] = descriptions[index].value ?? "" }
-                    if index < types.count { shareItem["type"] = types[index].value ?? "" }
-                    if index < urls.count { shareItem["url"] = urls[index].value ?? "" }
-                    store.shareItems.append(shareItem)
-                }
-                store.processed = false
-                NotificationCenter.default.post(name: Notification.Name("triggerSendIntent"), object: nil)
-            }
-        }
-
-        return success
+        // cookly://share-target?... (Share Extension) wird in JS über Capacitors
+        // appUrlOpen verarbeitet (services/deepLinkHandler.ts) – hier keine zweite Auswertung.
+        return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
     }
 
     func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
