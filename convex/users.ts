@@ -253,56 +253,10 @@ export const createOrSyncUser = mutation({
       return authUserDoc._id;
     }
 
-    // Profildaten aus Convex Auth Identity
-    const identity = await ctx.auth.getUserIdentity();
-    const email = identity?.email ?? undefined;
-    const name = identity?.name ?? email?.split("@")[0] ?? "User";
-    const avatar = identity?.pictureUrl ?? undefined;
-
-    const now = Date.now();
-    const billingUserId = crypto.randomUUID();
-    const userId = await ctx.db.insert("users", {
-      authUserId: authUserId.toString(),
-      billingUserId,
-      email,
-      name,
-      avatar,
-      subscription: "free",
-      subscriptionStatus: "active",
-      onboardingCompleted: false,
-      notificationsEnabled: false,
-      usageStats: {
-        manualRecipes: 0,
-        linkImports: 0,
-        photoScans: 0,
-        subscriptionStartDate: undefined,
-        subscriptionEndDate: undefined,
-        resetOnDowngrade: false,
-      },
-      createdAt: now,
-      firstSeenAt: now,
-      lastActiveAt: now,
-      lifecycleStage: "registered",
-      updatedAt: now,
-    });
-
-    if (email) {
-      await enqueueIntegration(ctx, "brevo", "contact", `contact:${userId}:created`, {
-        email,
-        updateEnabled: true,
-        attributes: {
-          COOKLY_USER_ID: billingUserId,
-          FIRSTNAME: name,
-          CREATED_AT: new Date(now).toISOString(),
-          PLAN: "free",
-          LIFECYCLE_STAGE: "registered",
-        },
-      });
-      await ctx.scheduler.runAfter(0, internal.integrations.processJobs);
-    }
-
-    console.log(`[UserSync] ✅ Created user ${authUserId} in Convex`);
-    return userId;
+    // Convex Auth legt den users-Eintrag beim Login selbst an. Fehlt er, wurde das Konto
+    // gelöscht und der Client hält noch ein gültiges JWT – nicht neu anlegen (sonst
+    // entsteht nach der Kontolöschung ein Geister-Nutzer samt Brevo-Kontakt).
+    throw new Error("NOT_AUTHENTICATED");
   },
 });
 
