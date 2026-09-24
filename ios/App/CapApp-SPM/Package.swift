@@ -19,6 +19,7 @@ let package = Package(
         .package(name: "CapacitorPushNotifications", path: "../../../node_modules/@capacitor/push-notifications"),
         .package(name: "CapacitorSplashScreen", path: "../../../node_modules/@capacitor/splash-screen"),
         .package(name: "CapacitorStatusBar", path: "../../../node_modules/@capacitor/status-bar"),
+        .package(name: "CapawesomeCapacitorAppleSignIn", path: "../../../node_modules/@capawesome/capacitor-apple-sign-in"),
         .package(name: "RevenuecatPurchasesCapacitor", path: "../../../node_modules/@revenuecat/purchases-capacitor"),
         .package(name: "SupernotesCapacitorSendIntent", path: "../../../node_modules/@supernotes/capacitor-send-intent")
     ],
@@ -35,6 +36,7 @@ let package = Package(
                 .product(name: "CapacitorPushNotifications", package: "CapacitorPushNotifications"),
                 .product(name: "CapacitorSplashScreen", package: "CapacitorSplashScreen"),
                 .product(name: "CapacitorStatusBar", package: "CapacitorStatusBar"),
+                .product(name: "CapawesomeCapacitorAppleSignIn", package: "CapawesomeCapacitorAppleSignIn"),
                 .product(name: "RevenuecatPurchasesCapacitor", package: "RevenuecatPurchasesCapacitor"),
                 .product(name: "SupernotesCapacitorSendIntent", package: "SupernotesCapacitorSendIntent")
             ]

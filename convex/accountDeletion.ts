@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { action, internalAction, internalMutation, internalQuery } from "./_generated/server";
+import { revokeAppleTokens } from "./appleAuth";
 
 const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TERMINAL_RETENTION_MS = 45 * 24 * 60 * 60 * 1000;
@@ -49,6 +50,14 @@ export const requestDeletionForAuth = internalAction({
         errorCode: "BILLING_CLEANUP_FAILED",
       });
       throw new Error("ACCOUNT_DELETION_FAILED");
+    }
+
+    // Apple verlangt den Token-Widerruf bei Kontolöschung; ein Ausfall bei Apple
+    // darf die Löschung der eigenen Daten aber nicht blockieren.
+    try {
+      await revokeAppleTokens(ctx, request.userId);
+    } catch (error) {
+      console.warn("[accountDeletion] Apple token revoke failed", error instanceof Error ? error.message : error);
     }
 
     await ctx.runMutation(internal.accountDeletion.setStatus, {
@@ -182,6 +191,7 @@ export const deleteLocalData = internalMutation({
         () => ctx.db.query("shoppingItems").withIndex("by_user", (q) => q.eq("userId", userId)).take(DELETE_BATCH_SIZE),
         () => ctx.db.query("categoryStats").withIndex("by_user_category", (q) => q.eq("userId", userId)).take(DELETE_BATCH_SIZE),
         () => ctx.db.query("importOperations").withIndex("by_user_operation", (q) => q.eq("userId", userId)).take(DELETE_BATCH_SIZE),
+        () => ctx.db.query("appleSignInTokens").withIndex("by_user", (q) => q.eq("userId", userId)).take(DELETE_BATCH_SIZE),
       ];
       for (const loadBatch of loadBatches) {
         const rows = await loadBatch();

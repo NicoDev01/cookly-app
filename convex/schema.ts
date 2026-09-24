@@ -494,6 +494,13 @@ export default defineSchema({
     .index("by_billingUserId", ["billingUserId"])
     .index("by_processedAt", ["processedAt"]),
 
+  // Sign in with Apple: Refresh-Token nur für den Widerruf bei Kontolöschung
+  appleSignInTokens: defineTable({
+    userId: v.id("users"),
+    refreshToken: v.string(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
   accountDeletionRequests: defineTable({
     userId: v.id("users"),
     requestId: v.string(),

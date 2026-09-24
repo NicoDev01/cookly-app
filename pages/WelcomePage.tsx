@@ -10,6 +10,7 @@ import ExternalLink from '../components/ExternalLink';
 import { Button } from '../components/ui/cookly';
 import BottomSheet from '../components/BottomSheet';
 import { startGoogleOAuth } from '../services/googleOAuth';
+import AppleSignInButton from '../components/AppleSignInButton';
 
 /**
  * WelcomePage - Landing-Page für unangemeldete User
@@ -21,6 +22,7 @@ export const WelcomePage: React.FC = () => {
   const { isAuthenticated } = useConvexAuth();
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
   const isPreview = import.meta.env.DEV && new URLSearchParams(location.search).has('preview');
 
   React.useEffect(() => {
@@ -38,6 +40,7 @@ export const WelcomePage: React.FC = () => {
 
     return () => {
       if (isAndroid) void StatusBar.setBackgroundColor({ color: '#f0f2f5' });
+      void StatusBar.setStyle({ style: Style.Light });
     };
   }, []);
 
@@ -137,6 +140,9 @@ export const WelcomePage: React.FC = () => {
         maxHeight="50vh"
       >
         <div className="p-4 pb-6 space-y-3">
+          {authError && <p className="text-center text-sm text-red-600">{authError}</p>}
+          <AppleSignInButton className="rounded-xl py-3.5" onError={setAuthError} />
+
           {/* Google OAuth Button */}
           <button
             onClick={handleGoogleSignIn}

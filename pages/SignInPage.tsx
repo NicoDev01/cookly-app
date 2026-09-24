@@ -11,6 +11,7 @@ import { LEGAL_LINKS } from '../utils/legalLinks';
 import ExternalLink from '../components/ExternalLink';
 import { capture } from '../services/analytics';
 import { startGoogleOAuth } from '../services/googleOAuth';
+import AppleSignInButton from '../components/AppleSignInButton';
 
 export const SignInPage: React.FC = () => {
   const { signIn } = useAuthActions();
@@ -34,7 +35,7 @@ export const SignInPage: React.FC = () => {
     if (!Capacitor.isNativePlatform()) return;
 
     if (Capacitor.getPlatform() === 'android') void StatusBar.setBackgroundColor({ color: '#f0f2f5' });
-    void StatusBar.setStyle({ style: Style.Dark });
+    void StatusBar.setStyle({ style: Style.Light });
   }, []);
 
   const handleGoogleSignIn = async () => {
@@ -90,6 +91,8 @@ export const SignInPage: React.FC = () => {
             {error}
           </div>
         )}
+
+        <AppleSignInButton className="rounded-full py-3 mb-4" onError={setError} />
 
         {/* Google OAuth Button */}
         <button
