@@ -21,7 +21,8 @@ let package = Package(
         .package(name: "CapacitorStatusBar", path: "../../../node_modules/@capacitor/status-bar"),
         .package(name: "CapawesomeCapacitorAppleSignIn", path: "../../../node_modules/@capawesome/capacitor-apple-sign-in"),
         .package(name: "RevenuecatPurchasesCapacitor", path: "../../../node_modules/@revenuecat/purchases-capacitor"),
-        .package(name: "SupernotesCapacitorSendIntent", path: "../../../node_modules/@supernotes/capacitor-send-intent")
+        .package(name: "SupernotesCapacitorSendIntent", path: "../../../node_modules/@supernotes/capacitor-send-intent"),
+        .package(name: "CapacitorLottieSplashScreen", path: "../../../node_modules/capacitor-lottie-splash-screen")
     ],
     targets: [
         .target(
@@ -38,7 +39,8 @@ let package = Package(
                 .product(name: "CapacitorStatusBar", package: "CapacitorStatusBar"),
                 .product(name: "CapawesomeCapacitorAppleSignIn", package: "CapawesomeCapacitorAppleSignIn"),
                 .product(name: "RevenuecatPurchasesCapacitor", package: "RevenuecatPurchasesCapacitor"),
-                .product(name: "SupernotesCapacitorSendIntent", package: "SupernotesCapacitorSendIntent")
+                .product(name: "SupernotesCapacitorSendIntent", package: "SupernotesCapacitorSendIntent"),
+                .product(name: "CapacitorLottieSplashScreen", package: "CapacitorLottieSplashScreen")
             ]
         )
     ]

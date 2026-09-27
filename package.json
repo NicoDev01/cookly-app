@@ -55,7 +55,7 @@
     "@sentry/react": "10.65.0",
     "@supernotes/capacitor-send-intent": "^7.0.0",
     "blurhash": "^2.0.5",
-    "capacitor-lottie-splash-screen": "^7.3.0",
+    "capacitor-lottie-splash-screen": "^8.0.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "convex": "^1.31.3",
