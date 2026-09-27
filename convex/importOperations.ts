@@ -204,9 +204,15 @@ export const startImport = mutation({
         .withIndex("by_user_canonicalUrlHash", (q) => q.eq("userId", userId).eq("canonicalUrlHash", canonicalUrlHash))
         .order("desc")
         .take(10);
-      const duplicate = duplicates.find((item) => ["reserved", "running", "succeeded"].includes(item.status));
-      if (duplicate) {
-        return { operationId: duplicate.operationId, status: duplicate.status, userId };
+      for (const duplicate of duplicates) {
+        if (duplicate.status === "reserved" || duplicate.status === "running") {
+          return { operationId: duplicate.operationId, status: duplicate.status, userId };
+        }
+        // Ein erfolgreicher Import zählt nur als Duplikat, solange sein Rezept noch existiert –
+        // sonst würde ein gelöschtes Rezept nie erneut importiert werden können.
+        if (duplicate.status === "succeeded" && duplicate.resultRecipeId && await ctx.db.get(duplicate.resultRecipeId)) {
+          return { operationId: duplicate.operationId, status: duplicate.status, userId };
+        }
       }
     }
 

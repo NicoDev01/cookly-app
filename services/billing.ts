@@ -14,23 +14,35 @@ type WebActions = {
 const nativeBillingConfig = resolveNativeBilling(Capacitor.getPlatform(), import.meta.env);
 const nativeEnabled = nativeBillingConfig.enabled;
 let configuredUserId: string | undefined;
+// Serialisiert configure/logIn: Paywall ruft prices() und purchase() fast gleichzeitig auf,
+// ein doppeltes Purchases.configure lässt das native SDK hängen.
+let setupQueue: Promise<unknown> = Promise.resolve();
 
 async function nativePurchases(billingUserId: string) {
   const { Purchases } = await import("@revenuecat/purchases-capacitor");
   const { apiKey } = nativeBillingConfig;
   if (!apiKey) throw new Error("NATIVE_BILLING_NOT_CONFIGURED");
-  if (!configuredUserId) {
-    await Purchases.configure({ apiKey, appUserID: billingUserId });
-  } else if (configuredUserId !== billingUserId) {
-    await Purchases.logIn({ appUserID: billingUserId });
-  }
-  configuredUserId = billingUserId;
+  const setup = setupQueue.catch(() => undefined).then(async () => {
+    if (!configuredUserId) {
+      await Purchases.configure({ apiKey, appUserID: billingUserId });
+    } else if (configuredUserId !== billingUserId) {
+      await Purchases.logIn({ appUserID: billingUserId });
+    }
+    configuredUserId = billingUserId;
+  });
+  setupQueue = setup;
+  await setup;
   return Purchases;
 }
 
 async function nativePackage(planId: PlanId, billingUserId: string): Promise<PurchasesPackage> {
   const Purchases = await nativePurchases(billingUserId);
-  const offering = (await Purchases.getOfferings()).current;
+  // Ohne Timeout bleibt die Paywall bei Store-Konfigurationsfehlern endlos auf "Wird vorbereitet".
+  const offerings = await Promise.race([
+    Purchases.getOfferings(),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("NATIVE_BILLING_PRODUCT_UNAVAILABLE")), 15000)),
+  ]);
+  const offering = offerings.current;
   const selected = planId === "pro_yearly" ? offering?.annual : offering?.monthly;
   if (!selected) throw new Error("NATIVE_BILLING_PRODUCT_UNAVAILABLE");
   return selected;
