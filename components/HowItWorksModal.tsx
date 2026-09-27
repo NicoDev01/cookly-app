@@ -250,7 +250,7 @@ const HowItWorksModal: React.FC<HowItWorksModalProps> = ({ isOpen, onClose, open
                   <div className="space-y-4">
                     <p className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">Teile den Link einer Kochwebseite direkt mit Cookly. Unsere KI erkennt Zutaten und Schritte automatisch.</p>
                     <button
-                      onClick={() => handleExternalLink('https://biancazapatka.com/de/einfache-pilz-pasta-mit-spinat-vegan/')}
+                      onClick={() => handleExternalLink('https://biancazapatka.com/de/wprm_print/einfache-pilz-pasta-mit-spinat-vegan')}
                       className="w-full py-3.5 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 active:scale-[0.97] transition-all"
                     >
                       Jetzt ausprobieren
