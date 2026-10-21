@@ -282,7 +282,7 @@ const ShareTargetPage: React.FC = () => {
                             <p className="text-text-secondary-light dark:text-text-secondary-dark text-lg px-4">
                                 Prozess läuft im Hintergrund weiter...
                                 <br />
-                                Kehre ohne unterbrechung zu deiner App zurück
+                                Kehre ohne Unterbrechung zu deiner App zurück
                             </p>
                         </div>
 
