@@ -75,8 +75,7 @@ export default function SubscribePage() {
 
   const { isLoadingUser, isPro } = getSubscriptionViewState(currentUser);
   const nativeBillingUnavailable = billing.provider === "store" && !billing.available;
-  const nativeBillingMessage =
-    "In-App-Kauf ist in dieser App-Version noch nicht aktiviert. Bitte verwende bis zur Store-Freischaltung die Web-Version.";
+  const nativeBillingMessage = "In-App-Kauf ist in dieser App-Version noch nicht verfügbar.";
 
   const handleSubscribe = async (planId: "pro_monthly" | "pro_yearly") => {
     if (!billing.available) {
@@ -143,7 +142,8 @@ export default function SubscribePage() {
   const selectedPlan = isYearly ? pricing?.pro_yearly : pricing?.pro_monthly;
   const proPrice = nativePrices[proPlanId] ?? selectedPlan?.displayPrice ?? (isYearly ? "24,99 €" : "2,99 €");
   const proPeriod = selectedPlan?.displayPeriod ?? (isYearly ? "Jahr" : "Monat");
-  const billingLabel =
+  // Store-Preise kommen je Storefront aus StoreKit/Play; die Euro-Summen aus dem Stripe-Pricing würden dort nicht passen.
+  const billingLabel = billing.provider === "store" ? (isYearly ? "Jährliche Abrechnung" : "Monatliche Abrechnung") :
     selectedPlan?.billingLabel ??
     (isYearly ? "Jährliche Abrechnung (Gesamt 24,99 €)" : "Monatliche Abrechnung (Gesamt 35,88 €/Jahr)");
 
@@ -335,8 +335,9 @@ export default function SubscribePage() {
             )}
           </div>
           <p className="text-sm text-muted-foreground">
-            {showsExternalPaymentBranding ? "Sichere Zahlung über Stripe. Deine Daten werden verschlüsselt übertragen." : "Abos in der App werden über den jeweiligen Store bereitgestellt."}
-            Jederzeit kündbar über die Profileinstellungen.
+            {showsExternalPaymentBranding
+              ? "Sichere Zahlung über Stripe. Deine Daten werden verschlüsselt übertragen. Jederzeit kündbar über die Profileinstellungen."
+              : "Die Zahlung erfolgt über deinen Store-Account. Das Abo verlängert sich automatisch um den gewählten Zeitraum zum angezeigten Preis, wenn es nicht spätestens 24 Stunden vor Ablauf gekündigt wird. Kündigen und verwalten kannst du es jederzeit in den Abo-Einstellungen deines Store-Accounts."}
           </p>
           <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground pt-1">
             <ExternalLink href={LEGAL_LINKS.terms} className="hover:underline">
