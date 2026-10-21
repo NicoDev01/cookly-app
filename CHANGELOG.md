@@ -3,6 +3,26 @@
 
 ## [Unreleased]
 
+---
+
+
+## [1.4.21] - in Vorbereitung
+
+Erstes Update nach dem App-Store-Launch (iOS 1.4.20 Build 6, live seit 21.10.2026).
+Android springt von 1.4.20 (versionCode 32, Juli) direkt hierher und bekommt damit auch
+alles, was iOS schon mit 1.4.20 ausgeliefert hat. Ab hier teilen sich beide Plattformen
+Versions- und Buildnummer (iOS-Build = Android-versionCode, `scripts/version-upgrade.js`).
+
+### 🔧 Bugfixes
+- Paywall in den Store-Builds: Hinweis auf automatische Verlängerung und Kündigung über den
+  Store-Account ergänzt (Guideline 3.1.2), Stripe-Euro-Gesamtsummen ausgeblendet, weil
+  Store-Preise je Land abweichen. Der Verweis auf die Web-Version ist entfernt.
+- Gelöschte Rezepte lassen sich wieder importieren.
+- Nach dem Löschen des Kontos wurde der Nutzer ungewollt neu angelegt.
+### 🚀 Verbesserungen
+- `npm run build:ios` bricht ab, wenn in `.env.production` der In-App-Kauf nicht scharf
+  geschaltet ist (`scripts/check-ios-env.mjs`).
+
 ### ✨ Neue Features
 - **TikTok-Import**: Rezepte lassen sich jetzt direkt aus der TikTok-App über „Teilen" nach Cookly
   importieren — inklusive `vm.`/`vt.`-Kurzlinks. Zusätzlich zur Beschreibung liest Cookly die

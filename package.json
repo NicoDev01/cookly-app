@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "build:check": "tsc --noEmit && npm run fonts:check && vite build",
     "build:android": "npm run fonts:check && vite build --mode production && node scripts/sync-android.js",
-    "build:ios": "npm run fonts:check && vite build --mode production && node scripts/sync-ios.js",
+    "build:ios": "npm run fonts:check && node scripts/check-ios-env.mjs && vite build --mode production && node scripts/sync-ios.js",
     "fonts:sync": "node scripts/sync-fonts.mjs",
     "fonts:check": "node scripts/check-fonts.mjs",
     "lint": "eslint .",
