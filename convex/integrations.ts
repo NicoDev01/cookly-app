@@ -36,6 +36,24 @@ export async function enqueueIntegration(
   });
 }
 
+// Endgültig fehlgeschlagene Jobs enthalten Nutzerdaten im Payload; manuell aufräumbar per
+// `npx convex run integrations:deleteFailedJobs '{"provider":"brevo"}' --prod`.
+export const deleteFailedJobs = internalMutation({
+  args: {
+    provider: v.union(v.literal("posthog"), v.literal("brevo"), v.literal("fcm"), v.literal("sentry"), v.literal("stripe"), v.literal("revenuecat")),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { provider, dryRun }) => {
+    const jobs = await ctx.db
+      .query("integrationJobs")
+      .withIndex("by_status_nextAttemptAt", (q) => q.eq("status", "failed"))
+      .take(1_000);
+    const matching = jobs.filter((job) => job.provider === provider);
+    if (!dryRun) for (const job of matching) await ctx.db.delete(job._id);
+    return { deleted: dryRun ? 0 : matching.length, matched: matching.length };
+  },
+});
+
 export const due = internalQuery({
   args: {},
   handler: (ctx) =>
