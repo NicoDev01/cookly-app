@@ -8,6 +8,7 @@ import { consumeProviderBudget, consumeRateLimit, type ProviderBudget, type Rate
 import { adjustCategoryCount, ensureCategoryExists, insertRecipe } from "./recipes";
 import { storeAnalyticsEvent } from "./analytics";
 import { enqueueIntegration } from "./integrations";
+import { importErrorCode } from "./lib/importErrors";
 
 const provider = v.union(
   v.literal("instagram"),
@@ -103,14 +104,6 @@ function providerCosts(value: Provider): ProviderBudget[] {
   return ["apify", "apify", "gemini"];
 }
 
-function errorCode(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  try {
-    const parsed = JSON.parse(message) as { type?: string };
-    if (parsed.type) return parsed.type.slice(0, 80);
-  } catch { /* use stable fallback below */ }
-  return /INVALID_|NO_RECIPE|NOT_AUTHENTICATED/.test(message) ? message.slice(0, 80) : "IMPORT_FAILED";
-}
 
 async function trackImport(
   ctx: MutationCtx,
@@ -435,7 +428,7 @@ export const runImport = internalAction({
       const result = await ctx.runAction(target, { userId: args.userId, url: operation.sourceUrl! });
       await ctx.runMutation(internal.importOperations.completeLink, { ...args, ...result });
     } catch (error) {
-      await ctx.runMutation(internal.importOperations.fail, { ...args, errorCode: errorCode(error) });
+      await ctx.runMutation(internal.importOperations.fail, { ...args, errorCode: importErrorCode(error) });
     }
   },
 });

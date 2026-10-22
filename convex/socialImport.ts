@@ -22,6 +22,9 @@ import {
   type RecipeData,
   type ScrapedCandidate,
 } from "./socialImportShared";
+import { isRetryableGeminiError, runWithGeminiRetry } from "../utils/geminiRetry";
+
+const GEMINI_RETRY_DELAYS_MS = [1_500, 4_000] as const;
 
 const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
@@ -98,6 +101,15 @@ const postUnavailableError = (label: string, errorCode: string) =>
     service: label.toLowerCase(),
     providerErrorCode: errorCode,
     message: `Dieser ${label}-Beitrag ist privat, gesperrt oder wurde gelöscht.`,
+  });
+
+const geminiUnavailableError = (prefillUrl: string) =>
+  toStructuredError({
+    type: "API_UNAVAILABLE",
+    service: "gemini",
+    fallbackMode: "manual",
+    prefillUrl,
+    message: "Die Rezeptanalyse ist gerade überlastet. Bitte versuche es gleich erneut.",
   });
 
 const serviceUnavailableError = (label: string, prefillUrl: string) =>
@@ -188,15 +200,23 @@ async function extractRecipeWithGemini(
 ): Promise<RecipeData> {
   const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
 
+  // Kurze Wartezeiten: Scraping kann bereits bis zu 85 s des 120-s-Budgets verbraucht haben.
   const generate = (prompt: string) =>
-    ai.models.generateContent({
-      model: GEMINI_MODELS.recipeTextExtraction,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseJsonSchema: RECIPE_RESPONSE_JSON_SCHEMA,
-        temperature: 0,
-      },
+    runWithGeminiRetry(() =>
+      ai.models.generateContent({
+        model: GEMINI_MODELS.recipeTextExtraction,
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseJsonSchema: RECIPE_RESPONSE_JSON_SCHEMA,
+          temperature: 0,
+        },
+      }), {
+      delaysMs: GEMINI_RETRY_DELAYS_MS,
+      onRetry: ({ attempt, error }) => timer.mark("gemini_retry", {
+        attempt,
+        error: error instanceof Error ? error.message.slice(0, 200) : String(error),
+      }),
     });
 
   const parse = (responseText: string, stage: string): RecipeData => {
@@ -356,6 +376,8 @@ export async function runSocialImport(
     timer.mark("gemini_structured_failed", {
       error: geminiError instanceof Error ? geminiError.message : String(geminiError),
     });
+    // Überlastung/Ausfall bei Gemini ist kein Inhaltsproblem des Beitrags.
+    if (isRetryableGeminiError(geminiError)) throw geminiUnavailableError(normalizedUrl);
     throw noRecipeContentError(`Aus dem ${platform.label}-Text konnte kein strukturiertes Rezept erstellt werden.`);
   }
 
