@@ -34,7 +34,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: npm ci
       - run: npm run build:android
+      # android/gradle.properties ist wegen der Signing-Passwörter nicht im Repo; Gradle-Settings
+      # daher hier setzen (Default-Heap 512 MiB lässt lintAnalyzeDebug am GC-Thrashing scheitern).
       - working-directory: android
         run: |
           chmod +x ./gradlew
-          ./gradlew -Pandroid.useAndroidX=true lintDebug testDebugUnitTest
+          ./gradlew -Pandroid.useAndroidX=true "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g" lintDebug testDebugUnitTest
