@@ -61,10 +61,7 @@ Store-Seite testen: App Store Connect → Produktseitenoptimierung (bis 3 Varian
 
 ## 5. Neuerungen 1.4.21 (Text für App Store Connect)
 
-```
-• Übersichtlichere Abo-Informationen auf der Pro-Seite
-• Kleine Fehlerbehebungen und Verbesserungen
-```
+Siehe `docs/APP_STORE_LISTING.md`, Abschnitt „Neuerungen in dieser Version“.
 
 ## 6. Einmalige Grundlagen, noch offen
 

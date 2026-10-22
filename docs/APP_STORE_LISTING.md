@@ -42,10 +42,20 @@ kochbuch,rezept,wochenplan,einkaufsliste,kochen,essensplan,scannen,sammeln,ki,ba
 ```
 Keine Wörter aus Name oder Untertitel wiederholen, keine Leerzeichen.
 
-### Werbetext (jederzeit änderbar)
+### Werbetext (jederzeit änderbar, 167 Zeichen)
 ```
-Neu: Rezepte aus TikTok-Videos speichern – Cookly liest sogar die gesprochene Anleitung mit. Im Video auf „Teilen“ tippen, Cookly wählen, fertig.
+Speichere Rezepte aus Instagram, TikTok, Websites und Kochbüchern mit einem Tippen. Cookly erkennt Zutaten und Schritte automatisch – mit Wochenplan und Einkaufsliste.
 ```
+Fasst das ganze Produkt zusammen. Für echte Neuigkeiten oder Aktionen später austauschen.
+
+### Neuerungen in dieser Version (1.4.21) ✱
+```
+• Cookly ist jetzt auch im App Store als deutsche App eingetragen
+• Übersichtlichere Abo-Informationen auf der Pro-Seite
+• Zutaten in der Zubereitung werden zuverlässiger hervorgehoben
+• Kleine Text- und Fehlerkorrekturen
+```
+TikTok-Import gehört **nicht** hierher: Er war schon in 1.4.20, der ersten iOS-Version.
 
 ### Beschreibung ✱
 ```
@@ -98,7 +108,16 @@ Support & Impressum: https://cookly-app.com
 
 ## 4. Screenshots neu aufnehmen
 
-**Format:** iPhone 6,9" (1320 × 2868) oder 6,7" (1290 × 2796, wird für 6,9" akzeptiert – Wissensstand).
+**Erledigt 22.10.2026:** 7 Folien in `app_store_screenshots/ios-2026-10/` (1206 × 2622 und 1320 × 2868).
+
+**Pflicht laut Apple (geprüft 23.10.2026):** nur „iPhone mit Dynamic Island (mittleres Display)“,
+1206 × 2622. App Store Connect skaliert für die anderen Größen. Der 1320 × 2868-Satz kann optional
+über „Alle Größen in Media Manager anzeigen“ bei „großes Display“ hochgeladen werden.
+
+**Kopfzeile und Suchergebnisse** sind optionale *Creative Assets* (ab iOS 27, Asset Library).
+Ohne sie zeigt die Suche die ersten Screenshots. Später nachrüsten, wenn es einen echten Anlass gibt.
+
+**Ursprüngliche Planung:** iPhone 6,9" (1320 × 2868) oder 6,7" (1290 × 2796).
 Aufnahme im Simulator „iPhone 16 Pro Max“ oder auf dem eigenen iPhone mit einem **Demo-Account
 mit echten, appetitlichen Rezepten** (mind. 15 Rezepte mit Fotos, 3 Kategorien, gefüllter Wochenplan).
 
