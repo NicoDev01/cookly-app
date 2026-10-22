@@ -26,6 +26,8 @@ type RecipeWithIngredients = Doc<"recipes"> & {
   ingredients?: Array<{ name: string }>;
 };
 
+const formatRecipeCount = (count: number) => `${count} ${count === 1 ? 'Rezept' : 'Rezepte'}`;
+
 const CategoryPreviewImage: React.FC<{
   images: string[];
   isLoading: boolean;
@@ -438,7 +440,7 @@ const CategoriesPage: React.FC = () => {
                           <div className="flex-grow">
                             <p className="text-title font-bold text-text-primary-light dark:text-text-primary-dark group-hover:text-primary transition-colors">Alle Rezepte</p>
                             <p className="text-body-sm text-text-secondary-light dark:text-text-secondary-dark">
-                              {category.count} Rezepte
+                              {formatRecipeCount(category.count)}
                             </p>
                           </div>
                           <span className="material-symbols-outlined text-text-secondary-light dark:text-text-secondary-dark group-hover:translate-x-1 transition-transform">chevron_right</span>
@@ -472,7 +474,7 @@ const CategoriesPage: React.FC = () => {
                             {category.name}
                             {hasFailed && <span className="text-red-500 ml-2 text-xs">(Bild konnte nicht geladen werden)</span>}
                           </p>
-                          <p className="text-body-sm text-text-secondary-light dark:text-text-secondary-dark">{getRecipeCount(category.name)} Rezepte</p>
+                          <p className="text-body-sm text-text-secondary-light dark:text-text-secondary-dark">{formatRecipeCount(getRecipeCount(category.name))}</p>
                         </div>
                         <span className="material-symbols-outlined text-text-secondary-light dark:text-text-secondary-dark flex-shrink-0 group-hover:translate-x-1 transition-transform">chevron_right</span>
                       </Link>

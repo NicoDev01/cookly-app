@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
+  createIngredientTextPattern,
   createKeywordPattern,
   mergeAdjacentIngredientMatches,
 } from "./ingredientKeywordPattern.ts";
@@ -37,7 +38,7 @@ test("instruction ingredient pills toggle their amount", async () => {
   const instructions = await source("components/Instructions.tsx");
 
   assert.match(recipePage, /current === index \? null : index/);
-  assert.match(instructions, /createKeywordPattern/);
+  assert.match(instructions, /createIngredientTextPattern/);
   assert.match(instructions, /words\.filter\(\(word\) => !STOP_WORDS\.has\(word\.toLowerCase\(\)\)\)/);
   assert.match(instructions, /isHighlighted && amount \? ` \$\{amount\}` : ''/);
   assert.doesNotMatch(instructions, /right-full/);
@@ -56,6 +57,23 @@ test("multiword ingredient pills keep inflected descriptors together", () => {
   assert.equal(matches("geräuchertes Paprikapulver", "geräuchertem Paprikapulver"), true);
   assert.equal(matches("veganer Feta", "veganem Feta"), true);
   assert.equal(matches("frische Minze", "frische Petersilie"), false);
+});
+
+test("instruction highlighting matches whole words, not fragments of short keywords", () => {
+  const highlighted = (keywords, text) => [...text.matchAll(createIngredientTextPattern(keywords))]
+    .map((match) => match[0]);
+
+  assert.deepEqual(highlighted(["ei"], "Eine Eimasse aus einer Schüssel"), []);
+  assert.deepEqual(highlighted(["ei"], "Das Ei und die Eier verquirlen"), ["Ei", "Eier"]);
+  assert.deepEqual(highlighted(["eier"], "Eier trennen, eine Prise Salz"), ["Eier"]);
+  assert.deepEqual(highlighted(["öl"], "Öl erhitzen, ölig werden lassen"), ["Öl"]);
+  assert.deepEqual(highlighted(["reis", "rei"], "Käse reiben, Reis kochen"), ["Reis"]);
+  assert.deepEqual(
+    highlighted(["gehackte tomaten", "tomaten", "tomat"], "Die Tomaten zugeben, dann gehackten Tomaten"),
+    ["Tomaten", "gehackten Tomaten"],
+  );
+  assert.deepEqual(highlighted(["knoblauch"], "Knoblauchzehen hacken"), ["Knoblauchzehen"]);
+  assert.deepEqual(highlighted(["käse"], "Käse über die Spätzle"), ["Käse"]);
 });
 
 test("adjacent words belonging to one ingredient render as one pill", () => {

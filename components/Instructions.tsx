@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { Instruction, Ingredient } from '../types';
 import { sanitizeMaterialSymbolName } from '../utils/iconUtils';
 import {
-  createKeywordPattern,
+  createIngredientTextPattern,
   mergeAdjacentIngredientMatches,
   type IngredientTextMatch,
 } from '../utils/ingredientKeywordPattern';
@@ -98,7 +98,7 @@ const ALIASES: Record<string, string[]> = {
   'agar agar': ['agar'],
 };
 
-type Keyword = { keyword: string; pattern: string; ingredientIndex: number };
+type Keyword = { keyword: string; ingredientIndex: number };
 
 const addKeyword = (map: Map<string, number>, value: string, ingredientIndex: number) => {
   const keyword = value.trim().toLowerCase();
@@ -143,11 +143,7 @@ const buildKeywords = (ingredients: Ingredient[]): Keyword[] => {
   });
 
   return [...keywords]
-    .map(([keyword, ingredientIndex]) => ({
-      keyword,
-      pattern: createKeywordPattern(keyword),
-      ingredientIndex,
-    }))
+    .map(([keyword, ingredientIndex]) => ({ keyword, ingredientIndex }))
     .sort((a, b) => b.keyword.length - a.keyword.length);
 };
 
@@ -158,16 +154,10 @@ const Instructions: React.FC<InstructionsProps> = ({
   onToggleHighlight,
 }) => {
   const keywords = useMemo(() => buildKeywords(ingredients), [ingredients]);
-  const keywordPattern = useMemo(() => {
-    if (!keywords.length) return null;
-    const alternatives = keywords
-      .map(({ pattern }) => `(${pattern})[a-zA-Z0-9_\\u00C0-\\u00FF]*`)
-      .join('|');
-    return new RegExp(
-      `(?<![a-zA-Z0-9_\\u00C0-\\u00FF])(?:${alternatives})(?![a-zA-Z0-9_\\u00C0-\\u00FF])`,
-      'gi',
-    );
-  }, [keywords]);
+  const keywordPattern = useMemo(
+    () => createIngredientTextPattern(keywords.map(({ keyword }) => keyword)),
+    [keywords],
+  );
 
   const renderText = (value: unknown) => {
     const text = typeof value === 'string' ? value : String(value ?? '');
