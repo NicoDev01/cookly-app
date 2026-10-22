@@ -9,6 +9,7 @@ import {
   type MutationCtx,
 } from "./_generated/server";
 import { EVENT_NAMES } from "../analytics/eventRegistry";
+import { consumeRateLimit } from "./rateLimiter";
 
 const eventName = v.string();
 const registeredEvents = new Set<string>(EVENT_NAMES);
@@ -31,6 +32,27 @@ type EventInput = {
 };
 
 const dayOf = (timestamp: number) => new Date(timestamp).toISOString().slice(0, 10);
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const MAX_FIELD_LENGTH = 200;
+const MAX_PROPERTIES_BYTES = 4_000;
+const ANONYMOUS_BUDGET_METRIC = "analytics_anonymous_intake";
+
+// Events ohne Login (z. B. signup_started) teilen sich ein globales Tagesbudget,
+// weil sie sich keinem Nutzer-Rate-Limit zuordnen lassen.
+async function consumeAnonymousBudget(ctx: MutationCtx) {
+  const configured = Number(process.env.ANALYTICS_ANONYMOUS_DAILY_LIMIT ?? 5_000);
+  const limit = Number.isFinite(configured) && configured > 0 ? configured : 5_000;
+  const day = dayOf(Date.now());
+  const row = await ctx.db
+    .query("dailyMetrics")
+    .withIndex("by_day_metric", (q) => q.eq("day", day).eq("metric", ANONYMOUS_BUDGET_METRIC))
+    .first();
+  if ((row?.value ?? 0) >= limit) return false;
+  if (row) await ctx.db.patch(row._id, { value: row.value + 1, updatedAt: Date.now() });
+  else await ctx.db.insert("dailyMetrics", { day, metric: ANONYMOUS_BUDGET_METRIC, value: 1, updatedAt: Date.now() });
+  return true;
+}
 
 export async function storeAnalyticsEvent(ctx: MutationCtx, event: EventInput) {
   const duplicate = await ctx.db
@@ -77,6 +99,14 @@ export const record = mutation({
   },
   handler: async (ctx, args) => {
     if (!registeredEvents.has(args.name)) throw new Error("UNKNOWN_ANALYTICS_EVENT");
+    // Client-IDs sind immer UUIDs; verhindert, dass Server-Event-IDs vorab belegt werden.
+    if (!UUID.test(args.eventId)) throw new Error("INVALID_ANALYTICS_EVENT");
+    const tooLong = [args.anonymousId, args.sessionId, args.correlationId, args.operationId, args.platform, args.appVersion, args.screen]
+      .some((value) => (value?.length ?? 0) > MAX_FIELD_LENGTH);
+    if (tooLong || JSON.stringify(args.properties ?? {}).length > MAX_PROPERTIES_BYTES) {
+      throw new Error("INVALID_ANALYTICS_EVENT");
+    }
+
     const authUserId = await getAuthUserId(ctx);
     let userId: Id<"users"> | undefined;
     let billingUserId: string | undefined;
@@ -87,6 +117,12 @@ export const record = mutation({
         .first();
       userId = user?._id;
       billingUserId = user?.billingUserId;
+    }
+    // Über Limit verwerfen statt werfen: Analytics darf den Client nie stören.
+    if (userId) {
+      if (!(await consumeRateLimit(ctx, userId, "analytics")).allowed) return false;
+    } else if (!await consumeAnonymousBudget(ctx)) {
+      return false;
     }
     return storeAnalyticsEvent(ctx, { ...args, userId, billingUserId });
   },

@@ -17,6 +17,14 @@ const send = (response, status, body, type = "application/json; charset=utf-8") 
   response.end(typeof body === "string" || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 };
 
+// Schutz gegen DNS-Rebinding und CSRF: nur Anfragen an und von der eigenen lokalen Adresse.
+const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
+const isLocalRequest = (request) => {
+  const origin = request.headers.origin;
+  return allowedHosts.has(request.headers.host ?? "") &&
+    (origin === undefined || allowedHosts.has(origin.replace(/^http:\/\//, "")));
+};
+
 const body = async (request) => {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
@@ -184,6 +192,7 @@ const types = {
 
 createServer(async (request, response) => {
   try {
+    if (!isLocalRequest(request)) return send(response, 403, "Forbidden", "text/plain");
     const url = new URL(request.url, `http://${request.headers.host}`);
     if (url.pathname.startsWith("/api/")) return await api(request, response, url);
     const path = url.pathname === "/" ? "index.html" : url.pathname.slice(1);

@@ -35,7 +35,7 @@
     "release:major": "node scripts/version-upgrade.js major"
   },
   "dependencies": {
-    "@auth/core": "^0.37.0",
+    "@auth/core": "^0.41.3",
     "@capacitor/android": "^8.5.2",
     "@capacitor/app": "^8.1.1",
     "@capacitor/browser": "^8.0.4",
@@ -47,7 +47,7 @@
     "@capacitor/splash-screen": "^8.0.2",
     "@capacitor/status-bar": "^8.0.3",
     "@capawesome/capacitor-apple-sign-in": "^0.1.4",
-    "@convex-dev/auth": "^0.0.91",
+    "@convex-dev/auth": "^0.0.96",
     "@google/genai": "^1.52.0",
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-slot": "^1.2.4",

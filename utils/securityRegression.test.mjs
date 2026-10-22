@@ -173,3 +173,16 @@ test('remote image proxy pins a validated reachable address safely', () => {
   assert.match(source, /servername:\s*url\.hostname/);
   assert.match(source, /checkServerIdentity\(url\.hostname, certificate\)/);
 });
+
+test('public analytics intake is rate-limited and size-capped', () => {
+  const source = read('convex/analytics.ts');
+  assert.match(source, /consumeRateLimit\(ctx, userId, "analytics"\)/);
+  assert.match(source, /consumeAnonymousBudget\(ctx\)/);
+  assert.match(source, /MAX_PROPERTIES_BYTES/);
+  assert.match(source, /UUID\.test\(args\.eventId\)/);
+});
+
+test('local admin dashboard rejects foreign Host and Origin headers', () => {
+  const source = read('admin-dashboard/server.mjs');
+  assert.match(source, /if \(!isLocalRequest\(request\)\) return send\(response, 403/);
+});

@@ -8,11 +8,14 @@ const RATE_LIMIT = {
   WINDOW_MS: 60 * 1000,
 } as const;
 
-export type RateLimitBucket = "website" | "instagram" | "facebook" | "tiktok" | "photo" | "upload" | "ai_image";
+export type RateLimitBucket = "website" | "instagram" | "facebook" | "tiktok" | "photo" | "upload" | "ai_image" | "analytics";
+// Analytics-Events kommen in Schüben (z. B. Einkaufsliste abhaken), daher höheres Limit.
+const BUCKET_LIMITS: Partial<Record<RateLimitBucket, number>> = { analytics: 60 };
 export type ProviderBudget = "apify" | "jina" | "gemini" | "pollinations";
 
 export async function consumeRateLimit(ctx: MutationCtx, userId: Id<"users">, bucket: RateLimitBucket) {
   const now = Date.now();
+  const max = BUCKET_LIMITS[bucket] ?? RATE_LIMIT.MAX_REQUESTS_PER_MINUTE;
   const row = await ctx.db
     .query("apiRateLimits")
     .withIndex("by_user_bucket", (q) => q.eq("userId", userId).eq("bucket", bucket))
@@ -24,15 +27,15 @@ export async function consumeRateLimit(ctx: MutationCtx, userId: Id<"users">, bu
     } else {
       await ctx.db.insert("apiRateLimits", { userId, bucket, windowStart: now, count: 1, updatedAt: now });
     }
-    return { allowed: true, remaining: RATE_LIMIT.MAX_REQUESTS_PER_MINUTE - 1, resetAt: now + RATE_LIMIT.WINDOW_MS, limit: RATE_LIMIT.MAX_REQUESTS_PER_MINUTE };
+    return { allowed: true, remaining: max - 1, resetAt: now + RATE_LIMIT.WINDOW_MS, limit: max };
   }
 
-  if (row.count >= RATE_LIMIT.MAX_REQUESTS_PER_MINUTE) {
-    return { allowed: false, remaining: 0, resetAt: row.windowStart + RATE_LIMIT.WINDOW_MS, limit: RATE_LIMIT.MAX_REQUESTS_PER_MINUTE };
+  if (row.count >= max) {
+    return { allowed: false, remaining: 0, resetAt: row.windowStart + RATE_LIMIT.WINDOW_MS, limit: max };
   }
 
   await ctx.db.patch(row._id, { count: row.count + 1, updatedAt: now });
-  return { allowed: true, remaining: RATE_LIMIT.MAX_REQUESTS_PER_MINUTE - row.count - 1, resetAt: row.windowStart + RATE_LIMIT.WINDOW_MS, limit: RATE_LIMIT.MAX_REQUESTS_PER_MINUTE };
+  return { allowed: true, remaining: max - row.count - 1, resetAt: row.windowStart + RATE_LIMIT.WINDOW_MS, limit: max };
 }
 
 export async function consumeProviderBudget(ctx: MutationCtx, provider: ProviderBudget) {
