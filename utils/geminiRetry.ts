@@ -105,6 +105,40 @@ export const runWithGeminiRetry = async <T>(
   throw new Error("Gemini retry loop exited unexpectedly");
 };
 
+// Fehlt ein Modell (abgeschaltet/umbenannt), soll ebenfalls das Ersatzmodell greifen.
+const isModelUnavailableError = (error: unknown): boolean => {
+  const info = getGeminiApiErrorInfo(error);
+  return info.code === 404 || info.status === "NOT_FOUND";
+};
+
+export type GeminiFallbackOptions = GeminiRetryOptions & {
+  onFallback?: (details: { from: string; to: string; error: unknown }) => void;
+};
+
+/**
+ * Probiert die Modelle der Reihe nach, jedes mit eigenen Retries. Zum nächsten Modell geht es
+ * nur bei Überlastung oder fehlendem Modell; inhaltliche Fehler werden direkt weitergereicht.
+ */
+export const runWithGeminiModelFallback = async <T>(
+  models: readonly string[],
+  operation: (model: string) => Promise<T>,
+  options: GeminiFallbackOptions = {},
+): Promise<T> => {
+  if (models.length === 0) throw new Error("No Gemini model configured");
+
+  for (const [index, model] of models.entries()) {
+    try {
+      return await runWithGeminiRetry(() => operation(model), options);
+    } catch (error) {
+      const next = models[index + 1];
+      if (!next || !(isRetryableGeminiError(error) || isModelUnavailableError(error))) throw error;
+      options.onFallback?.({ from: model, to: next, error });
+    }
+  }
+
+  throw new Error("Gemini fallback loop exited unexpectedly");
+};
+
 export const getAiScanErrorMessage = (error: unknown): string => {
   const info = getGeminiApiErrorInfo(error);
 

@@ -6,7 +6,7 @@ import { api, internal } from "./_generated/api";
 import { v } from "convex/values";
 import { GoogleGenAI } from "@google/genai";
 import { GEMINI_MODELS } from "./constants";
-import { runWithGeminiRetry } from "../utils/geminiRetry";
+import { runWithGeminiModelFallback } from "../utils/geminiRetry";
 import {
   AI_SCAN_PROMPT_FIXED,
   AI_SCAN_RESPONSE_JSON_SCHEMA,
@@ -97,9 +97,9 @@ export const scanRecipePhotoInternal = internalAction({
     const base64Data = toBase64(await imageBlob.arrayBuffer());
     const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
 
-    const response = await runWithGeminiRetry(() =>
+    const response = await runWithGeminiModelFallback(GEMINI_MODELS.recipeImageScan, (model) =>
       ai.models.generateContent({
-        model: GEMINI_MODELS.recipeImageScan,
+        model,
         contents: {
           parts: [
             { inlineData: { mimeType, data: base64Data } },

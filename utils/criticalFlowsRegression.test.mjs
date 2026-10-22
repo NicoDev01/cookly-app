@@ -151,7 +151,7 @@ test("imported images are proxied by the backend, not UI lifecycles", async () =
 test("website imports never persist an empty fallback recipe", async () => {
   const website = await source("convex/website.ts");
 
-  assert.match(website, /runWithGeminiRetry/);
+  assert.match(website, /runWithGeminiModelFallback/);
   assert.match(website, /INCOMPLETE_RECIPE/);
   assert.match(website, /NO_RECIPE_CONTENT/);
   assert.doesNotMatch(website, /ingredients:\s*\[\],[\s\S]*instructions:\s*\[\]/);

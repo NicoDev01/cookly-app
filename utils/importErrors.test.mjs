@@ -21,6 +21,6 @@ test("unknown errors fall back to IMPORT_FAILED", () => {
 
 test("social import retries Gemini and reports overload as API_UNAVAILABLE", () => {
   const source = readFileSync(new URL("../convex/socialImport.ts", import.meta.url), "utf8");
-  assert.match(source, /runWithGeminiRetry\(/);
+  assert.match(source, /runWithGeminiModelFallback\(GEMINI_MODELS\.recipeTextExtraction/);
   assert.match(source, /if \(isRetryableGeminiError\(geminiError\)\) throw geminiUnavailableError/);
 });

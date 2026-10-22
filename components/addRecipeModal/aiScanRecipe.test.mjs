@@ -63,3 +63,40 @@ test('maps exhausted Gemini capacity errors to an actionable user message', () =
     'Die KI ist gerade stark ausgelastet. Wir haben es mehrfach versucht. Bitte probiere es in ein paar Minuten erneut.',
   );
 });
+
+test('falls back to the next Gemini model after the primary stays overloaded', async () => {
+  const { runWithGeminiModelFallback } = await import('../../utils/geminiRetry.ts');
+  const calls = [];
+  const fallbacks = [];
+  const result = await runWithGeminiModelFallback(['primary', 'backup'], async (model) => {
+    calls.push(model);
+    if (model === 'primary') throw new Error('{"error":{"code":503,"status":"UNAVAILABLE"}}');
+    return `ok:${model}`;
+  }, { delaysMs: [0], onFallback: ({ from, to }) => fallbacks.push(`${from}->${to}`) });
+
+  assert.equal(result, 'ok:backup');
+  assert.deepEqual(calls, ['primary', 'primary', 'backup']);
+  assert.deepEqual(fallbacks, ['primary->backup']);
+});
+
+test('falls back when the primary Gemini model no longer exists', async () => {
+  const { runWithGeminiModelFallback } = await import('../../utils/geminiRetry.ts');
+  const result = await runWithGeminiModelFallback(['gone', 'backup'], async (model) => {
+    if (model === 'gone') throw new Error('{"error":{"code":404,"status":"NOT_FOUND"}}');
+    return model;
+  }, { delaysMs: [0] });
+  assert.equal(result, 'backup');
+});
+
+test('content errors do not trigger a model fallback', async () => {
+  const { runWithGeminiModelFallback } = await import('../../utils/geminiRetry.ts');
+  const calls = [];
+  await assert.rejects(
+    runWithGeminiModelFallback(['primary', 'backup'], async (model) => {
+      calls.push(model);
+      throw new Error('{"error":{"code":400,"status":"INVALID_ARGUMENT"}}');
+    }, { delaysMs: [0] }),
+    /INVALID_ARGUMENT/,
+  );
+  assert.deepEqual(calls, ['primary']);
+});

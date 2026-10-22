@@ -22,7 +22,7 @@ import {
   type RecipeData,
   type ScrapedCandidate,
 } from "./socialImportShared";
-import { isRetryableGeminiError, runWithGeminiRetry } from "../utils/geminiRetry";
+import { isRetryableGeminiError, runWithGeminiModelFallback } from "../utils/geminiRetry";
 
 const GEMINI_RETRY_DELAYS_MS = [1_500, 4_000] as const;
 
@@ -202,9 +202,9 @@ async function extractRecipeWithGemini(
 
   // Kurze Wartezeiten: Scraping kann bereits bis zu 85 s des 120-s-Budgets verbraucht haben.
   const generate = (prompt: string) =>
-    runWithGeminiRetry(() =>
+    runWithGeminiModelFallback(GEMINI_MODELS.recipeTextExtraction, (model) =>
       ai.models.generateContent({
-        model: GEMINI_MODELS.recipeTextExtraction,
+        model,
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -217,6 +217,7 @@ async function extractRecipeWithGemini(
         attempt,
         error: error instanceof Error ? error.message.slice(0, 200) : String(error),
       }),
+      onFallback: ({ from, to }) => timer.mark("gemini_model_fallback", { from, to }),
     });
 
   const parse = (responseText: string, stage: string): RecipeData => {

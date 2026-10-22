@@ -6,7 +6,7 @@ import { GoogleGenAI } from "@google/genai";
 import { GEMINI_MODELS, RECIPE_CATEGORIES } from "./constants";
 import { createImportTimer } from "./importTiming";
 import { runLegacyImport } from "./legacyImport";
-import { isRetryableGeminiError, runWithGeminiRetry } from "../utils/geminiRetry";
+import { isRetryableGeminiError, runWithGeminiModelFallback } from "../utils/geminiRetry";
 
 const JINA_API_KEY = process.env.JINA_API_KEY;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
@@ -210,9 +210,9 @@ export const scrapeWebsiteInternal = internalAction({
                 .replace("{{TITLE}}", pageTitle)
                 .replace("{{MARKDOWN}}", truncatedMarkdown);
 
-            const result = await runWithGeminiRetry(() =>
+            const result = await runWithGeminiModelFallback(GEMINI_MODELS.recipeTextExtraction, (model) =>
                 ai.models.generateContent({
-                    model: GEMINI_MODELS.recipeTextExtraction,
+                    model,
                     contents: prompt,
                 })
             );
