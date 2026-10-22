@@ -14,8 +14,10 @@ import { runSocialImport, type ApifyAttempt, type SocialPlatform } from "./socia
 
 const POST_ACTOR = "apify~instagram-scraper";
 const REEL_ACTOR = "apify~instagram-reel-scraper";
-const PRIMARY_TIMEOUT_MS = 15_000;
-const FALLBACK_TIMEOUT_MS = 10_000;
+// Apify-Läufe dauern real 5–17 s (Okt. 2026); ein Abbruch verwirft bereits bezahlte Ergebnisse.
+// 30 s + 25 s bleiben im SCRAPE_PHASE_BUDGET_MS von 85 s.
+const PRIMARY_TIMEOUT_MS = 30_000;
+const FALLBACK_TIMEOUT_MS = 25_000;
 const REDIRECT_TIMEOUT_MS = 4_500;
 const MIN_CAPTION_LENGTH = 12;
 
