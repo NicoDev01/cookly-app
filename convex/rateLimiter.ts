@@ -38,11 +38,17 @@ export async function consumeRateLimit(ctx: MutationCtx, userId: Id<"users">, bu
   return { allowed: true, remaining: max - row.count - 1, resetAt: row.windowStart + RATE_LIMIT.WINDOW_MS, limit: max };
 }
 
+export const PROVIDER_BUDGETS: ProviderBudget[] = ["apify", "jina", "gemini", "pollinations"];
+
+export function providerDailyLimit(provider: ProviderBudget) {
+  const configured = Number(process.env[`PROVIDER_DAILY_LIMIT_${provider.toUpperCase()}`] ?? 1000);
+  return Number.isFinite(configured) && configured > 0 ? configured : 1000;
+}
+
 export async function consumeProviderBudget(ctx: MutationCtx, provider: ProviderBudget) {
   const now = Date.now();
   const day = new Date(now).toISOString().slice(0, 10);
-  const configured = Number(process.env[`PROVIDER_DAILY_LIMIT_${provider.toUpperCase()}`] ?? 1000);
-  const limit = Number.isFinite(configured) && configured > 0 ? configured : 1000;
+  const limit = providerDailyLimit(provider);
   const row = await ctx.db.query("providerDailyUsage")
     .withIndex("by_provider_day", (q) => q.eq("provider", provider).eq("day", day))
     .first();

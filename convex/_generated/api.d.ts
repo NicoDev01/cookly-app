@@ -18,6 +18,8 @@ import type * as billingModel from "../billingModel.js";
 import type * as categories from "../categories.js";
 import type * as constants from "../constants.js";
 import type * as crons from "../crons.js";
+import type * as digest from "../digest.js";
+import type * as digestModel from "../digestModel.js";
 import type * as experiments from "../experiments.js";
 import type * as facebook from "../facebook.js";
 import type * as growth from "../growth.js";
@@ -70,6 +72,8 @@ declare const fullApi: ApiFromModules<{
   categories: typeof categories;
   constants: typeof constants;
   crons: typeof crons;
+  digest: typeof digest;
+  digestModel: typeof digestModel;
   experiments: typeof experiments;
   facebook: typeof facebook;
   growth: typeof growth;
