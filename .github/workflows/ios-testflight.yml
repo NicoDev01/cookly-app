@@ -32,7 +32,10 @@ jobs:
           IOS_ENV_PRODUCTION: ${{ secrets.IOS_ENV_PRODUCTION }}
         run: printf '%s\n' "$IOS_ENV_PRODUCTION" > .env.production
 
+      # Mit Token lädt das Sentry-Vite-Plugin die Sourcemaps hoch (vite.config.ts).
       - run: npm run build:ios
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
       - name: Decode distribution certificate
         env:

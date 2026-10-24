@@ -25,6 +25,7 @@ Share-Extension und lädt den Build nach TestFlight. Kostenlos, weil das Repo ö
 | `ASC_KEY_P8_BASE64` | `AuthKey_XXXX.p8`, base64-kodiert |
 | `DIST_CERT_P12_BASE64` | Distribution-Zertifikat + Schlüssel als `.p12`, base64-kodiert |
 | `DIST_CERT_PASSWORD` | Passwort der `.p12` |
+| `SENTRY_AUTH_TOKEN` | Sentry-Token für den Sourcemap-Upload (optional; ohne bleiben Stacktraces unlesbar) |
 | `IOS_ENV_PRODUCTION` | Nur die `VITE_`-Zeilen der `.env.production` plus `VITE_NATIVE_BILLING_IOS_ENABLED=true` und `VITE_REVENUECAT_APPLE_API_KEY=appl_…` |
 
 Server-Secrets (Stripe, Apify, Jina) gehören **nicht** dazu: Vite übernimmt nur `VITE_`-Werte in die App.
