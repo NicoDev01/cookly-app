@@ -1,0 +1,55 @@
+name: iOS TestFlight
+
+# Nur manuell starten (Actions → iOS TestFlight → Run workflow).
+# Secrets und Einrichtung: docs/IOS_CI_BUILD.md
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "Buildnummer überschreiben (leer = CURRENT_PROJECT_VERSION aus dem Xcode-Projekt)"
+        required: false
+        default: ""
+
+concurrency: ios-testflight
+
+jobs:
+  testflight:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # Nur die öffentlichen VITE_-Werte; Server-Secrets gehören nicht in den App-Build.
+      - name: Write .env.production
+        env:
+          IOS_ENV_PRODUCTION: ${{ secrets.IOS_ENV_PRODUCTION }}
+        run: printf '%s\n' "$IOS_ENV_PRODUCTION" > .env.production
+
+      - run: npm run build:ios
+
+      - name: Decode distribution certificate
+        env:
+          DIST_CERT_P12_BASE64: ${{ secrets.DIST_CERT_P12_BASE64 }}
+        run: printf '%s' "$DIST_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+
+      - name: Build, sign and upload to TestFlight
+        working-directory: ios
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
+          DIST_CERT_P12_PATH: ${{ runner.temp }}/dist.p12
+          BUILD_NUMBER: ${{ inputs.build_number }}
+        run: fastlane ios testflight_release
+
+      - name: Remove certificate
+        if: always()
+        run: rm -f "$RUNNER_TEMP/dist.p12"
