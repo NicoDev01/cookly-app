@@ -25,6 +25,7 @@
     "ast-grep:fix": "ast-grep scan --fix",
     "preview": "vite preview",
     "admin": "node --env-file-if-exists=.env.admin.local admin-dashboard/server.mjs",
+    "report:users": "node --env-file-if-exists=.env.admin.local scripts/user-activity-report.mjs",
     "cap:sync": "npx cap sync",
     "cap:open": "npx cap open android",
     "cap:run": "npx cap run android",

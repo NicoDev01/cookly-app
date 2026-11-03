@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cookly Nutzeraktivität</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f4f3f0;
+    --surface-1: #fcfcfb;
+    --border: #e4e2dc;
+    --grid: #ecebe7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #77756f;
+    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+    --series-4: #eda100; --series-5: #e87ba4; --series-6: #008300;
+    --funnel: #2a78d6; --funnel-track: #e8eef7;
+    --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --neutral: #9a988f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2e2b; --grid: #262624;
+      --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #908f86;
+      --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+      --series-4: #c98500; --series-5: #d55181; --series-6: #008300;
+      --funnel: #3987e5; --funnel-track: #1f2a38; --neutral: #6c6b64;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2e2b; --grid: #262624;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #908f86;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+    --series-4: #c98500; --series-5: #d55181; --series-6: #008300;
+    --funnel: #3987e5; --funnel-track: #1f2a38; --neutral: #6c6b64;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface-0); color: var(--text-primary);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 4px; }
+  .sub, .note { color: var(--text-secondary); margin: 0; }
+  .note { font-size: 12.5px; color: var(--text-muted); margin-bottom: 12px; }
+  select { margin-left: 8px; font: inherit; color: var(--text-primary); background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; }
+  label.toggle { display: inline-flex; gap: 8px; align-items: center; color: var(--text-secondary); cursor: pointer; }
+  .grid { display: grid; gap: 12px; }
+  .kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 12px; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; min-width: 0; }
+  .kpi .value { font-size: 28px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .kpi .label { color: var(--text-secondary); font-size: 12.5px; }
+  .two { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); margin-bottom: 12px; }
+  section.card { margin-bottom: 12px; }
+  .funnel-row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(80px, 1fr) 70px; gap: 10px; align-items: center; padding: 4px 0; }
+  .funnel-row .name { color: var(--text-secondary); font-size: 13px; }
+  .bar-track { background: var(--funnel-track); border-radius: 4px; height: 14px; overflow: hidden; }
+  .bar-fill { background: var(--funnel); height: 100%; border-radius: 0 4px 4px 0; min-width: 2px; }
+  .funnel-row .num { text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
+  .funnel-row .num span { color: var(--text-muted); }
+  .segments { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .segment { border-left: 3px solid var(--neutral); padding: 8px 12px; }
+  .segment .value { font-size: 24px; font-weight: 650; }
+  .segment .label { font-weight: 600; font-size: 13px; }
+  .segment .desc { color: var(--text-muted); font-size: 12px; }
+  .chart-box { position: relative; width: 100%; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th { color: var(--text-secondary); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--surface-1); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .muted { color: var(--text-muted); }
+  .history { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .src-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 4px 0 10px; font-size: 12.5px; color: var(--text-secondary); }
+  .src-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 6px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Cookly Nutzeraktivität</h1>
+      <p class="sub" id="stamp"></p>
+    </div>
+    <label class="toggle"><input type="checkbox" id="showInternal"> Interne und Test-Konten einbeziehen</label>
+  </header>
+
+  <div class="grid kpis" id="kpis"></div>
+
+  <div class="grid two">
+    <section class="card">
+      <h2>Wo springen Nutzer ab?</h2>
+      <p class="note">Anteil an allen Konten. Schritte zählen unabhängig voneinander.</p>
+      <div id="funnel"></div>
+    </section>
+    <section class="card">
+      <h2>Kommen Nutzer wieder?</h2>
+      <p class="note">Aktiv = Rezept gespeichert, importiert, geöffnet, Wochenplan, Einkaufsliste oder App-Event an diesem Tag.</p>
+      <div class="grid segments" id="segments"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Aktivität pro Nutzer im Zeitverlauf</h2>
+    <p class="note">Ring = Registrierung, Punkt = aktiver Tag (größer = mehr Aktionen). Hover zeigt, was an dem Tag passiert ist.
+      <select id="timelineMode" aria-label="Zeitachse">
+        <option value="30">Letzte 30 Tage</option>
+        <option value="90" selected>Letzte 90 Tage</option>
+        <option value="all">Gesamter Zeitraum</option>
+        <option value="cohort">Tage seit Registrierung</option>
+      </select></p>
+    <div class="chart-box" id="timelineBox"><canvas id="timeline" role="img" aria-label="Aktive Tage pro Nutzer"></canvas></div>
+  </section>
+
+  <section class="card">
+    <h2>Rezepte pro Nutzer nach Quelle</h2>
+    <p class="note">Gespeicherte Rezepte, die heute noch existieren. Nur Nutzer mit mindestens einem Rezept.</p>
+    <div class="src-legend" id="legendUsers"></div>
+    <div class="chart-box" id="usersBox"><canvas id="perUser" role="img" aria-label="Rezepte pro Nutzer nach Quelle"></canvas></div>
+  </section>
+
+  <div class="grid two">
+    <section class="card">
+      <h2>Neue Rezepte pro Woche</h2>
+      <p class="note">Nach Quelle, Woche beginnt montags.</p>
+      <div class="src-legend" id="legendWeeks"></div>
+      <div class="chart-box" style="height:260px"><canvas id="perWeek" role="img" aria-label="Neue Rezepte pro Woche"></canvas></div>
+    </section>
+    <section class="card">
+      <h2>Import-Fehler</h2>
+      <p class="note" id="importNote"></p>
+      <div class="table-wrap"><table id="errors"></table></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Alle Nutzer</h2>
+    <p class="note">Tabellenansicht aller Werte aus den Diagrammen.</p>
+    <div class="table-wrap"><table id="users"></table></div>
+  </section>
+
+  <section class="card">
+    <h2>Verlauf über die Zeit</h2>
+    <p class="note" id="historyNote">Jeder Lauf von <code>npm run report:users</code> speichert einen Tages-Snapshot. Ab zwei Snapshots erscheint hier der Verlauf.</p>
+    <div class="grid history" id="history"></div>
+  </section>
+</main>
+
+<script>
+const DATA = /*__REPORT_DATA__*/null;
+const SOURCE_LABELS = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok", website: "Website", photo: "Foto-Scan", manual: "Manuell" };
+const SEGMENTS = [
+  ["never", "Nie genutzt", "Konto angelegt, danach keine Aktion", "--neutral"],
+  ["once", "Einmal ausprobiert", "Nur an einem Tag aktiv, seit 7+ Tagen weg", "--critical"],
+  ["returned", "Wiedergekommen, jetzt weg", "An 2+ Tagen aktiv, seit 7+ Tagen weg", "--warning"],
+  ["active", "Aktiv", "In den letzten 7 Tagen aktiv", "--good"],
+];
+const SEGMENT_LABEL = Object.fromEntries(SEGMENTS.map(([key, label]) => [key, label]));
+const DAY = 86400000;
+const charts = [];
+
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const fmtDay = (day) => day ? `${day.slice(8, 10)}.${day.slice(5, 7)}.` : "–";
+const dayIndex = (day) => Math.round(Date.parse(`${day}T12:00:00Z`) / DAY);
+const indexDay = (index) => new Date(index * DAY).toISOString().slice(0, 10);
+const pct = (part, whole) => whole ? `${Math.round((part / whole) * 100)} %` : "–";
+const el = (id) => document.getElementById(id);
+const esc = (text) => String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+function sourceColors() { return DATA.sourceTypes.map((_, i) => css(`--series-${i + 1}`)); }
+
+function baseOptions() {
+  Chart.defaults.color = css("--text-secondary");
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+  Chart.defaults.font.size = 12;
+  return {
+    responsive: true, maintainAspectRatio: false, animation: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { backgroundColor: css("--surface-1"), titleColor: css("--text-primary"), bodyColor: css("--text-secondary"),
+        borderColor: css("--border"), borderWidth: 1, padding: 10, boxPadding: 4 },
+    },
+  };
+}
+
+function renderLegend(id) {
+  el(id).innerHTML = DATA.sourceTypes.map((source, i) =>
+    `<span><i style="background:var(--series-${i + 1})"></i>${SOURCE_LABELS[source]}</span>`).join("");
+}
+
+function render() {
+  charts.splice(0).forEach((chart) => chart.destroy());
+  const includeInternal = el("showInternal").checked;
+  const rows = DATA.rows.filter((row) => includeInternal || !row.internal)
+    .map((row, i) => ({ ...row, display: `${row.label}${row.internal ? " (intern)" : ""} · #${i + 1}` }));
+  const s = includeInternal ? DATA.summaries.all : DATA.summaries.external;
+  const hidden = DATA.rows.length - rows.length;
+  el("stamp").textContent = `Stand ${new Date(DATA.generatedAt).toLocaleString("de-DE")} · Quelle: Convex Prod` +
+    (hidden ? ` · ${hidden} interne Konten ausgeblendet` : "");
+
+  // KPIs
+  const kpis = [
+    [s.users, "Konten"], [s.activeLast7d, "aktiv in 7 Tagen"], [s.activeLast30d, "aktiv in 30 Tagen"],
+    [s.recipes, "Rezepte gespeichert"],
+    [s.importSuccessRate === null ? "–" : `${Math.round(s.importSuccessRate * 100)} %`, `Import-Erfolg (${s.importsStarted} Versuche)`],
+    [s.pro, "Pro-Abos"],
+  ];
+  el("kpis").innerHTML = kpis.map(([value, label]) =>
+    `<div class="card kpi"><div class="value">${value}</div><div class="label">${label}</div></div>`).join("");
+
+  // Funnel
+  const total = s.funnel[0][1];
+  el("funnel").innerHTML = s.funnel.map(([name, n]) => `
+    <div class="funnel-row"><div class="name">${name}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${total ? (n / total) * 100 : 0}%"></div></div>
+      <div class="num">${n} <span>${pct(n, total)}</span></div></div>`).join("");
+
+  // Segmente
+  el("segments").innerHTML = SEGMENTS.map(([key, label, desc, color]) => `
+    <div class="segment" style="border-left-color:var(${color})">
+      <div class="value">${s.segments[key]} <span class="muted" style="font-size:13px;font-weight:400">${pct(s.segments[key], s.users)}</span></div>
+      <div class="label">${label}</div><div class="desc">${desc}</div></div>`).join("");
+
+  // Timeline
+  const mode = el("timelineMode").value;
+  const cohort = mode === "cohort";
+  const timelineRows = rows.filter((row) => row.activeDayCount > 0 || !row.internal);
+  const xOf = (row, day) => cohort ? dayIndex(day) - dayIndex(row.signupDay) : dayIndex(day);
+  const firstDay = Math.min(...timelineRows.map((row) => dayIndex(row.signupDay)));
+  const maxX = cohort ? Math.max(1, ...timelineRows.map((row) => xOf(row, DATA.today))) : dayIndex(DATA.today);
+  const minX = cohort ? 0 : mode === "all" ? firstDay : maxX - Number(mode);
+  const step = Math.max(1, Math.ceil((maxX - minX) / 10 / 7) * 7);
+  el("timelineBox").style.height = `${Math.max(160, timelineRows.length * 28 + 60)}px`;
+  const activity = [], signups = [];
+  for (const row of timelineRows) {
+    signups.push({ x: xOf(row, row.signupDay), y: row.display, row });
+    for (const day of row.activeDays) {
+      const d = row.days[day];
+      const actions = d.recipes + d.imports + d.failed + d.weekly + d.shopping + d.reopened + d.other;
+      activity.push({ x: xOf(row, day), y: row.display, row, day, d, r: 4 + Math.min(6, Math.sqrt(actions) * 1.6) });
+    }
+  }
+  const opts = baseOptions();
+  charts.push(new Chart(el("timeline"), {
+    type: "bubble",
+    data: { datasets: [
+      { label: "Registrierung", data: signups.map((p) => ({ ...p, r: 5 })), backgroundColor: css("--surface-1"),
+        borderColor: css("--text-muted"), borderWidth: 2 },
+      { label: "Aktiver Tag", data: activity, backgroundColor: css("--series-1"), borderColor: css("--surface-1"), borderWidth: 2 },
+    ] },
+    options: { ...opts,
+      scales: {
+        x: { type: "linear", min: minX - 1, max: maxX + 1, grid: { color: css("--grid") }, border: { color: css("--border") },
+          title: { display: cohort, text: "Tage seit Registrierung" },
+          ticks: { stepSize: step, callback: (v) => cohort ? `Tag ${v}` : fmtDay(indexDay(v)) } },
+        y: { type: "category", labels: timelineRows.map((row) => row.display), grid: { color: css("--grid") }, border: { display: false } },
+      },
+      plugins: { ...opts.plugins, tooltip: { ...opts.plugins.tooltip, callbacks: {
+        title: (items) => items[0].raw.row.label,
+        label: (item) => {
+          const p = item.raw;
+          if (!p.d) return `Registriert am ${fmtDay(p.row.signupDay)}`;
+          const parts = [["recipes", "Rezepte gespeichert"], ["imports", "Imports gestartet"], ["failed", "Imports fehlgeschlagen"],
+            ["reopened", "Rezepte geöffnet"], ["weekly", "Wochenplan-Einträge"], ["shopping", "Einkaufsliste"], ["other", "sonstige Events"]]
+            .filter(([key]) => p.d[key]).map(([key, label]) => `${p.d[key]} ${label}`);
+          return [`${fmtDay(p.day)} (Tag ${dayIndex(p.day) - dayIndex(p.row.signupDay)} nach Registrierung)`, ...parts];
+        },
+      } } },
+    },
+  }));
+
+  // Rezepte pro Nutzer
+  const colors = sourceColors();
+  renderLegend("legendUsers"); renderLegend("legendWeeks");
+  const withRecipes = rows.filter((row) => row.recipes > 0);
+  el("usersBox").style.height = `${Math.max(140, withRecipes.length * 30 + 50)}px`;
+  charts.push(new Chart(el("perUser"), {
+    type: "bar",
+    data: { labels: withRecipes.map((row) => row.display), datasets: DATA.sourceTypes.map((source, i) => ({
+      label: SOURCE_LABELS[source], data: withRecipes.map((row) => row.recipesBySource[source]),
+      backgroundColor: colors[i], borderColor: css("--surface-1"), borderWidth: 1, barThickness: 16 })) },
+    options: { ...baseOptions(), indexAxis: "y",
+      scales: { x: { stacked: true, grid: { color: css("--grid") }, border: { color: css("--border") }, ticks: { precision: 0 } },
+        y: { stacked: true, grid: { display: false }, border: { display: false } } },
+      plugins: { ...baseOptions().plugins, tooltip: { ...baseOptions().plugins.tooltip, filter: (item) => item.raw > 0,
+        callbacks: { footer: (items) => `Gesamt: ${withRecipes[items[0].dataIndex].recipes}` } } } },
+  }));
+
+  // Rezepte pro Woche
+  const weeks = s.recipesPerWeek;
+  charts.push(new Chart(el("perWeek"), {
+    type: "bar",
+    data: { labels: weeks.map(([week]) => fmtDay(week)), datasets: DATA.sourceTypes.map((source, i) => ({
+      label: SOURCE_LABELS[source], data: weeks.map(([, v]) => v[source]),
+      backgroundColor: colors[i], borderColor: css("--surface-1"), borderWidth: 1, maxBarThickness: 28 })) },
+    options: { ...baseOptions(),
+      scales: { x: { stacked: true, grid: { display: false }, border: { color: css("--border") } },
+        y: { stacked: true, grid: { color: css("--grid") }, border: { display: false }, ticks: { precision: 0 } } },
+      plugins: { ...baseOptions().plugins, tooltip: { ...baseOptions().plugins.tooltip, filter: (item) => item.raw > 0,
+        callbacks: { title: (items) => `Woche ab ${items[0].label}` } } } },
+  }));
+
+  // Import-Fehler
+  el("importNote").textContent = `${s.importsStarted} Import-Versuche seit Beginn der Event-Erfassung, davon ${s.importsFailed} fehlgeschlagen.`;
+  const errors = Object.entries(s.importErrors).sort((a, b) => b[1] - a[1]);
+  el("errors").innerHTML = errors.length
+    ? `<tr><th>Fehlercode</th><th class="num">Anzahl</th></tr>` + errors.map(([code, n]) => `<tr><td>${esc(code)}</td><td class="num">${n}</td></tr>`).join("")
+    : `<tr><td class="muted">Keine Fehler.</td></tr>`;
+
+  // Tabelle
+  const sourceText = (row) => DATA.sourceTypes.filter((src) => row.recipesBySource[src])
+    .map((src) => `${SOURCE_LABELS[src]} ${row.recipesBySource[src]}`).join(", ") || "–";
+  const segColor = Object.fromEntries(SEGMENTS.map(([key, , , color]) => [key, color]));
+  el("users").innerHTML = `<tr><th>Nutzer</th><th>E-Mail</th><th>Login</th><th>Registriert</th><th>Status</th>
+      <th class="num">Rezepte</th><th>Quellen</th><th class="num">Aktive Tage</th><th>Zuletzt aktiv</th>
+      <th class="num">Imports (Fehler)</th><th class="num">Geöffnet</th><th class="num">Wochenplan</th><th class="num">Einkauf</th><th class="num">Paywall</th></tr>` +
+    rows.map((row) => `<tr>
+      <td>${esc(row.label)}${row.internal ? ' <span class="muted">intern</span>' : ""}</td>
+      <td class="muted">${esc(row.email)}</td><td>${esc(row.login)}</td><td>${fmtDay(row.signupDay)}</td>
+      <td><span class="pill"><span class="dot" style="background:var(${segColor[row.segment]})"></span>${SEGMENT_LABEL[row.segment]}</span></td>
+      <td class="num">${row.recipes}</td><td>${sourceText(row)}</td><td class="num">${row.activeDayCount}</td>
+      <td>${row.lastActiveDay ? `${fmtDay(row.lastActiveDay)} <span class="muted">(vor ${row.daysSinceLastActive} T.)</span>` : "–"}</td>
+      <td class="num">${row.importsStarted} (${row.importsFailed})</td><td class="num">${row.recipesReopened}</td>
+      <td class="num">${row.weeklyMeals}</td><td class="num">${row.shoppingItems}</td><td class="num">${row.paywallViewed}</td></tr>`).join("");
+
+  // Verlauf
+  const history = DATA.history.map((snap) => ({ date: snap.date, s: includeInternal ? snap.all : snap.external }));
+  el("history").innerHTML = "";
+  if (history.length >= 2) {
+    el("historyNote").textContent = `${history.length} Snapshots von ${fmtDay(history[0].date)} bis ${fmtDay(history.at(-1).date)}.`;
+    for (const [key, title] of [["users", "Konten"], ["activeLast7d", "Aktiv in 7 Tagen"], ["recipes", "Rezepte gesamt"]]) {
+      const card = document.createElement("div");
+      card.innerHTML = `<h2>${title}</h2><div class="chart-box" style="height:160px"><canvas></canvas></div>`;
+      el("history").append(card);
+      charts.push(new Chart(card.querySelector("canvas"), {
+        type: "line",
+        data: { labels: history.map((h) => fmtDay(h.date)), datasets: [{ label: title, data: history.map((h) => h.s[key]),
+          borderColor: css("--series-1"), backgroundColor: css("--series-1"), borderWidth: 2, pointRadius: 4, tension: 0 }] },
+        options: { ...baseOptions(), scales: { x: { grid: { display: false } },
+          y: { beginAtZero: true, grid: { color: css("--grid") }, border: { display: false }, ticks: { precision: 0 } } } },
+      }));
+    }
+  }
+}
+
+el("showInternal").addEventListener("change", render);
+el("timelineMode").addEventListener("change", render);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+render();
+</script>
+</body>
+</html>

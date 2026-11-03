@@ -53,3 +53,6 @@ stripe_backup_code.txt
 
 .kilocode
 .claude
+
+# Lokale Reports mit Nutzerdaten (npm run report:users)
+reports/
