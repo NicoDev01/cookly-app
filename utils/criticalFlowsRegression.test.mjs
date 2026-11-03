@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
+  buildKeywords,
   createIngredientTextPattern,
   createKeywordPattern,
   mergeAdjacentIngredientMatches,
@@ -36,10 +37,11 @@ test("Android client paths use the compatible UUID helper", async () => {
 test("instruction ingredient pills toggle their amount", async () => {
   const recipePage = await source("pages/RecipePage.tsx");
   const instructions = await source("components/Instructions.tsx");
+  const keywordPattern = await source("utils/ingredientKeywordPattern.ts");
 
   assert.match(recipePage, /current === index \? null : index/);
   assert.match(instructions, /createIngredientTextPattern/);
-  assert.match(instructions, /words\.filter\(\(word\) => !STOP_WORDS\.has\(word\.toLowerCase\(\)\)\)/);
+  assert.match(keywordPattern, /words\.filter\(\(word\) => !STOP_WORDS\.has\(word\.toLowerCase\(\)\)\)/);
   assert.match(instructions, /isHighlighted && amount \? ` \$\{amount\}` : ''/);
   assert.doesNotMatch(instructions, /right-full/);
   assert.match(instructions, /py-px/);
@@ -74,6 +76,24 @@ test("instruction highlighting matches whole words, not fragments of short keywo
   );
   assert.deepEqual(highlighted(["knoblauch"], "Knoblauchzehen hacken"), ["Knoblauchzehen"]);
   assert.deepEqual(highlighted(["käse"], "Käse über die Spätzle"), ["Käse"]);
+});
+
+test("bracketed notes in ingredient names do not become keywords", () => {
+  const ingredients = [
+    "Tomate(n) (vollreife, evtl. aus der Dose)",
+    "Olivenöl",
+    "Salz und Pfeffer",
+    "Ei(er)",
+    "Petersilie (glatte) und/oder Koriandergrün",
+  ].map((name) => ({ name }));
+  const pattern = createIngredientTextPattern(buildKeywords(ingredients).map(({ keyword }) => keyword));
+  const text = "Olivenöl erhitzen, Tomaten, Salz und Pfeffer dazugeben. 4 Eier aufschlagen. "
+    + "Mit Petersilie bestreuen. Den Teig kneten, bis er glatt ist.";
+
+  assert.deepEqual(
+    [...text.matchAll(pattern)].map((match) => match[0]),
+    ["Olivenöl", "Tomaten", "Salz und Pfeffer", "Eier", "Petersilie"],
+  );
 });
 
 test("adjacent words belonging to one ingredient render as one pill", () => {
