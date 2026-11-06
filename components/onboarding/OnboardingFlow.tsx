@@ -156,9 +156,9 @@ export const OnboardingFlow: React.FC<Props> = ({ steps, initialStep, initialAns
     setGreeted(true);
   };
 
-  const toggle = (list: string[], set: (v: string[]) => void, id: string) => {
+  const toggle = (set: React.Dispatch<React.SetStateAction<string[]>>, id: string) => {
     void impact('light');
-    set(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
+    set((list) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]));
   };
 
   // Eine Antwort genügt: kurz die Auswahl zeigen, dann automatisch weiter.
@@ -275,7 +275,7 @@ export const OnboardingFlow: React.FC<Props> = ({ steps, initialStep, initialAns
           <div className="onb-sub" style={{ marginTop: -8 }}>Wähle alles, was passt.</div>
           <div className="onb-tiles">
             {SOURCES.map((s) => (
-              <button key={s.id} type="button" className="onb-tile" aria-pressed={sources.includes(s.id)} onClick={() => toggle(sources, setSources, s.id)}>
+              <button key={s.id} type="button" className="onb-tile" aria-pressed={sources.includes(s.id)} onClick={() => toggle(setSources, s.id)}>
                 <span className="onb-brand" style={{ background: s.bg }}>{s.icon}</span>
                 <span>{s.label}</span>
                 <span className="onb-chk" />
@@ -297,7 +297,7 @@ export const OnboardingFlow: React.FC<Props> = ({ steps, initialStep, initialAns
           <div className="onb-sub" style={{ marginTop: -8 }}>Wähle alles, was passt.</div>
           <div className="onb-opts">
             {GOALS.map((g) => (
-              <button key={g.id} type="button" className="onb-opt" aria-pressed={goals.includes(g.id)} onClick={() => toggle(goals, setGoals, g.id)}>
+              <button key={g.id} type="button" className="onb-opt" aria-pressed={goals.includes(g.id)} onClick={() => toggle(setGoals, g.id)}>
                 <span className="onb-ico">{g.icon}</span>
                 <span>{g.label}</span>
                 <span className="onb-chk" />

@@ -25,6 +25,9 @@
 .onb-cta:active, .onb-signin:active { transform: scale(.98); }
 .onb-cta:disabled { background: var(--o-cta-off) !important; }
 .onb-ghost { color: var(--o-cta) !important; font-weight: 600 !important; font-size: 15px; padding: 5px 8px !important; }
+.onb-legal { font-size: 11px; line-height: 1.4; color: var(--o-muted); text-align: center; }
+.onb-legal p { margin: 0 0 2px; }
+.onb-legal a { color: inherit; text-decoration: underline; }
 .onb-signin { font-weight: 600 !important; }
 .onb-signin.google { background: #fff !important; color: #1f1f1f !important; border: 1px solid #747775 !important; }
 .onb-signin.mail { background: var(--o-sel) !important; }

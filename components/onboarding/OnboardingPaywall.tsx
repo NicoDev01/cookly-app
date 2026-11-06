@@ -7,6 +7,8 @@ import { createBillingClient, type PlanId } from '../../services/billing';
 import { capture } from '../../services/analytics';
 import { logger } from '../../utils/logger';
 import { getUserErrorMessage } from '../../utils/userErrors';
+import { LEGAL_LINKS } from '../../utils/legalLinks';
+import ExternalLink from '../ExternalLink';
 import { ONB_IMG, PRO_FEATURES } from './onboardingData';
 
 type Prices = { monthly: string; yearly: string; yearlyPerMonth: string | null; savingsPercent: number | null };
@@ -121,6 +123,12 @@ export const OnboardingPaywall: React.FC<Props> = ({ onDone }) => {
           {busy ? 'Wird vorbereitet …' : 'Pro freischalten'}
         </button>
         <button type="button" className="onb-ghost" onClick={close} disabled={busy}>Kostenlos weiter</button>
+        <div className="onb-legal">
+          {billing.provider === 'store' && <p>Verlängert sich automatisch, wenn du nicht spätestens 24 Stunden vor Ablauf in deinem Store-Account kündigst.</p>}
+          <ExternalLink href={LEGAL_LINKS.terms}>Nutzungsbedingungen (EULA)</ExternalLink>
+          <span aria-hidden="true"> · </span>
+          <ExternalLink href={LEGAL_LINKS.privacy}>Datenschutz</ExternalLink>
+        </div>
       </div>
     </>
   );
