@@ -42,7 +42,7 @@ export const ALLOWED_EVENT_PROPERTIES = [
   "timestamp", "billingUserId", "anonymousId", "sessionId", "correlationId",
   "operationId", "campaignId", "experimentId", "platform", "appVersion",
   "buildNumber", "screen", "previousScreen", "nextScreen", "onboardingGoal",
-  "plan", "subscriptionStatus", "acquisitionSource", "acquisitionCampaign",
+  "plan", "subscriptionStatus", "acquisitionSource", "acquisitionCampaign", "referralSource",
   "experimentVariants", "eventVersion", "method", "step", "result", "element",
   "durationMs", "scrollDepth", "resultCount", "entryPoint", "recipeId", "source",
   "category", "normalizedTags", "difficulty", "hasImage", "ingredientCount",

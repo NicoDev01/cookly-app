@@ -68,6 +68,7 @@ test('expected auth failures and local notification failures do not create Sentr
     'pages/SignUpPage.tsx',
     'pages/ForgotPasswordPage.tsx',
     'pages/WelcomePage.tsx',
+    'components/onboarding/OnboardingFlow.tsx',
   ];
 
   assert.match(notifications, /MAX_ANDROID_NOTIFICATION_ID = 2_147_483_647/);

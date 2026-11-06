@@ -27,6 +27,7 @@ import { LEGAL_LINKS } from '../utils/legalLinks';
 import { cn } from "@/lib/utils";
 import { resetAnalyticsIdentity } from "../services/analytics";
 import { ensureNotificationPermission } from "../utils/notifications";
+import { forgetAccountOnDevice } from "../components/onboarding/onboardingData";
 
 export const ProfilePage: React.FC = () => {
   const { signOut } = useAuthActions();
@@ -77,8 +78,9 @@ export const ProfilePage: React.FC = () => {
       clearCache();
       clearLogs();
       resetAnalyticsIdentity();
+      forgetAccountOnDevice();
       await signOut();
-      navigate('/sign-in', { replace: true });
+      navigate('/welcome', { replace: true });
       setShowDeleteModal(false);
     } catch (error: unknown) {
       logger.error('AccountDeletion', 'Delete account failed', error);

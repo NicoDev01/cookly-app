@@ -67,6 +67,8 @@ export function createBillingClient(billingUserId: string | undefined, web: WebA
       return {
         pro_monthly: monthly.product.priceString,
         pro_yearly: yearly.product.priceString,
+        yearlyPerMonth: yearly.product.pricePerMonthString,
+        yearlySavingsPercent: Math.floor((1 - yearly.product.price / (monthly.product.price * 12)) * 100),
       };
     },
     async purchase(planId: PlanId) {

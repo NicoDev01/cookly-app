@@ -24,6 +24,7 @@ import { AnalyticsLifecycle } from './components/AnalyticsLifecycle';
 import { PushLifecycle } from './components/PushLifecycle';
 import { InAppCampaign } from './components/InAppCampaign';
 import { AdSlot } from './components/AdSlot';
+import { clearAnswers, loggedOutHome, markAccountOnDevice } from './components/onboarding/onboardingData';
 
 const CategoryRecipesPage = React.lazy(() => import('./pages/CategoryRecipesPage'));
 const RecipePage = React.lazy(() => import('./pages/RecipePage'));
@@ -83,7 +84,7 @@ const RootRedirect: React.FC = () => {
 
   if (isLoading) return null;
   if (isAuthenticated) return <Navigate to="/tabs/categories" replace />;
-  return <Navigate to="/welcome" replace />;
+  return <Navigate to={loggedOutHome()} replace />;
 };
 
 const ProtectedLayout: React.FC = () => {
@@ -95,9 +96,15 @@ const ProtectedLayout: React.FC = () => {
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      navigate('/sign-in', { replace: true });
+      navigate(loggedOutHome(), { replace: true });
     }
   }, [isLoading, isAuthenticated, navigate]);
+
+  // Bestehendes Konto mit abgeschlossenem Onboarding: liegengebliebene Gast-Antworten verwerfen.
+  const onboardingCompleted = currentUser?.onboardingCompleted;
+  useEffect(() => {
+    if (onboardingCompleted) clearAnswers();
+  }, [onboardingCompleted]);
 
   useEffect(() => {
     if (!isLoading && isAuthenticated && currentUser === null && !hasTriedSync) {
@@ -119,6 +126,11 @@ const ProtectedLayout: React.FC = () => {
 
 const AppContent: React.FC = () => {
   const navigate = useNavigate();
+  const { isAuthenticated } = useConvexAuth();
+
+  useEffect(() => {
+    if (isAuthenticated) markAccountOnDevice();
+  }, [isAuthenticated]);
   const intentCheckCountRef = useRef(0);
 
   // Native Back Button Handler (Android)

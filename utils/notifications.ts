@@ -13,7 +13,7 @@ const notificationId = () => Date.now() % MAX_ANDROID_NOTIFICATION_ID;
 let channelCreated = false;
 
 export async function ensureNotificationPermission(
-  source: 'profile' | 'import_complete',
+  source: 'profile' | 'import_complete' | 'onboarding',
 ): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return true;
 

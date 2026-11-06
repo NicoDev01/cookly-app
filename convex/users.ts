@@ -279,6 +279,9 @@ export const updateOnboarding = mutation({
   args: {
     name: v.optional(v.string()),
     onboardingGoal: v.optional(v.string()),
+    onboardingGoals: v.optional(v.array(v.string())),
+    recipeSources: v.optional(v.array(v.string())),
+    referralSource: v.optional(v.string()),
     cookingFrequency: v.optional(v.string()),
     preferredCuisines: v.optional(v.array(v.string())),
     notificationsEnabled: v.optional(v.boolean()),
@@ -286,10 +289,15 @@ export const updateOnboarding = mutation({
   handler: async (ctx, args) => {
     const user = await getCurrentUserFromCtx(ctx);
     if (!user) throw new Error("Not authenticated");
+    const tooLong = (list?: string[]) => !!list && (list.length > 12 || list.some((item) => item.length > 40));
+    if (tooLong(args.onboardingGoals) || tooLong(args.recipeSources) || (args.referralSource?.length ?? 0) > 40) throw new Error("INVALID_ONBOARDING_DATA");
 
     await ctx.db.patch(user._id, {
       name: args.name ?? user.name,
       onboardingGoal: args.onboardingGoal ?? user.onboardingGoal,
+      onboardingGoals: args.onboardingGoals ?? user.onboardingGoals,
+      recipeSources: args.recipeSources ?? user.recipeSources,
+      referralSource: args.referralSource ?? user.referralSource,
       cookingFrequency: args.cookingFrequency ?? user.cookingFrequency,
       preferredCuisines: args.preferredCuisines ?? user.preferredCuisines,
       notificationsEnabled: args.notificationsEnabled ?? user.notificationsEnabled,

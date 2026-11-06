@@ -36,6 +36,9 @@ export default defineSchema({
     // Onboarding & Preferences — optional, werden von createOrSyncUser gesetzt
     onboardingCompleted: v.optional(v.boolean()),
     onboardingGoal: v.optional(v.string()),
+    onboardingGoals: v.optional(v.array(v.string())),
+    recipeSources: v.optional(v.array(v.string())),
+    referralSource: v.optional(v.string()), // Selbstauskunft im Onboarding, getrennt von acquisitionSource (UTM)
     cookingFrequency: v.optional(v.string()),
     preferredCuisines: v.optional(v.array(v.string())),
     notificationsEnabled: v.optional(v.boolean()),

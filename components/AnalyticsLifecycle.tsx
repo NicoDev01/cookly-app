@@ -71,6 +71,7 @@ export const AnalyticsLifecycle = () => {
       onboardingGoal: user.onboardingGoal,
       acquisitionSource: user.acquisitionSource,
       acquisitionCampaign: user.acquisitionCampaign,
+      referralSource: user.referralSource,
     };
     identifyAnalyticsUser(user.billingUserId, properties);
     setObservabilityIdentity(user.billingUserId);
@@ -85,6 +86,7 @@ export const AnalyticsLifecycle = () => {
     user?.onboardingGoal,
     user?.acquisitionSource,
     user?.acquisitionCampaign,
+    user?.referralSource,
   ]);
 
   useEffect(() => {

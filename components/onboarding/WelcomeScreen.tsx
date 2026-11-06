@@ -1,112 +1,103 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useMutation } from 'convex/react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useConvexAuth, useMutation, useQuery } from 'convex/react';
+import { Navigate, useNavigate } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
 import { api } from '../../convex/_generated/api';
-import { useNavigate } from 'react-router-dom';
 import { logger } from '../../utils/logger';
 import { capture } from '../../services/analytics';
-import { WelcomeStep } from './steps/WelcomeStep';
-import { PersonalizationStep } from './steps/PersonalizationStep';
-import { OnboardingProgress } from './OnboardingProgress';
+import { ensureNotificationPermission } from '../../utils/notifications';
+import { OnboardingFlow, QUESTION_STEPS, type StepId } from './OnboardingFlow';
+import { clearAnswers, loadAnswers, loggedOutHome, type OnboardingAnswers } from './onboardingData';
 
+/**
+ * Onboarding nach dem Login: speichert die Antworten aus /welcome, fragt nach
+ * Benachrichtigungen (nur nativ) und zeigt die Paywall. Fehlen Antworten
+ * (z. B. Registrierung direkt über /sign-up), laufen die Fragen hier.
+ */
 export const WelcomeScreen: React.FC = () => {
   const navigate = useNavigate();
-  const [currentStep, setCurrentStep] = useState(0);
+  const { isLoading, isAuthenticated } = useConvexAuth();
   const updateOnboarding = useMutation(api.users.updateOnboarding);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const createUser = useMutation(api.users.createOrSyncUser);
+  const currentUser = useQuery(api.users.getCurrentUser, isAuthenticated ? {} : 'skip');
+  const [stored] = useState(loadAnswers);
+  const [steps, setSteps] = useState<StepId[] | null>(null);
+  const savedRef = useRef(false);
+  const syncTriedRef = useRef(false);
 
-  const totalSteps = 2;
+  // Direkt nach /sign-up gibt es den App-User noch nicht (ProtectedLayout wurde übersprungen).
+  useEffect(() => {
+    if (currentUser !== null || syncTriedRef.current) return;
+    syncTriedRef.current = true;
+    createUser().catch((error) => logger.error('Auth', 'createOrSyncUser failed (onboarding)', error));
+  }, [currentUser, createUser]);
+
+  // Schritte einmal festlegen: Fragen nur, wenn weder lokal noch am Konto Antworten liegen
+  // (sonst kämen sie nach einem App-Abbruch bei Push oder Paywall doppelt).
+  useEffect(() => {
+    if (steps || !currentUser) return;
+    const answered = !!stored || currentUser.recipeSources !== undefined || currentUser.onboardingGoals !== undefined
+      || currentUser.referralSource !== undefined;
+    setSteps([
+      ...(answered ? [] : QUESTION_STEPS),
+      ...(Capacitor.isNativePlatform() ? ['push' as const] : []),
+      'paywall',
+    ]);
+  }, [currentUser, stored, steps]);
+
+  const persist = (answers: OnboardingAnswers) => {
+    if (savedRef.current) return;
+    savedRef.current = true;
+    capture('onboarding_goal_selected', { onboardingGoal: answers.goals.join(','), source: answers.sources.join(',') });
+    updateOnboarding({
+      name: answers.name || undefined,
+      onboardingGoal: answers.goals.length ? answers.goals.join(', ') : undefined,
+      onboardingGoals: answers.goals,
+      recipeSources: answers.sources,
+      referralSource: answers.referral || undefined,
+    })
+      .then(clearAnswers)
+      .catch((error) => {
+        savedRef.current = false;
+        logger.warn('Onboarding', 'Saving onboarding answers failed', error);
+      });
+  };
 
   useEffect(() => {
-    capture('onboarding_started');
-  }, []);
+    if (isAuthenticated && stored) persist(stored);
+    // persist nur einmal nach dem Login
+  }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Scroll to top when step changes
-  useEffect(() => {
-    if (contentRef.current) {
-      contentRef.current.scrollTop = 0;
-    }
-    capture('onboarding_step_viewed', { step: currentStep });
-  }, [currentStep]);
-
-  const handleNext = () => {
-    if (currentStep < totalSteps - 1) {
-      setCurrentStep(prev => prev + 1);
-    }
+  const activatePush = async () => {
+    const granted = await ensureNotificationPermission('onboarding');
+    if (granted) await updateOnboarding({ notificationsEnabled: true }).catch(() => undefined);
   };
 
-  const handleBack = () => {
-    if (currentStep > 0) {
-      setCurrentStep(prev => prev - 1);
-    }
-  };
-
-  const handlePersonalizationSubmit = (data: {
-    name: string;
-    onboardingGoal: string;
-  }) => {
-    handleCompleteOnboarding(data);
-  };
-
-  const handleCompleteOnboarding = async (data?: {
-    name: string;
-    onboardingGoal: string;
-  }) => {
+  const finish = async (result: 'free' | 'purchased') => {
     try {
-      // Update onboarding data if provided
-      if (data) {
-        await updateOnboarding({
-          name: data.name || undefined,
-          onboardingGoal: data.onboardingGoal,
-        });
-        capture('onboarding_goal_selected', { onboardingGoal: data.onboardingGoal });
-      }
-
-      // Complete onboarding
       await completeOnboarding();
-      capture('onboarding_completed', { onboardingGoal: data?.onboardingGoal });
+      capture('onboarding_completed', { result });
       capture('first_action_prompted', { entryPoint: 'onboarding_complete' });
-
-      // Navigate to main app
-      navigate('/tabs/categories');
+      navigate('/tabs/categories', { replace: true });
     } catch (error) {
       logger.error('Onboarding', 'Complete onboarding failed', error);
     }
   };
 
-  const renderStep = () => {
-    switch (currentStep) {
-      case 0:
-        return <WelcomeStep onNext={handleNext} />;
-      case 1:
-        return (
-          <PersonalizationStep
-            onNext={handlePersonalizationSubmit}
-          />
-        );
-      default:
-        return <WelcomeStep onNext={handleNext} />;
-    }
-  };
+  if (isLoading) return null;
+  if (!isAuthenticated) return <Navigate to={loggedOutHome()} replace />;
+  if (currentUser?.onboardingCompleted) return <Navigate to="/tabs/categories" replace />;
+  if (!steps) return null;
 
   return (
-    <div className="h-screen overflow-hidden flex flex-col bg-white dark:bg-slate-950">
-      <OnboardingProgress currentStep={currentStep} totalSteps={totalSteps} />
-      <div ref={contentRef} className="flex-1 overflow-y-auto">
-        {renderStep()}
-      </div>
-
-      {currentStep > 0 && (
-        <div className="flex justify-center gap-4 mt-4 px-4 pb-4">
-          <button
-            onClick={handleBack}
-            className="px-6 py-3 text-muted-foreground active:text-foreground active:scale-[0.98] transition-transform duration-150 select-none"
-          >
-            Zurück
-          </button>
-        </div>
-      )}
-    </div>
+    <OnboardingFlow
+      steps={steps}
+      initialAnswers={stored}
+      onAnswersReady={persist}
+      onPushActivate={activatePush}
+      onFinish={finish}
+    />
   );
 };
 
