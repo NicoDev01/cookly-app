@@ -45,6 +45,8 @@
     "hooks/**/*.ts",
     "contexts/**/*.ts",
     "services/**/*.ts",
-    "convex/**/*.ts"
+    "convex/**/*.ts",
+    "lab/**/*.ts",
+    "lab/**/*.tsx"
   ]
 }

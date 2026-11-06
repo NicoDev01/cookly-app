@@ -39,6 +39,8 @@ const ForgotPasswordPage = React.lazy(() => import('./pages/ForgotPasswordPage')
 const WelcomePage = React.lazy(() => import('./pages/WelcomePage'));
 const WelcomeScreen = React.lazy(() => import('./components/onboarding/WelcomeScreen'));
 const TabsLayout = React.lazy(() => import('./components/TabsLayout'));
+// Labor für Screen-Varianten: nur im Dev-Server, fehlt im Produktions-Build.
+const LabRoutes = import.meta.env.DEV ? React.lazy(() => import('./lab/LabRoutes')) : null;
 
 // Verarbeitet den OAuth-Code nach Google Login (Android Deep Link)
 const AuthCallbackPage: React.FC = () => {
@@ -239,6 +241,7 @@ const AppContent: React.FC = () => {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/onboarding" element={<WelcomeScreen />} />
         <Route path="/auth-callback" element={<AuthCallbackPage />} />
+        {LabRoutes && <Route path="/lab/*" element={<LabRoutes />} />}
 
         <Route element={<ProtectedLayout />}>
           <Route element={<TabsLayout />}>
