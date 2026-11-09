@@ -23,6 +23,7 @@ export const shakshuka: Recipe = {
     { amount: '1 TL', name: 'Kreuzkümmel' },
     { amount: '1 TL', name: 'Paprikapulver, edelsüß' },
     { amount: '1 Handvoll', name: 'Petersilie' },
+    { amount: '100 g', name: 'Feta' },
   ],
   instructions: [
     { text: 'Zwiebel und Paprika würfeln und in Olivenöl weich dünsten.' },

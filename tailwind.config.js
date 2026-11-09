@@ -8,6 +8,8 @@ export default {
     "./*.{js,ts,jsx,tsx}",
     "./components/**/*.{js,ts,jsx,tsx}",
     "./pages/**/*.{js,ts,jsx,tsx}",
+    // Labor nur im Dev-Server, damit das Produktions-CSS gleich bleibt.
+    ...(process.env.NODE_ENV === "production" ? [] : ["./lab/**/*.{ts,tsx}"]),
   ],
   darkMode: "class",
   theme: {
