@@ -3,6 +3,7 @@ import type { MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { storeAnalyticsEvent } from "./analytics";
+import { getRecipeThumbnailUrl } from "./recipeThumbnails";
 import { getAuthenticatedUserId } from "./lib/authUser";
 
 export const getWeek = query({
@@ -33,6 +34,7 @@ export const getWeek = query({
         _id: recipe._id,
         title: recipe.title,
         image: storedImage ?? recipe.image,
+        thumbnail: await getRecipeThumbnailUrl(ctx, recipe),
         imageBlurhash: recipe.imageBlurhash,
         sourceImageUrl: recipe.sourceImageUrl,
         isFavorite: recipe.isFavorite,

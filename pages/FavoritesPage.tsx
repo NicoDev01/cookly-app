@@ -64,6 +64,7 @@ const RecipeImage: React.FC<{
     return (
       <ImageWithBlurhash
         src={recipe.image}
+        thumbnail={recipe.thumbnail}
         blurhash={recipe.imageBlurhash}
         alt={recipe.imageAlt || recipe.title}
         className={className}

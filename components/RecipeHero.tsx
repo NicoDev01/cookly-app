@@ -11,6 +11,7 @@ import { createPortal } from "react-dom";
 import { Recipe } from "../types";
 import { useMutation } from "convex/react";
 import { logger } from "../utils/logger";
+import { sizedImageUrl } from "../utils/imageUrl";
 import { api } from "../convex/_generated/api";
 import { ModalLoader } from "./PageLoader";
 
@@ -280,7 +281,7 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
       >
         {heroImageSrc ? (
           <img
-            src={heroImageSrc}
+            src={sizedImageUrl(heroImageSrc, window.innerWidth, window.devicePixelRatio || 1)}
             alt={recipe.imageAlt || recipe.title || "Rezeptbild"}
             referrerPolicy="no-referrer"
             loading="eager"

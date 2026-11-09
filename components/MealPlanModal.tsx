@@ -80,10 +80,8 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
     api.recipes.listPreviews,
     mode === 'selectRecipes' ? {} : "skip"
   );
-  const favoriteRecipes = useQuery(
-    api.recipes.listPreviews,
-    mode === 'selectRecipes' ? { favoritesOnly: true } : "skip"
-  );
+  // Favoriten aus derselben Liste filtern statt eine zweite Abfrage (gleiche Reihenfolge: beide nach Anlage sortiert).
+  const favoriteRecipes = useMemo(() => allRecipes?.filter((r) => r.isFavorite), [allRecipes]);
 
   // Reset state when modal closes or mode changes
   useEffect(() => {
@@ -374,6 +372,7 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
                         {(recipe.image || recipe.sourceImageUrl) ? (
                           <ImageWithBlurhash
                             src={recipe.image || recipe.sourceImageUrl || ''}
+                            thumbnail={recipe.thumbnail}
                             blurhash={recipe.imageBlurhash}
                             alt={recipe.title}
                             className="w-full h-full object-cover"

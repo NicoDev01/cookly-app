@@ -92,6 +92,7 @@ export default defineSchema({
     imageAlt: v.optional(v.string()), // Alt text for image
     imageStorageId: v.optional(v.id("_storage")), // Convex storage ID for uploaded images
     imageBlurhash: v.optional(v.string()), // Blurhash for loading placeholder
+    imageThumbStorageId: v.optional(v.id("_storage")), // Verkleinerte WebP-Fassung von imageStorageId für Listen
     imageWidth: v.optional(v.number()), // Final rendered image width in px
     imageHeight: v.optional(v.number()), // Final rendered image height in px
     imageAspectRatio: v.optional(v.number()), // width / height

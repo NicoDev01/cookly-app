@@ -7,6 +7,7 @@ import { Doc, Id } from "./_generated/dataModel";
 import { searchRecipes } from "../utils/recipeSearch";
 import { stripPollinationsApiKeyFromUrl } from "./pollinationsHelper";
 import { claimRecipeAsset, deleteTrackedAsset } from "./storageAssets";
+import { deleteRecipeThumbnailFile, getRecipeThumbnailUrl, scheduleRecipeThumbnail } from "./recipeThumbnails";
 import { getAuthenticatedUserId } from "./lib/authUser";
 
 // Compatibility endpoints for installed clients released before storage/image
@@ -200,6 +201,7 @@ async function toRecipePreview(ctx: QueryCtx, r: Doc<"recipes">) {
     title: r.title,
     category: r.category,
     image: imageUrl,
+    thumbnail: await getRecipeThumbnailUrl(ctx, r),
     imageAlt: r.imageAlt,
     imageBlurhash: r.imageBlurhash,
     imageWidth: r.imageWidth,
@@ -356,6 +358,7 @@ export const attachProxiedImage = internalMutation({
       sourceImageUrl: args.sourceImageUrl,
       updatedAt: Date.now(),
     });
+    await scheduleRecipeThumbnail(ctx, args.recipeId);
     return true;
   },
 });
@@ -560,7 +563,10 @@ export async function insertRecipe(ctx: any, userId: Id<"users">, args: any): Pr
     createdAt: now,
     updatedAt: now,
   });
-  if (args.imageStorageId) await claimRecipeAsset(ctx, userId, args.imageStorageId, recipeId);
+  if (args.imageStorageId) {
+    await claimRecipeAsset(ctx, userId, args.imageStorageId, recipeId);
+    await scheduleRecipeThumbnail(ctx, recipeId);
+  }
   const user = await ctx.db.get(userId);
   if (user) {
     await ctx.db.patch(userId, {
@@ -664,6 +670,8 @@ export const update = mutation({
       updates.image = image;
     }
     if (imageStorageId !== undefined) updates.imageStorageId = imageStorageId;
+    const dropsThumbnail = Boolean(recipe.imageThumbStorageId) && (shouldClearImageStorageId || replacesImage);
+    if (dropsThumbnail) updates.imageThumbStorageId = undefined;
     if (imageWidth !== undefined) updates.imageWidth = imageWidth;
     if (imageHeight !== undefined) updates.imageHeight = imageHeight;
     if (imageAspectRatio !== undefined) updates.imageAspectRatio = imageAspectRatio;
@@ -686,6 +694,7 @@ export const update = mutation({
       if (shouldClearImageStorageId) {
         delete (replacement as { imageStorageId?: unknown }).imageStorageId;
       }
+      if (dropsThumbnail) delete (replacement as { imageThumbStorageId?: unknown }).imageThumbStorageId;
       if (shouldClearImageMetadata) {
         delete (replacement as { imageWidth?: unknown }).imageWidth;
         delete (replacement as { imageHeight?: unknown }).imageHeight;
@@ -705,6 +714,8 @@ export const update = mutation({
         console.warn('Could not delete old storage file:', e);
       }
     }
+    if (dropsThumbnail) await deleteRecipeThumbnailFile(ctx, recipe);
+    if (replacesImage) await scheduleRecipeThumbnail(ctx, recipeId);
   },
 });
 
@@ -726,6 +737,7 @@ export const deleteRecipe = mutation({
       }
     }
 
+    await deleteRecipeThumbnailFile(ctx, recipe);
     await adjustCategoryCount(ctx, recipe.category, -1, userId);
     await ctx.db.delete(args.id);
   },
@@ -749,6 +761,7 @@ export const deleteRecipes = mutation({
             console.warn(`[Batch Cleanup] Could not delete image:`, e);
           }
         }
+        await deleteRecipeThumbnailFile(ctx, recipe);
         await adjustCategoryCount(ctx, recipe.category, -1, userId);
         await ctx.db.delete(id);
       }

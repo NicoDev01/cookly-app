@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { Id } from "./_generated/dataModel";
 import { storeAnalyticsEvent } from "./analytics";
+import { getRecipeThumbnailUrl } from "./recipeThumbnails";
 import { getAuthenticatedUserId } from "./lib/authUser";
 
 const normalizeShoppingText = (value: string) => value.toLowerCase().trim().replace(/\s+/g, " ");
@@ -42,6 +43,9 @@ const assertRecipeAccessible = async (
   return recipe;
 };
 
+/** Ab hier speichert die App Rezeptbezug bzw. -titel selbst; ältere Einträge ohne beides werden per Name zugeordnet. */
+const LEGACY_RECIPE_LOOKUP_BEFORE = Date.UTC(2026, 10, 10);
+
 export const getShoppingList = query({
   args: {},
   handler: async (ctx) => {
@@ -71,7 +75,11 @@ export const getShoppingList = query({
         ? [[recipe._id, recipe.title] as const]
         : []
     ));
-    const needsLegacyLookup = resolvedItems.some(({ recipeId }) => !recipeId);
+    // Nur Alt-Einträge ohne Rezeptbezug brauchen den Namensabgleich über alle Rezepte.
+    // Neue eigene Einträge (Schnelleingabe) würden ihn sonst bei jedem Listen-Update auslösen.
+    const isLegacyUnlinked = (item: (typeof items)[number], recipeId: unknown) =>
+      !recipeId && !item.recipeTitle && item.createdAt < LEGACY_RECIPE_LOOKUP_BEFORE;
+    const needsLegacyLookup = resolvedItems.some(({ item, recipeId }) => isLegacyUnlinked(item, recipeId));
     const legacyRecipes = needsLegacyLookup
       ? await ctx.db
         .query("recipes")
@@ -88,6 +96,7 @@ export const getShoppingList = query({
         };
       }
 
+      if (!isLegacyUnlinked(item, recipeId)) return item;
       const normalizedName = normalizeShoppingText(item.name);
       const matchingRecipes = legacyRecipes.filter((recipe) =>
         recipe.ingredients.some((ingredient) =>
@@ -338,5 +347,168 @@ export const clearShoppingList = mutation({
     for (const item of items) {
       await ctx.db.delete(item._id);
     }
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Neue Einkaufsliste (09.11.2026). Die alten Funktionen oben bleiben für ältere App-Versionen im Store.
+// ---------------------------------------------------------------------------
+
+const getOwnedItems = async (ctx: MutationCtx, ids: Id<"shoppingItems">[], userId: Id<"users">) => {
+  const items = await Promise.all([...new Set(ids)].map((id) => ctx.db.get(id)));
+  return items.filter((item): item is NonNullable<typeof item> => item !== null && item.userId === userId);
+};
+
+/** Rezeptbilder für „Nach Rezept“: nur Vorschaufelder, nur wenn die Ansicht offen ist (Client nutzt "skip"). */
+export const getShoppingRecipes = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthenticatedUserId(ctx);
+    const items = await ctx.db
+      .query("shoppingItems")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    const recipeIds = [...new Set(items.flatMap((item) => {
+      const recipeId = item.recipeId ?? getRecipeIdFromShoppingKey(item.key);
+      return recipeId ? [recipeId] : [];
+    }))];
+    const recipes = await Promise.all(recipeIds.map(async (recipeId) => {
+      const recipe = await ctx.db.get(recipeId);
+      if (!recipe || recipe.userId !== userId) return null;
+      const storedImage = recipe.imageStorageId ? await ctx.storage.getUrl(recipe.imageStorageId) : null;
+      return {
+        _id: recipe._id,
+        title: recipe.title,
+        image: storedImage ?? recipe.image,
+        thumbnail: await getRecipeThumbnailUrl(ctx, recipe),
+        imageBlurhash: recipe.imageBlurhash,
+        sourceImageUrl: recipe.sourceImageUrl,
+      };
+    }));
+    return recipes.filter((recipe): recipe is NonNullable<typeof recipe> => recipe !== null);
+  },
+});
+
+/** Abhaken/Öffnen mehrerer Einträge auf einmal: Eine Pill kann dieselbe Zutat aus mehreren Rezepten bündeln. */
+export const setShoppingItemsChecked = mutation({
+  args: { ids: v.array(v.id("shoppingItems")), checked: v.boolean() },
+  handler: async (ctx, args) => {
+    const userId = await getAuthenticatedUserId(ctx);
+    const items = await getOwnedItems(ctx, args.ids, userId);
+    const changed = items.filter((item) => item.checked !== args.checked);
+    for (const item of changed) await ctx.db.patch(item._id, { checked: args.checked });
+    if (args.checked && changed.length > 0) {
+      const user = await ctx.db.get(userId);
+      const now = Date.now();
+      await storeAnalyticsEvent(ctx, {
+        eventId: `shopping:${changed[0]._id}:checked:${now}`,
+        name: "shopping_item_checked",
+        version: 1,
+        userId,
+        billingUserId: user?.billingUserId,
+        platform: "server",
+        properties: { recipeId: changed[0].recipeId ? String(changed[0].recipeId) : undefined },
+        occurredAt: now,
+      });
+    }
+  },
+});
+
+export const removeShoppingItems = mutation({
+  args: { ids: v.array(v.id("shoppingItems")) },
+  handler: async (ctx, args) => {
+    const userId = await getAuthenticatedUserId(ctx);
+    const items = await getOwnedItems(ctx, args.ids, userId);
+    for (const item of items) await ctx.db.delete(item._id);
+  },
+});
+
+/** „Rückgängig“ nach dem Entfernen: legt die Einträge mit ihren alten Daten neu an. */
+export const restoreShoppingItems = mutation({
+  args: {
+    items: v.array(v.object({
+      name: v.string(),
+      amount: v.optional(v.string()),
+      checked: v.boolean(),
+      recipeId: v.optional(v.id("recipes")),
+      recipeTitle: v.optional(v.string()),
+      createdAt: v.number(),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthenticatedUserId(ctx);
+    const existing = await ctx.db
+      .query("shoppingItems")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    const keys = new Set(existing.map((item) => item.key));
+    for (const item of args.items) {
+      // Rezept inzwischen gelöscht? Dann kommt die Zutat als eigener Eintrag zurück statt gar nicht.
+      const recipe = item.recipeId ? await ctx.db.get(item.recipeId) : null;
+      const recipeId = recipe && recipe.userId === userId ? recipe._id : undefined;
+      const key = buildShoppingItemKey(item.name, recipeId);
+      if (keys.has(key)) continue;
+      keys.add(key);
+      await ctx.db.insert("shoppingItems", {
+        userId,
+        name: item.name,
+        normalizedName: normalizeShoppingText(item.name),
+        amount: item.amount,
+        key,
+        checked: item.checked,
+        recipeId,
+        recipeTitle: recipeId ? item.recipeTitle : undefined,
+        createdAt: item.createdAt,
+      });
+    }
+  },
+});
+
+/**
+ * Schnelleingabe ohne Rezept. Gibt es den eigenen Eintrag schon, wird er wieder offen (und bekommt die neue Menge),
+ * statt doppelt angelegt zu werden.
+ */
+export const quickAddShoppingItem = mutation({
+  args: { name: v.string(), amount: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const userId = await getAuthenticatedUserId(ctx);
+    const name = args.name.trim().slice(0, 120);
+    if (!name) throw new Error("Name fehlt");
+    const amount = args.amount?.trim().slice(0, 40) || undefined;
+    const key = buildShoppingItemKey(name);
+    const existing = await ctx.db
+      .query("shoppingItems")
+      .withIndex("by_user_key", (q) => q.eq("userId", userId).eq("key", key))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, { checked: false, ...(amount ? { amount } : {}) });
+      return existing._id;
+    }
+    return await ctx.db.insert("shoppingItems", {
+      userId,
+      name,
+      normalizedName: normalizeShoppingText(name),
+      amount,
+      key,
+      checked: false,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const updateShoppingItem = mutation({
+  args: { id: v.id("shoppingItems"), name: v.string(), amount: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const userId = await getAuthenticatedUserId(ctx);
+    const item = await ctx.db.get(args.id);
+    if (!item || item.userId !== userId) throw new Error("Item not found or access denied");
+    const name = args.name.trim().slice(0, 120);
+    if (!name) throw new Error("Name fehlt");
+    await ctx.db.patch(args.id, {
+      name,
+      normalizedName: normalizeShoppingText(name),
+      amount: args.amount?.trim().slice(0, 40) || undefined,
+      key: buildShoppingItemKey(name, item.recipeId),
+    });
   },
 });

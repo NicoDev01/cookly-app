@@ -305,6 +305,7 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
                          {recipe.image ? (
                            <ImageWithBlurhash
                              src={recipe.image}
+                             thumbnail={recipe.thumbnail}
                              blurhash={recipe.imageBlurhash}
                              alt={recipe.title}
                              className={`w-full h-full object-cover ${isSelected ? 'opacity-50' : ''}`}

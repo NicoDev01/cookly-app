@@ -1,156 +1,108 @@
-import React from 'react';
-import { useQuery, useMutation } from "convex/react";
-import { api } from "../convex/_generated/api";
-import { Id } from "../convex/_generated/dataModel";
-import { Link } from 'react-router-dom';
-import { IconButton } from '../components/ui/cookly/IconButton';
-import {
-  formatShoppingItemLabel,
-  groupShoppingItemsByRecipe,
-  groupShoppingItemsBySupermarketSection,
-  ShoppingListViewItem,
-} from '../utils/shoppingListView';
+import React, { useState } from 'react';
+import { useMutation, useQuery } from 'convex/react';
+import type { OptimisticLocalStore } from 'convex/browser';
+import { api } from '../convex/_generated/api';
+import type { Id } from '../convex/_generated/dataModel';
+import ShoppingListView, { type ShoppingMode } from '../components/shopping/ShoppingListView';
+import { useNotification } from '../contexts/NotificationContext';
+import { logger } from '../utils/logger';
+import { getUserErrorMessage } from '../utils/userErrors';
+import { buildShoppingItemKey, type ShoppingListViewItem } from '../utils/shoppingListView';
 
-const getColorClass = (index: number) => {
-  const colorIndex = (index % 10) + 1;
-  return `bg-ingredient-${colorIndex}-bg`;
+const MODE_KEY = 'cookly.shopping.mode';
+const readMode = (): ShoppingMode => {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'recipes' ? 'recipes' : 'sections';
+  } catch {
+    return 'sections';
+  }
+};
+
+type ListValue = NonNullable<ReturnType<typeof useQuery<typeof api.shopping.getShoppingList>>>;
+
+const patchList = (store: OptimisticLocalStore, fn: (list: ListValue) => ListValue) => {
+  const current = store.getQuery(api.shopping.getShoppingList, {});
+  if (current) store.setQuery(api.shopping.getShoppingList, {}, fn(current));
 };
 
 const ShoppingPage: React.FC = () => {
+  const { showToast } = useNotification();
+  const [mode, setMode] = useState<ShoppingMode>(readMode);
   const items = useQuery(api.shopping.getShoppingList);
-  const [isSupermarketMode, setIsSupermarketMode] = React.useState(false);
-  const toggleItem = useMutation(api.shopping.toggleShoppingItem).withOptimisticUpdate((localStore, args) => {
-    const currentList = localStore.getQuery(api.shopping.getShoppingList);
-    if (currentList) {
-      localStore.setQuery(api.shopping.getShoppingList, {}, currentList.map((item) => (
-        item._id === args.id ? { ...item, checked: !item.checked } : item
-      )));
-    }
-  });
-  const clearShoppingList = useMutation(api.shopping.clearShoppingList);
+  // Rezeptbilder nur in der Rezept-Ansicht; „Abteilungen“ kommt ohne aus.
+  const recipes = useQuery(api.shopping.getShoppingRecipes, mode === 'recipes' && items && items.length > 0 ? {} : 'skip');
 
-  React.useEffect(() => {
-    window.scrollTo(0, 0);
-  }, []);
+  // Optimistisch, damit Abhaken, Hinzufügen und Entfernen ohne Warten auf den Server sichtbar werden.
+  const setChecked = useMutation(api.shopping.setShoppingItemsChecked).withOptimisticUpdate((store, args) =>
+    patchList(store, (list) => list.map((i) => (args.ids.includes(i._id) ? { ...i, checked: args.checked } : i))),
+  );
+  const removeItems = useMutation(api.shopping.removeShoppingItems).withOptimisticUpdate((store, args) =>
+    patchList(store, (list) => list.filter((i) => !args.ids.includes(i._id))),
+  );
+  const updateItem = useMutation(api.shopping.updateShoppingItem).withOptimisticUpdate((store, args) =>
+    patchList(store, (list) => list.map((i) => (i._id === args.id ? { ...i, name: args.name, amount: args.amount } : i))),
+  );
+  const quickAdd = useMutation(api.shopping.quickAddShoppingItem).withOptimisticUpdate((store, args) =>
+    patchList(store, (list) => {
+      const key = buildShoppingItemKey(args.name);
+      if (list.some((i) => i.key === key)) {
+        return list.map((i) => (i.key === key ? { ...i, checked: false, amount: args.amount ?? i.amount } : i));
+      }
+      const now = Date.now();
+      const temp: ListValue[number] = {
+        _id: `optimistic_${now}` as Id<'shoppingItems'>,
+        _creationTime: now,
+        name: args.name,
+        normalizedName: key,
+        amount: args.amount,
+        key,
+        checked: false,
+        createdAt: now,
+      };
+      return [...list, temp];
+    }),
+  );
+  const restoreItems = useMutation(api.shopping.restoreShoppingItems);
 
-  const handleClear = async () => {
-    if (!items || items.length === 0) return;
-    if (window.confirm("Einkaufsliste wirklich leeren?")) {
-      await clearShoppingList();
+  const fail = (action: string) => (err: unknown) => {
+    logger.error('Shopping', `${action} failed`, err);
+    showToast(getUserErrorMessage(err, 'generic'), 'error');
+  };
+
+  const changeMode = (next: ShoppingMode) => {
+    setMode(next);
+    try {
+      localStorage.setItem(MODE_KEY, next);
+    } catch {
+      // Nur eine Vorliebe.
     }
   };
 
-  const groupedItems = React.useMemo(() => {
-    const list = (items ?? []) as ShoppingListViewItem[];
-    return isSupermarketMode
-      ? groupShoppingItemsBySupermarketSection(list)
-      : groupShoppingItemsByRecipe(list);
-  }, [items, isSupermarketMode]);
-
   return (
-    <div className="page-enter relative flex w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark font-display">
-      <div className="flex flex-col flex-1">
-
-        {/* Header */}
-        <div className="flex items-center px-6 pb-3 gap-4 justify-between" style={{ paddingTop: 'calc(var(--safe-area-inset-top, 0px) + 0.75rem)' }}>
-          <div className="flex items-center gap-4">
-            <h1 className="text-headline text-text-primary-light dark:text-text-primary-dark">
-              Einkaufsliste
-            </h1>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <IconButton
-              icon="local_grocery_store"
-              onClick={() => setIsSupermarketMode((value) => !value)}
-              disabled={!items || items.length === 0}
-              active={isSupermarketMode}
-              className={`shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave !rounded-full disabled:opacity-50 disabled:cursor-not-allowed ${
-                isSupermarketMode
-                  ? '!bg-primary !text-white hover:!bg-primary hover:!text-white'
-                  : '!bg-card-light dark:!bg-card-dark !text-text-primary-light dark:!text-text-primary-dark'
-              }`}
-              title="Supermarktmodus"
-              aria-label="Supermarktmodus umschalten"
-              aria-pressed={isSupermarketMode}
-            />
-            <IconButton
-              icon="delete_sweep"
-              onClick={handleClear}
-              disabled={!items || items.length === 0}
-              className="bg-card-light dark:bg-card-dark text-text-primary-light dark:text-text-primary-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave !rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Alle entfernen"
-              aria-label="Einkaufsliste leeren"
-            />
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="px-6 py-2">
-          {items && items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center px-6 pt-12 animate-in fade-in">
-              {/* Icon with Headline */}
-              <div className="flex flex-col items-center">
-                {/* Animated Icon */}
-                <span className="material-symbols-outlined text-8xl text-primary animate-pulse mb-4">
-                  shopping_basket
-                </span>
-
-                {/* Headline */}
-                <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-center">
-                  Noch keine <span className="text-primary italic">Zutaten</span>
-                </h2>
-              </div>
-
-              {/* Subtext */}
-              <p className="text-body text-text-secondary-light dark:text-text-secondary-dark text-center max-w-sm mt-4">
-                Füge Zutaten aus deinen Rezepten hinzu.
-              </p>
-
-              {/* CTA Button */}
-              <Link
-                to="/tabs/categories"
-                className="mt-8 flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-white font-semibold shadow-neo-light-convex hover:bg-primary-dark transition-all touch-btn"
-              >
-                <span className="material-symbols-outlined">restaurant_menu</span>
-                Rezepte öffnen
-              </Link>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-5">
-              {groupedItems.map((group) => (
-                <section key={group.key} className="space-y-2">
-                  {group.title ? (
-                    <h2 className="text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">
-                      {group.title}
-                    </h2>
-                  ) : null}
-                  <div className="flex flex-wrap gap-2.5">
-                    {group.items.map((item, index) => (
-                      <button
-                        key={item._id}
-                        onClick={() => toggleItem({ id: item._id as Id<"shoppingItems"> })}
-                        className={
-                          `relative cursor-pointer select-none appearance-none border-0 transition-all duration-300 ease-out active:scale-95 ` +
-                          `px-3 py-1.5 rounded-full text-sm font-medium ${getColorClass(index)} ` +
-                          `text-black dark:text-white shadow-neomorphism-pill dark:shadow-dark-neomorphism-pill ` +
-                          `${item.checked ? 'opacity-45 line-through decoration-2' : 'opacity-100 no-underline'}`
-                        }
-                        title="Klicken zum Markieren"
-                        aria-pressed={item.checked}
-                      >
-                        {formatShoppingItemLabel(item)}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </div>
-          )}
-        </div>
-        <div style={{ height: 'calc(var(--nav-height) + var(--safe-area-inset-bottom, 0px))' }} className="w-full shrink-0" />
-      </div>
-    </div>
+    <ShoppingListView
+      items={items as ShoppingListViewItem[] | undefined}
+      recipes={recipes}
+      mode={mode}
+      onModeChange={changeMode}
+      onSetChecked={(ids, checked) => void setChecked({ ids: ids as Id<'shoppingItems'>[], checked }).catch(fail('check'))}
+      onQuickAdd={(name, amount) => void quickAdd({ name, amount }).catch(fail('add'))}
+      onUpdate={(id, name, amount) => void updateItem({ id: id as Id<'shoppingItems'>, name, amount }).catch(fail('update'))}
+      onRemove={(list) => void removeItems({ ids: list.map((i) => i._id as Id<'shoppingItems'>) }).catch(fail('remove'))}
+      onRestore={(list) =>
+        void restoreItems({
+          items: list.map((i) => ({
+            name: i.name,
+            amount: i.amount,
+            checked: i.checked,
+            recipeId: i.recipeId as Id<'recipes'> | undefined,
+            recipeTitle: i.recipeTitle,
+            createdAt: i.createdAt,
+          })),
+        }).catch(fail('restore'))
+      }
+      emptyPath="/tabs/weekly"
+      recentsKey="cookly.shopping.recents"
+    />
   );
 };
 

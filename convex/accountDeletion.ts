@@ -206,6 +206,7 @@ export const deleteLocalData = internalMutation({
         .take(DELETE_BATCH_SIZE);
       for (const recipe of recipes) {
         if (recipe.imageStorageId) try { await ctx.storage.delete(recipe.imageStorageId); } catch { /* already gone */ }
+        if (recipe.imageThumbStorageId) try { await ctx.storage.delete(recipe.imageThumbStorageId); } catch { /* already gone */ }
         await ctx.db.delete(recipe._id);
       }
       if (recipes.length) return { done: false };

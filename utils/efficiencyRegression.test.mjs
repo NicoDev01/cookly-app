@@ -30,7 +30,8 @@ test('persistent list surfaces use lightweight recipe previews', () => {
 
   assert.match(mealPlan, /api\.recipes\.listPreviews/, 'MealPlanModal should use recipe previews');
   assert.doesNotMatch(mealPlan, /api\.recipes\.getFavorites/, 'MealPlanModal should not subscribe to full favorite recipes');
-  assert.match(mealPlan, /favoritesOnly:\s*true/, 'MealPlanModal should filter favorite previews through Convex');
+  assert.equal(mealPlan.match(/api\.recipes\.listPreviews/g).length, 1, 'MealPlanModal should derive favorites from the one preview subscription');
+  assert.match(mealPlan, /allRecipes\?\.filter\(\(r\) => r\.isFavorite\)/, 'MealPlanModal should filter favorites locally');
 
   assert.match(favorites, /api\.recipes\.listPreviews/, 'FavoritesPage should use favorite previews');
   assert.doesNotMatch(favorites, /api\.recipes\.getFavorites/, 'FavoritesPage should not subscribe to full favorite recipes');

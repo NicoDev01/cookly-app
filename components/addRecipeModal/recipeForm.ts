@@ -3,7 +3,7 @@ import { sanitizeInstructionsIcons } from '../../utils/iconUtils.ts';
 import type { ManualFormData } from './ManualRecipeForm';
 
 export const PLACEHOLDER_RECIPE_IMAGE =
-  'https://images.unsplash.com/photo-1495521821757-a1efb6729352?q=80&w=2626&auto=format&fit=crop';
+  'https://images.unsplash.com/photo-1495521821757-a1efb6729352?q=80&w=1600&auto=format&fit=crop';
 
 export const createRecipeFormData = (
   recipe?: Recipe | null,

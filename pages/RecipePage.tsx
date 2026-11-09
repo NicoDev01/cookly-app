@@ -15,6 +15,7 @@ import CookMode from '../components/CookMode';
 import CookTimerPills from '../components/CookTimerPills';
 import { useCookTimers } from '../hooks/useCookTimers';
 import { scaleAmount } from '../utils/scaleAmount';
+import { sizedImageUrl } from '../utils/imageUrl';
 import { Recipe } from '../types';
 import { ModalLoader } from '../components/PageLoader';
 import { capture } from '../services/analytics';
@@ -93,7 +94,7 @@ const RecipeSlideContent = React.memo(({
           {hasHeroPreview ? (
             <img
               alt={heroPreview?.imageAlt || heroPreview?.title || "Rezeptbild"}
-              src={heroPreview?.image}
+              src={sizedImageUrl(heroPreview!.image!, window.innerWidth, window.devicePixelRatio || 1)}
               referrerPolicy="no-referrer"
               loading="eager"
               fetchPriority="high"
@@ -315,17 +316,16 @@ const RecipePage: React.FC = () => {
     return () => window.clearTimeout(t);
   }, [location.pathname, location.state, navigate]);
 
-  // Fetch recipes based on context
-  // If in favorites mode, fetch only favorites. Otherwise fetch all.
-  const allRecipeIds = useQuery(api.recipes.listIds);
-  
-  const favoriteRecipeIds = useQuery(api.recipes.getFavoritesIds);
-
-  const weeklyRecipeIds = useQuery(api.recipes.getWeeklyListIds);
+  // Wischen durch die Liste, aus der man kam: Listen, Favoriten und Wochenplan geben die IDs mit.
+  // Nur ohne mitgegebene IDs (z. B. Direktlink) eine ID-Liste abonnieren, und dann nur die passende:
+  // Jede dieser Abfragen liest serverseitig alle Rezepte bzw. Wochenplan-Einträge.
+  const navRecipeIds = (location.state as RecipeNavState | null)?.nav?.ids;
+  const allRecipeIds = useQuery(api.recipes.listIds, !navRecipeIds && !isFavoritesMode && !isWeeklyMode ? {} : 'skip');
+  const favoriteRecipeIds = useQuery(api.recipes.getFavoritesIds, !navRecipeIds && isFavoritesMode ? {} : 'skip');
+  const weeklyRecipeIds = useQuery(api.recipes.getWeeklyListIds, !navRecipeIds && isWeeklyMode ? {} : 'skip');
   const heroPreview = (location.state as RecipeNavState | null)?.heroPreview;
 
   // Determine the list of IDs to show
-  const navRecipeIds = (location.state as RecipeNavState | null)?.nav?.ids;
   const sourceRecipeIds = navRecipeIds
     ?? (isFavoritesMode ? favoriteRecipeIds : undefined)
     ?? (isWeeklyMode ? weeklyRecipeIds : undefined)

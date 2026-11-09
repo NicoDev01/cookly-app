@@ -393,7 +393,7 @@ const CategoriesPage: React.FC = () => {
                     <div className="h-16 w-16 flex-shrink-0 rounded-lg overflow-hidden relative">
                       {recipe.image ? (
                         <SafeImage
-                          src={recipe.image}
+                          src={recipe.thumbnail ?? recipe.image}
                           alt={recipe.title}
                           className="w-full h-full object-cover"
                         />

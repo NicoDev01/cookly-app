@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useLayoutEffect, useRef } from 'react';
 import { Blurhash } from 'react-blurhash';
 import { capture } from '../services/analytics';
 import { logger } from '../utils/logger';
+import { pickRecipeImage, sizedImageUrl } from '../utils/imageUrl';
 
 const MAX_LOADED_IMAGE_CACHE = 200;
 const loadedImageUrls = new Set<string>();
@@ -20,6 +21,8 @@ const rememberLoadedImage = (url: string) => {
 
 interface ImageWithBlurhashProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   src: string;
+  /** Kleine Fassung für Listen; wird nur genommen, wenn sie bei der angezeigten Größe scharf genug ist. */
+  thumbnail?: string;
   blurhash?: string | null;
   alt: string;
   className?: string;
@@ -29,6 +32,7 @@ interface ImageWithBlurhashProps extends React.ImgHTMLAttributes<HTMLImageElemen
 
 const ImageWithBlurhash: React.FC<ImageWithBlurhashProps> = ({
   src,
+  thumbnail,
   blurhash,
   alt,
   className,
@@ -39,22 +43,30 @@ const ImageWithBlurhash: React.FC<ImageWithBlurhashProps> = ({
 }) => {
   const [loadedSrc, setLoadedSrc] = useState<string | undefined>(() => loadedImageUrls.has(src) ? src : undefined);
   const [failedSrc, setFailedSrc] = useState<string>();
-  const [requestedSrc, setRequestedSrc] = useState<string>();
+  const [requested, setRequested] = useState<{ src: string; url: string }>();
   const imgRef = useRef<HTMLImageElement>(null);
   const loadStartedAt = useRef(0);
   const shouldInstantRender = forceLoad;
   const isLoaded = loadedSrc === src || loadedImageUrls.has(src);
   const hasError = failedSrc === src;
 
-  useEffect(() => {
+  // Layout-Effekt: Bei forceLoad die Größe vor dem ersten Paint messen, damit das Bild ohne Verzögerung startet.
+  useLayoutEffect(() => {
     loadStartedAt.current = performance.now();
-    if (forceLoad || !imgRef.current) return;
+    if (!imgRef.current) return;
     const image = imgRef.current;
+    const pixelRatio = window.devicePixelRatio || 1;
+    const urlFor = (cssWidth: number) => sizedImageUrl(pickRecipeImage(src, thumbnail, cssWidth, pixelRatio), cssWidth, pixelRatio);
+    if (forceLoad) {
+      setRequested({ src, url: urlFor(image.getBoundingClientRect().width) });
+      return;
+    }
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setRequestedSrc(src);
+        const visible = entries.find((entry) => entry.isIntersecting);
+        if (visible) {
+          setRequested({ src, url: urlFor(visible.boundingClientRect.width) });
           observer.disconnect();
         }
       },
@@ -63,7 +75,7 @@ const ImageWithBlurhash: React.FC<ImageWithBlurhashProps> = ({
 
     observer.observe(image);
     return () => observer.disconnect();
-  }, [src, forceLoad]);
+  }, [src, thumbnail, forceLoad]);
 
   if (!src) return null;
 
@@ -86,7 +98,7 @@ const ImageWithBlurhash: React.FC<ImageWithBlurhashProps> = ({
       )}
       <img
         ref={imgRef}
-        src={forceLoad || requestedSrc === src ? src : undefined}
+        src={requested?.src === src ? requested.url : undefined}
         data-src={forceLoad ? undefined : src}
         alt={alt}
         referrerPolicy="no-referrer"

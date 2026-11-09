@@ -41,6 +41,8 @@ import type * as photoScanShared from "../photoScanShared.js";
 import type * as pollinationsHelper from "../pollinationsHelper.js";
 import type * as push from "../push.js";
 import type * as rateLimiter from "../rateLimiter.js";
+import type * as recipeThumbnails from "../recipeThumbnails.js";
+import type * as recipeThumbnailsNode from "../recipeThumbnailsNode.js";
 import type * as recipes from "../recipes.js";
 import type * as remoteImages from "../remoteImages.js";
 import type * as shopping from "../shopping.js";
@@ -96,6 +98,8 @@ declare const fullApi: ApiFromModules<{
   pollinationsHelper: typeof pollinationsHelper;
   push: typeof push;
   rateLimiter: typeof rateLimiter;
+  recipeThumbnails: typeof recipeThumbnails;
+  recipeThumbnailsNode: typeof recipeThumbnailsNode;
   recipes: typeof recipes;
   remoteImages: typeof remoteImages;
   shopping: typeof shopping;

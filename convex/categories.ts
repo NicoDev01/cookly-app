@@ -1,6 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { deleteTrackedAsset } from "./storageAssets";
+import { getRecipeThumbnailUrl } from "./recipeThumbnails";
 import { getAuthenticatedUserId } from "./lib/authUser";
 
 export const list = query({
@@ -81,6 +82,9 @@ export const getCategoriesWithStats = query({
           const recipeImages = (
             await Promise.all(
               previewRecipes.map(async (recipe) => {
+                // Kacheln sind klein: Vorschaubild vor Original.
+                const thumbnail = await getRecipeThumbnailUrl(ctx, recipe);
+                if (thumbnail) return thumbnail;
                 let recipeImageUrl = recipe.image;
                 if (recipe.imageStorageId) {
                   const url = await ctx.storage.getUrl(recipe.imageStorageId);

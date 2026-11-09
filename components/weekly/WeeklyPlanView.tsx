@@ -7,7 +7,6 @@
  * - Wischen wechselt die Woche; leere Woche: „Vorwoche übernehmen“; „Zutaten einkaufen“ für die ganze Woche.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import type { Id } from '../../convex/_generated/dataModel';
 import ImageWithBlurhash from '../ImageWithBlurhash';
@@ -23,6 +22,7 @@ import {
   weekStartForOffset,
   type WeekSlot,
 } from '../../utils/weekPlan';
+import FloatingBar from '../ui/FloatingBar';
 import BottomSheet from './BottomSheet';
 import DayGrid from './DayGrid';
 
@@ -67,7 +67,7 @@ type SheetState = { kind: 'meal'; mealId: string } | { kind: 'move-selected' } |
 const MealThumb: React.FC<{ recipe: WeekMeal['recipe'] }> = ({ recipe }) => {
   const src = recipe.image || recipe.sourceImageUrl;
   return src ? (
-    <ImageWithBlurhash src={src} blurhash={recipe.imageBlurhash} alt={recipe.title} className="h-12 w-12 rounded-full object-cover" />
+    <ImageWithBlurhash src={src} thumbnail={recipe.thumbnail} blurhash={recipe.imageBlurhash} alt={recipe.title} className="h-12 w-12 rounded-full object-cover" />
   ) : (
     <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-dark text-white">
       <span className="material-symbols-outlined text-xl">restaurant</span>
@@ -172,18 +172,6 @@ const AddButton: React.FC<{ label: string; hidden: boolean; onClick: () => void 
     </button>
   </div>
 );
-
-/** Fixed-Elemente per Portal: page-enter setzt ein transform, fixed klebte sonst am Seitenende. */
-const FloatingBar: React.FC<{ children: React.ReactNode }> = ({ children }) =>
-  createPortal(
-    <div
-      className="fixed inset-x-0 z-50 flex justify-center px-4 animate-in fade-in slide-in-from-bottom-2 duration-150"
-      style={{ bottom: 'calc(var(--nav-height) + var(--safe-area-inset-bottom, 0px) + 0.75rem)' }}
-    >
-      {children}
-    </div>,
-    document.body,
-  );
 
 const WeeklyPlanView: React.FC<Props> = ({
   weekOffset,
@@ -465,8 +453,8 @@ const WeeklyPlanView: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Navigation + Platz für den runden „+ Rezept“-Knopf, damit er das letzte „+“ nicht verdeckt. */}
-      <div style={{ height: 'calc(var(--nav-height) + var(--safe-area-inset-bottom, 0px) + 4.5rem)' }} className="w-full shrink-0" />
+      {/* Navigation + Platz für den runden „+ Rezept“-Knopf und die schwebende Leiste darüber. */}
+      <div style={{ height: 'calc(var(--nav-height) + var(--safe-area-inset-bottom, 0px) + 8rem)' }} className="w-full shrink-0" />
 
       {selecting && (
         <FloatingBar>
