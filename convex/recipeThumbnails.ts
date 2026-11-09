@@ -51,20 +51,28 @@ export const saveThumbnail = internalMutation({
 });
 
 /**
- * Einmalig für bestehende Rezepte: `npx convex run recipeThumbnails:backfill` (Dev) bzw. mit `--prod`.
- * Plant pro Seite die fehlenden Vorschaubilder gestaffelt ein und ruft sich für die nächste Seite selbst auf.
+ * Für bestehende Rezepte: `npx convex run recipeThumbnails:backfill` (Dev) bzw. mit `--prod`.
+ * Mit `'{"regenerate": true}'` werden auch vorhandene Vorschaubilder neu erzeugt (nach Änderung der Breite).
+ * Plant pro Seite gestaffelt ein und ruft sich für die nächste Seite selbst auf.
  */
 export const backfill = internalMutation({
-  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  args: { cursor: v.optional(v.union(v.string(), v.null())), regenerate: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
     const page = await ctx.db.query("recipes").paginate({ numItems: 100, cursor: args.cursor ?? null });
-    const missing = page.page.filter((recipe) => recipe.imageStorageId && !recipe.imageThumbStorageId);
-    for (const [index, recipe] of missing.entries()) {
+    const due = page.page.filter((recipe) => recipe.imageStorageId && (args.regenerate || !recipe.imageThumbStorageId));
+    for (const [index, recipe] of due.entries()) {
+      if (recipe.imageThumbStorageId) {
+        await deleteRecipeThumbnailFile(ctx, recipe);
+        await ctx.db.patch(recipe._id, { imageThumbStorageId: undefined });
+      }
       await scheduleRecipeThumbnail(ctx, recipe._id, index * 300);
     }
     if (!page.isDone) {
-      await ctx.scheduler.runAfter(missing.length * 300, internal.recipeThumbnails.backfill, { cursor: page.continueCursor });
+      await ctx.scheduler.runAfter(due.length * 300, internal.recipeThumbnails.backfill, {
+        cursor: page.continueCursor,
+        regenerate: args.regenerate,
+      });
     }
-    return { scheduled: missing.length, done: page.isDone };
+    return { scheduled: due.length, done: page.isDone };
   },
 });

@@ -12,8 +12,10 @@ import { Link } from 'react-router-dom';
 import { KeepAwake } from '@capacitor-community/keep-awake';
 import ImageWithBlurhash from '../ImageWithBlurhash';
 import FloatingBar from '../ui/FloatingBar';
+import { iconButton, inputClass, inputShell, sheetButton } from '../ui/tabStyles';
 import BottomSheet from '../weekly/BottomSheet';
 import { useHaptic } from '../../hooks/useHaptic';
+import { useLongPress } from '../../hooks/useLongPress';
 import { useNotification } from '../../contexts/NotificationContext';
 import {
   formatAmounts,
@@ -58,7 +60,6 @@ type Props = {
 type Undo = { label: string; items: ShoppingListViewItem[] };
 
 const UNDO_MS = 5000;
-const LONG_PRESS_MS = 500;
 const MAX_RECENTS = 30;
 
 const readRecents = (key: string, fallback: string[]): string[] => {
@@ -98,39 +99,15 @@ const Pill: React.FC<{ row: ShoppingRow; color: string; fresh: boolean; onToggle
   onToggle,
   onLongPress,
 }) => {
-  const timer = useRef<number | undefined>(undefined);
-  const start = useRef<{ x: number; y: number } | null>(null);
-  const fired = useRef(false);
-  const cancel = () => {
-    window.clearTimeout(timer.current);
-    start.current = null;
-  };
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const { handlers, consumeLongPress } = useLongPress(onLongPress);
   const amount = formatAmounts(row);
 
   return (
     <button
       type="button"
-      onPointerDown={(e) => {
-        fired.current = false;
-        start.current = { x: e.clientX, y: e.clientY };
-        timer.current = window.setTimeout(() => {
-          fired.current = true;
-          onLongPress();
-        }, LONG_PRESS_MS);
-      }}
-      onPointerMove={(e) => {
-        const s = start.current;
-        // Mehr als 10 px Bewegung = Scrollen, kein Halten.
-        if (s && (Math.abs(e.clientX - s.x) > 10 || Math.abs(e.clientY - s.y) > 10)) cancel();
-      }}
-      onPointerUp={cancel}
-      onPointerLeave={cancel}
-      onPointerCancel={cancel}
-      onContextMenu={(e) => e.preventDefault()}
+      {...handlers}
       onClick={() => {
-        if (fired.current) fired.current = false;
-        else onToggle();
+        if (!consumeLongPress()) onToggle();
       }}
       style={{ WebkitTouchCallout: 'none' }}
       aria-pressed={row.checked}
@@ -284,13 +261,6 @@ const ShoppingListView: React.FC<Props> = ({
   };
 
   const doneLabel = `${doneCount} ${doneCount === 1 ? 'Eintrag' : 'Einträge'} entfernt`;
-  const iconButton =
-    'flex h-10 w-10 items-center justify-center rounded-full bg-card-light text-text-primary-light shadow-neo-light-convex transition active:scale-95 disabled:opacity-40 dark:bg-card-dark dark:text-text-primary-dark dark:shadow-neo-dark-convex';
-  const sheetButton =
-    'flex items-center gap-3 rounded-2xl px-2 py-3 text-left text-[15px] font-semibold text-text-primary-light active:bg-black/5 disabled:opacity-40 dark:text-text-primary-dark dark:active:bg-white/10';
-  const inputShell = 'flex items-center gap-2 rounded-full bg-card-light py-1.5 pr-1.5 shadow-neo-light-concave dark:bg-card-dark dark:shadow-neo-dark-concave';
-  const inputClass =
-    'h-9 min-w-0 flex-1 border-0 bg-transparent text-[15px] text-text-primary-light outline-none placeholder:text-text-secondary-light/70 dark:text-text-primary-dark dark:placeholder:text-text-secondary-dark/70';
   const rowMenu = menu && menu !== 'list' ? menu : null;
   const singleRecipeTitle = rowMenu?.ids.length === 1 ? list.find((i) => i._id === rowMenu.ids[0])?.recipeTitle : undefined;
 

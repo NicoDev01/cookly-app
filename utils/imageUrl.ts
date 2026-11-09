@@ -1,5 +1,8 @@
-/** Breite der Listen-Vorschaubilder, die der Server aus hochgeladenen Rezeptfotos erzeugt. */
-export const RECIPE_THUMBNAIL_WIDTH = 400;
+/**
+ * Breite der Listen-Vorschaubilder, die der Server aus hochgeladenen Rezeptfotos erzeugt.
+ * 520 px deckt eine Rasterkachel der Favoriten (gut 160 pt) auf 3x-iPhones ab.
+ */
+export const RECIPE_THUMBNAIL_WIDTH = 520;
 
 /** Vorschaubild nehmen, wenn es für die angezeigte Größe scharf genug ist, sonst das Original. */
 export const pickRecipeImage = (image: string, thumbnail: string | undefined, cssWidth: number, pixelRatio: number) =>

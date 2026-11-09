@@ -212,6 +212,7 @@ async function toRecipePreview(ctx: QueryCtx, r: Doc<"recipes">) {
     difficulty: r.difficulty,
     portions: r.portions,
     isFavorite: r.isFavorite,
+    favoritedAt: r.favoritedAt,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   };
@@ -551,6 +552,7 @@ export async function insertRecipe(ctx: any, userId: Id<"users">, args: any): Pr
     instructions: args.instructions,
     tags: args.tags,
     isFavorite: args.isFavorite ?? false,
+    favoritedAt: args.isFavorite ? now : undefined,
     image: args.image,
     imageAlt: args.imageAlt,
     imageStorageId: args.imageStorageId,
@@ -665,6 +667,7 @@ export const update = mutation({
     if (replacesImage) await claimRecipeAsset(ctx, userId, imageStorageId, recipeId);
 
     const updates: Record<string, unknown> = { ...otherUpdates, updatedAt: Date.now() };
+    if (args.isFavorite === true && !recipe.isFavorite) updates.favoritedAt = Date.now();
 
     if (image !== undefined && image.trim() !== '' && !image.startsWith('blob:')) {
       updates.image = image;
@@ -778,7 +781,26 @@ export const toggleFavorite = mutation({
     const userId = await getAuthenticatedUserId(ctx);
     const recipe = await ctx.db.get(args.id);
     if (!recipe || recipe.userId !== userId) throw new Error("Recipe not found or access denied");
-    await ctx.db.patch(args.id, { isFavorite: !recipe.isFavorite });
+    const isFavorite = !recipe.isFavorite;
+    await ctx.db.patch(args.id, { isFavorite, ...(isFavorite ? { favoritedAt: Date.now() } : {}) });
+  },
+});
+
+/**
+ * Herz gezielt setzen oder entfernen (Favoriten-Tab). Für „Rückgängig“ kommt der alte Zeitpunkt mit,
+ * damit das Rezept an seinen Platz zurückkehrt statt nach oben zu springen.
+ */
+export const setFavorite = mutation({
+  args: { id: v.id("recipes"), isFavorite: v.boolean(), favoritedAt: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const userId = await getAuthenticatedUserId(ctx);
+    const recipe = await ctx.db.get(args.id);
+    if (!recipe || recipe.userId !== userId) throw new Error("Recipe not found or access denied");
+    if (recipe.isFavorite === args.isFavorite) return;
+    await ctx.db.patch(args.id, {
+      isFavorite: args.isFavorite,
+      ...(args.isFavorite ? { favoritedAt: args.favoritedAt ?? Date.now() } : {}),
+    });
   },
 });
 

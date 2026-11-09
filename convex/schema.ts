@@ -119,6 +119,7 @@ export default defineSchema({
     // Organization
     tags: v.optional(v.array(v.string())),
     isFavorite: v.boolean(),
+    favoritedAt: v.optional(v.number()), // Wann das Herz gesetzt wurde (Sortierung „Zuletzt gemerkt“)
     
     // Metadata
     createdAt: v.number(),
