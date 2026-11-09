@@ -146,11 +146,14 @@ const ImageZoomModal: React.FC<ImageZoomModalProps> = ({ isOpen, onClose, src, a
         onPointerMove={handlePointerMove}
         style={{ touchAction: 'none' }}
       >
+        {/* w/h-full + contain: Start so groß wie möglich (wie im Rezept randlos), auch bei kleineren Bildern.
+            Kein will-change: damit würde das Bild in Startgröße gerastert und beim Zoomen unscharf. */}
         <img
           ref={imgRef}
           src={src}
           alt={alt}
-          className="max-w-full max-h-full object-contain transition-transform duration-200 ease-out will-change-transform"
+          referrerPolicy="no-referrer"
+          className="h-full w-full object-contain transition-transform duration-200 ease-out"
           style={{
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
           }}

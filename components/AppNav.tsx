@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { useConvexAuth } from 'convex/react';
 import { useQuery } from 'convex/react';
@@ -23,6 +23,15 @@ const shouldShowNav = (pathname: string): boolean => {
   return VISIBLE_NAV_PREFIXES.some(prefix => pathname.startsWith(prefix));
 };
 
+/** Maße der Auswahl-Pille (w-14 h-8) und ihr Abstand zur Oberkante des Tabs (py-2). */
+const PILL_WIDTH = 56;
+const PILL_TOP = 8;
+/** Die führende Kante läuft vor, die hintere zieht nach: so „fließt“ die Pille zum neuen Tab. */
+const PILL_LEAD = '300ms cubic-bezier(0.3, 1.25, 0.6, 1)';
+const PILL_TRAIL = '460ms cubic-bezier(0.45, 0, 0.2, 1) 40ms';
+
+type PillBox = { left: number; right: number; top: number; movingRight: boolean; animate: boolean };
+
 const AppNav: React.FC<{
   onAddRecipe: () => void;
 }> = ({ onAddRecipe }) => {
@@ -32,6 +41,11 @@ const AppNav: React.FC<{
   const { impact } = useHaptic();
 
   const isActive = (path: string) => location.pathname === path;
+  const visible = shouldShowNav(location.pathname);
+
+  const rowRef = useRef<HTMLDivElement>(null);
+  const tabRefs = useRef<(HTMLAnchorElement | null)[]>([]);
+  const [pill, setPill] = useState<PillBox | null>(null);
 
   const intentHandlers = (prefetch: () => Promise<unknown>) => ({
     onPointerEnter: () => { void prefetch(); },
@@ -52,8 +66,41 @@ const AppNav: React.FC<{
     { path: '/tabs/profile', icon: 'person', label: 'Profil', prefetch: prefetchProfilePage },
   ];
 
+  const activeIndex = navItems.findIndex(({ path }) => isActive(path));
+
+  // Pille unter den aktiven Tab legen. offset* statt getBoundingClientRect, weil touch-scale
+  // den gedrückten Tab skaliert. Erste Position und Größenänderungen ohne Animation.
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!visible || !row) return;
+    const place = (animate: boolean) => {
+      const tab = tabRefs.current[activeIndex];
+      if (!tab) { setPill(null); return; }
+      const left = tab.offsetLeft + (tab.offsetWidth - PILL_WIDTH) / 2;
+      const right = row.clientWidth - left - PILL_WIDTH;
+      setPill((prev) => ({
+        left,
+        right,
+        top: tab.offsetTop + PILL_TOP,
+        movingRight: prev ? left >= prev.left : true,
+        animate: animate && prev !== null,
+      }));
+    };
+    place(true);
+    // Der Observer meldet sich sofort einmal; nur echte Breitenänderungen neu setzen,
+    // sonst würde „ohne Animation“ die gerade gestartete Bewegung abbrechen.
+    let width = row.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (row.clientWidth === width) return;
+      width = row.clientWidth;
+      place(false);
+    });
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [activeIndex, visible]);
+
   // Don't render if not on a nav route
-  if (!shouldShowNav(location.pathname)) {
+  if (!visible) {
     return null;
   }
 
@@ -69,7 +116,8 @@ const AppNav: React.FC<{
     <div
       className="fixed bottom-0 left-0 right-0 z-50 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-lg border-t border-t-black/5 dark:border-t-white/5"
       style={{
-        paddingBottom: 'var(--safe-area-inset-bottom, 0px)',
+        // Bis knapp über den Home-Indikator (iOS-Tab-Leisten machen das genauso); ohne Inset 8px.
+        paddingBottom: 'max(calc(var(--safe-area-inset-bottom, 0px) - 14px), 8px)',
         transform: 'translateZ(0)',
       }}
     >
@@ -93,10 +141,27 @@ const AppNav: React.FC<{
       )}
 
       {/* Bottom Nav Bar Content */}
-      <div className="flex justify-around items-center px-2 pb-2 pt-1">
-        {navItems.map(({ path, icon, label, prefetch }) => (
+      <div ref={rowRef} className="relative flex justify-around items-center px-2 pt-1">
+        {pill && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute h-8 rounded-full bg-primary shadow-neo-light-convex dark:shadow-neo-dark-convex motion-reduce:!transition-none"
+            style={{
+              left: pill.left,
+              right: pill.right,
+              top: pill.top,
+              transition: pill.animate
+                ? pill.movingRight
+                  ? `right ${PILL_LEAD}, left ${PILL_TRAIL}`
+                  : `left ${PILL_LEAD}, right ${PILL_TRAIL}`
+                : 'none',
+            }}
+          />
+        )}
+        {navItems.map(({ path, icon, label, prefetch }, index) => (
           <Link
             key={path}
+            ref={(el) => { tabRefs.current[index] = el; }}
             to={path}
             {...intentHandlers(prefetch)}
             onClick={handleNavTap}
@@ -106,11 +171,10 @@ const AppNav: React.FC<{
                 : 'text-text-secondary-light dark:text-text-secondary-dark'
             }`}
           >
-            <div className={`relative flex h-8 w-14 items-center justify-center rounded-full transition-all duration-200 ${
-              isActive(path) ? 'bg-primary shadow-neo-light-convex dark:shadow-neo-dark-convex' : ''
-            }`}>
+            <div className="relative flex h-8 w-14 items-center justify-center">
+              {/* Weiß erst, wenn die Pille ankommt; sonst stünde ein weißes Icon kurz auf hellem Grund. */}
               <span
-                className={`material-symbols-outlined transition-all duration-200 ${isActive(path) ? 'filled text-white' : ''}`}
+                className={`material-symbols-outlined transition-all duration-200 ${isActive(path) ? 'filled text-white delay-150 scale-105' : ''}`}
                 style={{ fontSize: '28px' }}
               >
                 {icon}

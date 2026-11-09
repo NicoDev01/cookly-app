@@ -32,7 +32,9 @@
 .onb-signin.google { background: #fff !important; color: #1f1f1f !important; border: 1px solid #747775 !important; }
 .onb-signin.mail { background: var(--o-sel) !important; }
 .onb-apple { width: 86%; }
-.onb-apple > button { height: 50px; border-radius: 999px; font-weight: 600; font-size: 16px; }
+/* „.onb button { color: inherit }“ würde sonst die weiße Schrift überschreiben (Logo und Text wirkten grau). */
+.onb-apple > button { height: 50px; border-radius: 999px; font-weight: 600 !important; font-size: 16px; background: #000 !important; color: #fff !important; transition: transform .12s; }
+.onb-apple > button:active { transform: scale(.98); }
 .onb-err { font-size: 13px; color: #b42318; text-align: center; }
 .onb :focus-visible { outline: 3px solid var(--o-orange); outline-offset: 2px; }
 

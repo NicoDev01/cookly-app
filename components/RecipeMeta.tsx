@@ -122,7 +122,7 @@ const RecipeMeta: React.FC<RecipeMetaProps> = ({ recipe, selectedPortions, onPor
         <button
           type="button"
           onClick={onStartCooking}
-          className="flex items-center gap-1 whitespace-nowrap transition-colors hover:text-[#111718] dark:hover:text-white"
+          className="flex items-center gap-1 whitespace-nowrap rounded-full border border-solid border-gray-300 px-2.5 py-1 transition active:scale-95 hover:text-[#111718] dark:border-white/25 dark:hover:text-white"
         >
           <ChefHat size={13} strokeWidth={2.25} aria-hidden />
           Kochmodus

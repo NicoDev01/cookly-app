@@ -239,7 +239,7 @@ const RecipeSlideWrapper = ({
   return (
     <div 
       ref={ref} 
-      className={`flex-none w-full h-full min-w-0 relative overflow-y-auto overflow-x-hidden scrollbar-hide overscroll-y-contain ${isActive ? '[content-visibility:visible]' : '[content-visibility:auto]'}`}
+      className={`flex-none w-full h-full min-w-0 relative overflow-y-auto overflow-x-hidden scrollbar-hide overscroll-y-none${isActive ? '[content-visibility:visible]' : '[content-visibility:auto]'}`}
     >
       {children}
     </div>

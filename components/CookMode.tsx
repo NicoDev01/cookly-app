@@ -112,7 +112,7 @@ const CookMode: React.FC<CookModeProps> = ({ title, instructions, ingredients, t
       role="dialog"
       aria-modal="true"
       aria-label={`Kochmodus: ${title}`}
-      className="fixed inset-0 z-[100] flex flex-col bg-white font-display text-[#111718] dark:bg-background-dark dark:text-white"
+      className="fixed inset-0 z-[100] flex flex-col overflow-hidden bg-white font-display text-[#111718] dark:bg-background-dark dark:text-white"
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
       {/* Fortschritt */}
@@ -149,7 +149,7 @@ const CookMode: React.FC<CookModeProps> = ({ title, instructions, ingredients, t
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="relative flex-1 snap-y snap-mandatory overflow-y-auto px-7 scrollbar-hide"
+        className="relative flex-1 snap-y snap-mandatory overflow-y-auto overflow-x-hidden overscroll-none px-6 scrollbar-hide"
         style={{ maskImage: 'linear-gradient(to bottom, transparent, #000 18%, #000 82%, transparent)' }}
       >
         {/* Platz oben und unten, damit auch der erste und letzte Eintrag mittig stehen können */}
@@ -170,21 +170,22 @@ const CookMode: React.FC<CookModeProps> = ({ title, instructions, ingredients, t
                   {cook.ovenHint}
                 </p>
               )}
-              <p className={`text-[27px] font-medium leading-[1.55] tracking-tight ${active ? '' : 'pointer-events-none'}`}>
+              {/* Lange Wörter umbrechen statt über den Rand zu laufen (sonst ließ sich seitlich scrollen). */}
+              <p className={`hyphens-auto break-words text-[22px] font-medium leading-[1.55] tracking-tight [overflow-wrap:anywhere] ${active ? '' : 'pointer-events-none'}`}>
                 {segs.map((seg, i) => {
                   if (seg.kind === 'text') return <React.Fragment key={i}>{seg.text}</React.Fragment>;
                   if (seg.kind === 'ingredient') {
                     return (
                       <React.Fragment key={i}>
                         {seg.amount && <span className="mr-1.5 whitespace-nowrap font-semibold">{seg.amount}</span>}
-                        <span className={`whitespace-nowrap rounded-full px-1.5 ${COLORS[seg.index % COLORS.length]}`}>{seg.text}</span>
+                        <span className={`rounded-full px-1.5 [box-decoration-break:clone] [-webkit-box-decoration-break:clone] ${COLORS[seg.index % COLORS.length]}`}>{seg.text}</span>
                       </React.Fragment>
                     );
                   }
                   if (seg.kind === 'heat') {
                     return (
                       <span key={i} className="whitespace-nowrap font-semibold text-orange-700 dark:text-orange-300">
-                        <Flame size={20} strokeWidth={2.25} className="mr-0.5 inline-block -translate-y-0.5" aria-hidden />
+                        <Flame size={18} strokeWidth={2.25} className="mr-0.5 inline-block -translate-y-0.5" aria-hidden />
                         {seg.text}
                       </span>
                     );
@@ -197,9 +198,9 @@ const CookMode: React.FC<CookModeProps> = ({ title, instructions, ingredients, t
                       type="button"
                       onClick={() => timers.start(timerId, cook.labels[index], index, seg.seconds)}
                       aria-label={running ? `${seg.text}, Timer läuft` : `Timer starten: ${seg.text}`}
-                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 leading-[1.25] align-baseline font-semibold transition-colors active:scale-95 ${running ? 'bg-primary text-[#111718]' : 'bg-primary/25 hover:bg-primary/40'}`}
+                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-solid px-2 leading-[1.25] align-baseline font-bold transition-colors active:scale-95 ${running ? 'border-primary bg-primary text-[#111718]' : 'border-[#111718]/25 hover:bg-black/5 dark:border-white/30 dark:hover:bg-white/10'}`}
                     >
-                      <Timer size={18} strokeWidth={2.25} className="self-center" aria-hidden />
+                      <Timer size={16} strokeWidth={2.5} className="self-center" aria-hidden />
                       {seg.text}
                     </button>
                   );
@@ -215,7 +216,7 @@ const CookMode: React.FC<CookModeProps> = ({ title, instructions, ingredients, t
           onClick={isFinish ? undefined : () => scrollToItem(finishIndex)}
           className={`snap-center py-10 text-center transition-opacity duration-300 ${isFinish ? 'opacity-100' : 'cursor-pointer opacity-20'}`}
         >
-          <p className="text-[34px] font-semibold tracking-tight">Fertig.</p>
+          <p className="text-[30px] font-semibold tracking-tight">Fertig.</p>
           <p className="mt-1 text-xl text-gray-500 dark:text-gray-400">Guten Appetit!</p>
         </section>
         <div className="h-[35dvh]" aria-hidden />
