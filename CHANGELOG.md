@@ -6,7 +6,33 @@
 ---
 
 
-## [1.4.21] - in Vorbereitung
+## [1.5.0] - 09.11.2026 (Build 34)
+
+### ✨ Neue Features
+- **Kochmodus**: Schritte einzeln und groß, Timer direkt aus dem Text (mit Ton, Benachrichtigung
+  und laufend über das Schließen hinaus), Bildschirm bleibt an, Hitze- und Vorheiz-Hinweise,
+  Weitermachen beim zuletzt offenen Schritt.
+- **Portionen umrechnen** auf der Rezeptseite; Mengen werden mitskaliert.
+- **Eine Suche für Rezepte, Kategorien und Zutaten** statt Titelsuche plus Zutatenfilter.
+  Mehrere Wörter grenzen ein, Tippfehler werden toleriert, bei null Treffern nennt die App das
+  Wort, das nirgends vorkommt. Gesucht wird auf dem Server (`recipes.searchPreviews`).
+- **Neues Onboarding** für neue Nutzer, mit Paywall und Rechtslinks.
+
+### 🚀 Verbesserungen
+- Rezeptseite: ruhigere Kopfzeile (Portionen · Quelle · Kochmodus), Bild reicht bis unter die Notch.
+
+### 🔧 Bugfixes
+- Zutaten-Hervorhebung: „Ei“ markiert nicht mehr „einer“ oder „erhitzen“, Beschreibungen wie
+  „rote“ oder „gehackte“ markieren keine fremden Zutaten, Klammer-Notizen werden ignoriert.
+
+### ⚠️ Bekannte Issues
+- Android 14+: Timer-Benachrichtigungen bei gesperrtem Gerät können sich verspäten, solange die
+  App keine genauen Wecker stellen darf.
+
+---
+
+
+## [1.4.21] - veröffentlicht (iOS Build 33)
 
 Erstes Update nach dem App-Store-Launch (iOS 1.4.20 Build 6, live seit 21.10.2026).
 Android springt von 1.4.20 (versionCode 32, Juli) direkt hierher und bekommt damit auch

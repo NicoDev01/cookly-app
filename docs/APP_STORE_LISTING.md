@@ -48,14 +48,15 @@ Speichere Rezepte aus Instagram, TikTok, Websites und Kochbüchern mit einem Tip
 ```
 Fasst das ganze Produkt zusammen. Für echte Neuigkeiten oder Aktionen später austauschen.
 
-### Neuerungen in dieser Version (1.4.21) ✱
+### Neuerungen in dieser Version (1.5.0) ✱
 ```
-• Cookly ist jetzt auch im App Store als deutsche App eingetragen
-• Übersichtlichere Abo-Informationen auf der Pro-Seite
-• Zutaten in der Zubereitung werden zuverlässiger hervorgehoben
-• Kleine Text- und Fehlerkorrekturen
+• Kochmodus: Schritt für Schritt kochen, mit Timern direkt aus dem Rezept. Der Bildschirm bleibt dabei an.
+• Portionen anpassen: Die Zutatenmengen rechnen sich automatisch um.
+• Neue Suche: Findet Rezepte nach Name, Kategorie oder Zutat, auch mehrere zusammen wie „Tomate Feta“.
+• Neuer Einstieg für neue Nutzer
+• Zutaten in der Zubereitung werden genauer hervorgehoben
 ```
-TikTok-Import gehört **nicht** hierher: Er war schon in 1.4.20, der ersten iOS-Version.
+Nur Neues seit 1.4.21 (live seit Oktober 2026, Build 33).
 
 ### Beschreibung ✱
 ```
