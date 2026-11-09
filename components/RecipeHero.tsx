@@ -183,13 +183,12 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
 
   return (
     <div className="flex flex-col w-full bg-white group/hero">
-      {/* Sticky Top Header (Statusbar-Schutz + Navigation) */}
-      <div className="sticky top-0 z-40 w-full">
-        {/* Statusbar- / Notch-Schutz */}
-        <div className="w-full bg-white dark:bg-background-dark h-[env(safe-area-inset-top,0px)]" />
-        
-        {/* Icons - absolut positioniert unter dem weißen Balken, aber sticky mit ihm */}
-        <div className="absolute top-full left-0 right-0 px-4 pt-2 pointer-events-none">
+      {/* Sticky Navigation ohne weißen Notch-Balken: Bild läuft bis ganz oben, Knöpfe bleiben unter der Notch. */}
+      <div className="sticky top-0 z-40 h-0 w-full">
+        <div
+          className="absolute top-0 left-0 right-0 px-4 pointer-events-none"
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+        >
           <div className="flex items-center justify-between pointer-events-auto">
             {/* Back Button */}
             <IconButton

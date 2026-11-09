@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useQuery, useMutation } from "convex/react";
@@ -10,6 +11,10 @@ import RecipeHero from '../components/RecipeHero';
 import RecipeMeta from '../components/RecipeMeta';
 import Ingredients from '../components/Ingredients';
 import Instructions from '../components/Instructions';
+import CookMode from '../components/CookMode';
+import CookTimerPills from '../components/CookTimerPills';
+import { useCookTimers } from '../hooks/useCookTimers';
+import { scaleAmount } from '../utils/scaleAmount';
 import { Recipe } from '../types';
 import { ModalLoader } from '../components/PageLoader';
 import { capture } from '../services/analytics';
@@ -59,6 +64,27 @@ const RecipeSlideContent = React.memo(({
     `recipe-${recipeId}`,
   );
 
+  // Portionen gelten nur für diese Ansicht; null = Rezept-Portionen.
+  const basePortions = Number(recipe?.portions) || 0;
+  const [selectedPortions, setSelectedPortions] = useState<number | null>(null);
+  const portions = selectedPortions ?? basePortions;
+  const factor = basePortions > 0 ? portions / basePortions : 1;
+  const ingredients = recipe?.ingredients;
+  const scaledIngredients = useMemo(
+    () => (ingredients ?? []).map((ing) => ({ ...ing, amount: scaleAmount(ing.amount, factor) })),
+    [ingredients, factor],
+  );
+
+  // Kochmodus: Schritt-Stand und Timer überleben das Schließen.
+  const [isCooking, setIsCooking] = useState(false);
+  const [cookStep, setCookStep] = useState(0);
+  const timers = useCookTimers(recipeId);
+  const openCooking = useCallback((step?: number) => {
+    if (step !== undefined) setCookStep(step);
+    setIsCooking(true);
+  }, []);
+  const closeCooking = useCallback(() => setIsCooking(false), []);
+
   if (!recipe) {
     const hasHeroPreview = !!heroPreview?.image;
     return (
@@ -100,9 +126,15 @@ const RecipeSlideContent = React.memo(({
         onDelete={() => onDelete(recipe._id)}
       />
       <div className="relative z-20 -mt-3 mx-2 mb-2 flex-1 p-6 rounded-3xl glassmorphism bg-white/60 backdrop-blur-xl shadow-neo-light-convex border border-gray-100 md:mx-auto md:max-w-2xl lg:max-w-3xl">
-        <RecipeMeta recipe={recipe} />
+        <RecipeMeta
+          recipe={recipe}
+          selectedPortions={portions}
+          onPortionsChange={setSelectedPortions}
+          onStartCooking={() => openCooking()}
+        />
+        {/* Umgerechnete Mengen; so landet auch im Einkaufszettel die gewählte Menge. */}
         <Ingredients
-          ingredients={recipe.ingredients}
+          ingredients={scaledIngredients}
           highlightedIndex={highlightedIngredientIndex}
           recipeId={recipe._id}
           recipeTitle={recipe.title}
@@ -116,6 +148,40 @@ const RecipeSlideContent = React.memo(({
           }}
         />
       </div>
+      {isCooking && (
+        <CookMode
+          title={recipe.title}
+          instructions={recipe.instructions}
+          ingredients={scaledIngredients}
+          timers={timers}
+          initialStep={cookStep}
+          onStepChange={setCookStep}
+          onClose={closeCooking}
+          onFinish={() => {
+            setIsCooking(false);
+            setCookStep(0);
+            timers.clearDone();
+          }}
+        />
+      )}
+      {/* Laufende Timer bleiben sichtbar, wenn der Kochmodus zu ist. Portal, weil das Karussell
+          transformiert und "fixed" sonst am Slide statt am Bildschirm hängt. */}
+      {!isCooking && timers.timers.length > 0 && createPortal(
+        <div
+          className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-4"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 1rem)' }}
+        >
+          <CookTimerPills
+            className="rounded-full bg-white/90 p-1.5 shadow-lg shadow-black/10 backdrop-blur-xl"
+            timers={timers.timers}
+            now={timers.now}
+            onToggle={timers.toggle}
+            onRemove={timers.remove}
+            onSelect={(t) => openCooking(t.step)}
+          />
+        </div>,
+        document.body,
+      )}
     </main>
   );
 });

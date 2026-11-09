@@ -165,7 +165,8 @@ const AppContent: React.FC = () => {
       (notification: LocalNotificationActionPerformed) => {
         logger.debug('Notifications', 'Notification action performed', notification);
         const extra = notification.notification.extra;
-        if (extra?.recipeId && extra?.type === 'recipe-import') {
+        // recipe-import: fertiger Import; cook-timer: abgelaufener Koch-Timer.
+        if (extra?.recipeId && (extra?.type === 'recipe-import' || extra?.type === 'cook-timer')) {
           logger.debug('Notifications', 'Navigating to recipe', { recipeId: extra.recipeId });
           navigateRef.current(`/recipe/${extra.recipeId}`);
         }
