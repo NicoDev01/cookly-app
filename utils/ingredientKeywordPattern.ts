@@ -94,7 +94,7 @@ const COMPOUND_SUFFIXES = [
   'kerne', 'samen', 'schalen',
 ];
 
-const ALIASES: Record<string, string[]> = {
+export const ALIASES: Record<string, string[]> = {
   tagliatelle: ['nudeln', 'pasta'],
   spaghetti: ['nudeln', 'pasta'],
   penne: ['nudeln', 'pasta'],

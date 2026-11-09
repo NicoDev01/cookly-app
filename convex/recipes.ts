@@ -1,9 +1,10 @@
-import { action, query, mutation, internalMutation, internalQuery } from "./_generated/server";
+import { action, query, mutation, internalMutation, internalQuery, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import { FREE_LIMITS } from "./constants";
 import { storeAnalyticsEvent } from "./analytics";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
+import { searchRecipes } from "../utils/recipeSearch";
 import { stripPollinationsApiKeyFromUrl } from "./pollinationsHelper";
 import { claimRecipeAsset, deleteTrackedAsset } from "./storageAssets";
 import { getAuthenticatedUserId } from "./lib/authUser";
@@ -182,33 +183,66 @@ export const listPreviews = query({
       recipes = recipes.filter(r => r.title.toLowerCase().includes(lowerQuery));
     }
 
-    return await Promise.all(recipes.map(async (r) => {
-      let imageUrl = r.image;
-      if (r.imageStorageId) {
-        const url = await ctx.storage.getUrl(r.imageStorageId);
-        if (url) imageUrl = url;
-      }
+    return await Promise.all(recipes.map((r) => toRecipePreview(ctx, r)));
+  },
+});
 
-      return {
-        _id: r._id,
-        _creationTime: r._creationTime,
-        title: r.title,
-        category: r.category,
-        image: imageUrl,
-        imageAlt: r.imageAlt,
-        imageBlurhash: r.imageBlurhash,
-        imageWidth: r.imageWidth,
-        imageHeight: r.imageHeight,
-        imageAspectRatio: r.imageAspectRatio,
-        sourceImageUrl: r.sourceImageUrl,
-        prepTimeMinutes: r.prepTimeMinutes,
-        difficulty: r.difficulty,
-        portions: r.portions,
-        isFavorite: r.isFavorite,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-      };
-    }));
+async function toRecipePreview(ctx: QueryCtx, r: Doc<"recipes">) {
+  let imageUrl = r.image;
+  if (r.imageStorageId) {
+    const url = await ctx.storage.getUrl(r.imageStorageId);
+    if (url) imageUrl = url;
+  }
+
+  return {
+    _id: r._id,
+    _creationTime: r._creationTime,
+    title: r.title,
+    category: r.category,
+    image: imageUrl,
+    imageAlt: r.imageAlt,
+    imageBlurhash: r.imageBlurhash,
+    imageWidth: r.imageWidth,
+    imageHeight: r.imageHeight,
+    imageAspectRatio: r.imageAspectRatio,
+    sourceImageUrl: r.sourceImageUrl,
+    prepTimeMinutes: r.prepTimeMinutes,
+    difficulty: r.difficulty,
+    portions: r.portions,
+    isFavorite: r.isFavorite,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  };
+}
+
+const SEARCH_RESULT_LIMIT = 50;
+
+// Suche über Titel, Kategorie und Zutaten. Die Zutaten werden nur hier auf dem Server gelesen;
+// zurück gehen kleine Vorschauen plus die Zutaten, über die ein Rezept gefunden wurde.
+// Bewusst ein Durchlauf über die eigenen Rezepte statt Convex-Suchindex: der findet weder
+// "tomate" in "Kirschtomaten" noch Oberbegriffe ("Pasta" → Spaghetti) oder Tippfehler.
+const SEARCH_QUERY_MAX_LENGTH = 100; // gleich wie maxLength im Suchfeld (CategoriesPage)
+
+export const searchPreviews = query({
+  args: { query: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await getAuthenticatedUserId(ctx);
+    const text = args.query.trim().slice(0, SEARCH_QUERY_MAX_LENGTH);
+    const empty = { query: text, recipes: [], total: 0, approximate: false, unmatchedTerms: [] as string[] };
+    if (!text) return empty;
+
+    const recipes = await ctx.db
+      .query("recipes")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    const { hits, approximate, unmatchedTerms } = searchRecipes(recipes, text);
+    const shown = await Promise.all(
+      hits.slice(0, SEARCH_RESULT_LIMIT).map(async ({ recipe, matchedIngredients }) => ({
+        ...(await toRecipePreview(ctx, recipe)),
+        matchedIngredients,
+      })),
+    );
+    return { ...empty, recipes: shown, total: hits.length, approximate, unmatchedTerms };
   },
 });
 

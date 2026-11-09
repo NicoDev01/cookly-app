@@ -50,7 +50,15 @@ test('navigation retains visited views without keeping inactive subscriptions al
 test('category fallback waits for category stats before loading all recipes', () => {
   const categories = read('pages/CategoriesPage.tsx');
 
-  assert.match(categories, /!categoriesLoading && \(!hasCategoriesInDb \|\| isFiltering\)/);
+  assert.match(categories, /!categoriesLoading && !hasCategoriesInDb \? \{\} : "skip"/);
+});
+
+test('search runs on the server and never loads full recipes with ingredients', () => {
+  const categories = read('pages/CategoriesPage.tsx');
+
+  assert.match(categories, /api\.recipes\.searchPreviews/);
+  assert.doesNotMatch(categories, /api\.recipes\.list\b/);
+  assert.doesNotMatch(categories, /includeIngredients/);
 });
 
 test('image prefetching respects mobile data saver and stays bounded', () => {

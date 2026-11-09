@@ -1,7 +1,7 @@
-import React, { useState, startTransition } from 'react';
+import React, { useState } from 'react';
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
-import type { Doc } from "../convex/_generated/dataModel";
+import type { FunctionReturnType } from "convex/server";
 import { Link, useSearchParams } from 'react-router-dom';
 import SafeImage from '../components/SafeImage';
 import EmptyState from '../components/EmptyState';
@@ -22,9 +22,11 @@ interface CategoryListItem {
   recipeImages?: string[];
 }
 
-type RecipeWithIngredients = Doc<"recipes"> & {
-  ingredients?: Array<{ name: string }>;
-};
+type SearchResult = FunctionReturnType<typeof api.recipes.searchPreviews>;
+
+/** Suchbegriff aus der URL; alte Links mit ?ingredients=a,b werden zur Suche "a b". */
+const readSearchParam = (params: URLSearchParams) =>
+  params.get("q") ?? (params.get("ingredients") ?? "").split(",").filter(Boolean).join(" ");
 
 const formatRecipeCount = (count: number) => `${count} ${count === 1 ? 'Rezept' : 'Rezepte'}`;
 
@@ -80,9 +82,11 @@ const CategoryPreviewImage: React.FC<{
 const CategoriesPage: React.FC = () => {
   const { openAddModal } = useModal();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [searchQuery, setSearchQuery] = React.useState("");
-  // PERFORMANCE (QW-5): Debounce auf 300ms erhöht für weniger Query-Aufrufe
-  const [debouncedSearch] = useDebounce(searchQuery, 300);
+  // Suchbegriff steht in der URL (?q=), damit er nach dem Zurück aus einem Rezept noch da ist.
+  const [searchQuery, setSearchQuery] = React.useState(() => readSearchParam(searchParams));
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
+  // PERFORMANCE (QW-5): Debounce, damit nicht jeder Tastendruck eine neue Query startet
+  const [debouncedSearch] = useDebounce(searchQuery.trim(), 300);
   const [categoryImageCache, setCategoryImageCache] = useState<CategoryImageCache>({});
   const [isVisible, setIsVisible] = useState(false); // For fade-in animation
 
@@ -98,45 +102,62 @@ const CategoriesPage: React.FC = () => {
   const categoriesWithStats = useQuery(api.categories.getCategoriesWithStats, {});
   const categoriesLoading = categoriesWithStats === undefined;
 
-  const selectedIngredients = React.useMemo(() => {
-    const raw = searchParams.get("ingredients");
-    return raw ? raw.split(",") : [];
-  }, [searchParams]);
+  // Ergebnisliste sofort weg, wenn das Feld leer ist; sonst Treffer zum entprellten Begriff.
+  const isFiltering = searchQuery.trim().length > 0;
 
-  const setSelectedIngredients = (newIngredients: string[]) => {
+  // URL von außen geändert (Tab erneut angetippt, alter ?ingredients=-Link): Feld übernimmt sie.
+  // Eigene Schreibvorgänge erkennt man daran, dass sie dem entprellten Begriff entsprechen.
+  const urlQuery = readSearchParam(searchParams);
+  const [seenUrlQuery, setSeenUrlQuery] = useState(urlQuery);
+  if (urlQuery !== seenUrlQuery) {
+    setSeenUrlQuery(urlQuery);
+    if (urlQuery !== debouncedSearch) setSearchQuery(urlQuery);
+  }
+
+  // Entprellten Begriff in die URL schreiben (replace: kein Verlaufseintrag pro Wort). Alte ?ingredients= fällt weg.
+  React.useEffect(() => {
     setSearchParams(prev => {
+      if ((prev.get("q") ?? "") === debouncedSearch && !prev.has("ingredients")) return prev;
       const next = new URLSearchParams(prev);
-      if (newIngredients.length > 0) {
-        next.set("ingredients", newIngredients.join(","));
-      } else {
-        next.delete("ingredients");
-      }
+      if (debouncedSearch) next.set("q", debouncedSearch);
+      else next.delete("q");
+      next.delete("ingredients");
       return next;
-    });
+    }, { replace: true });
+  }, [debouncedSearch, setSearchParams]);
+
+  // Titel und Zutaten werden auf dem Server durchsucht; zurück kommen nur Vorschauen.
+  const searchResult = useQuery(
+    api.recipes.searchPreviews,
+    isFiltering && debouncedSearch ? { query: debouncedSearch } : "skip"
+  );
+  // Letzte Treffer stehen lassen, bis die neuen da sind: kein Flackern und kein „nichts gefunden“ beim Tippen.
+  // Feld geleert: alte Treffer vergessen, sonst blitzen sie bei der nächsten Suche kurz auf.
+  const [shownResult, setShownResult] = useState<SearchResult | undefined>(undefined);
+  if (!isFiltering && shownResult !== undefined) setShownResult(undefined);
+  else if (isFiltering && searchResult !== undefined && searchResult !== shownResult) setShownResult(searchResult);
+  const isSearchPending = searchResult === undefined || debouncedSearch !== searchQuery.trim();
+
+  // Für Screenreader: Ergebnis der Suche ansagen, sobald es feststeht.
+  const searchStatus = !isFiltering || isSearchPending || !shownResult
+    ? ""
+    : shownResult.total > 0
+      ? `${formatRecipeCount(shownResult.total)} gefunden${shownResult.approximate ? ", ähnliche Treffer" : ""}`
+      : "Keine Treffer";
+
+  /** Suche ohne ein Wort, das in keinem Rezept vorkommt. */
+  const searchWithout = (term: string) => {
+    if (!shownResult) return;
+    setSearchQuery(shownResult.query.split(/[\s,;]+/).filter((word) => word && word !== term).join(" "));
   };
-
-  const [ingredientInput, setIngredientInput] = React.useState("");
-  const [isFilterOpen, setIsFilterOpen] = React.useState(() => !!searchParams.get("ingredients"));
-
-  const isFiltering = debouncedSearch.length > 0 || selectedIngredients.length > 0;
 
   const stats = categoriesWithStats;
   const hasCategoriesInDb = (stats?.length ?? 0) > 0;
-  const shouldLoadRecipes = !categoriesLoading && (!hasCategoriesInDb || isFiltering);
-  const needsIngredientDetails = isFiltering && selectedIngredients.length > 0;
+  // Nur ohne Kategorie-Statistik: Kategorien aus den Rezept-Vorschauen ableiten.
   const allRecipes = useQuery(
-    needsIngredientDetails ? api.recipes.list : api.recipes.listPreviews,
-    shouldLoadRecipes
-      ? needsIngredientDetails
-        ? { includeIngredients: true, search: debouncedSearch || undefined }
-        : { search: debouncedSearch || undefined }
-      : "skip"
+    api.recipes.listPreviews,
+    !categoriesLoading && !hasCategoriesInDb ? {} : "skip"
   );
-
-  const getColorClass = (index: number) => {
-    const colorIndex = (index % 6) + 1;
-    return `bg-ingredient-${colorIndex}-bg`;
-  };
 
   const getRecipeCount = (category: string) => {
     if (stats) {
@@ -189,34 +210,12 @@ const CategoriesPage: React.FC = () => {
 
   const isEmptyState = !categoriesLoading && !isFiltering && categoriesList.length > 0 && categoriesList[0].count === 0;
 
-  const filteredRecipes = React.useMemo(() => {
-    if (!allRecipes) return [];
-    let result = allRecipes as RecipeWithIngredients[];
-    if (selectedIngredients.length > 0) {
-      result = result.filter(r =>
-        selectedIngredients.every(filterIng =>
-          r.ingredients?.some((rIng) => rIng.name.toLowerCase().includes(filterIng.toLowerCase())) ?? false
-        )
-      );
-    }
-    return result;
-  }, [allRecipes, selectedIngredients]);
+  const filteredRecipes = React.useMemo(() => shownResult?.recipes ?? [], [shownResult]);
+  const filteredIds = React.useMemo(() => filteredRecipes.map((r) => r._id), [filteredRecipes]);
 
-  const filteredIds = React.useMemo(() => {
-    return filteredRecipes.map((r) => r._id);
-  }, [filteredRecipes]);
-
-  const handleAddIngredient = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && ingredientInput.trim()) {
-      if (!selectedIngredients.includes(ingredientInput.trim())) {
-        setSelectedIngredients([...selectedIngredients, ingredientInput.trim()]);
-      }
-      setIngredientInput("");
-    }
-  };
-
-  const removeIngredient = (ing: string) => {
-    setSelectedIngredients(selectedIngredients.filter(i => i !== ing));
+  const clearSearch = () => {
+    setSearchQuery("");
+    searchInputRef.current?.focus();
   };
 
   // Sync Cache mit DB-Bildern wenn stats sich ändert.
@@ -268,99 +267,119 @@ const CategoriesPage: React.FC = () => {
             {/* Search Bar */}
             <div className="px-6 py-2">
               <form
-                onSubmit={(e) => e.preventDefault()}
+                role="search"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  searchInputRef.current?.blur(); // Tastatur schließen, Treffer sind schon da
+                }}
                 className="flex items-stretch rounded-xl h-12 bg-card-light dark:bg-card-dark shadow-neo-light-convex dark:shadow-neo-dark-convex transition-all duration-200 focus-within:bg-primary/10 focus-within:shadow-none focus-within:ring-2 focus-within:ring-primary group"
               >
-                <label htmlFor="global-search" className="sr-only">Rezepte suchen</label>
+                <label htmlFor="global-search" className="sr-only">Rezepte oder Zutaten suchen</label>
                 <div className="text-text-secondary-light dark:text-text-secondary-dark group-focus-within:text-primary flex items-center justify-center pl-4 transition-colors">
                   <span className="material-symbols-outlined">search</span>
                 </div>
                 <input
+                  ref={searchInputRef}
                   id="global-search"
                   name="search"
-                  className="flex-1 bg-transparent border-none outline-none focus:outline-none focus:ring-0 focus:ring-transparent text-black dark:text-white placeholder:text-text-secondary-light dark:placeholder:text-text-secondary-dark px-4 text-base transition-all"
-                  placeholder="Suche nach Rezepten..."
+                  className="min-w-0 flex-1 bg-transparent border-none outline-none focus:outline-none focus:ring-0 focus:ring-transparent text-black dark:text-white placeholder:text-text-secondary-light dark:placeholder:text-text-secondary-dark px-4 text-base transition-all"
+                  placeholder="Rezept oder Zutat suchen"
                   value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value); // Immediate update for input
-                    startTransition(() => {
-                      // Debounced search runs in background via useDebouncedValue
-                    });
-                  }}
-                  autoComplete="on"
-                  autoCorrect="on"
-                  autoCapitalize="sentences"
-                  spellCheck={true}
-                  inputMode="text"
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Escape' && searchQuery) { e.preventDefault(); setSearchQuery(""); } }}
+                  maxLength={100}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  inputMode="search"
+                  enterKeyHint="search"
                 />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={clearSearch}
+                    aria-label="Suche löschen"
+                    className="touch-btn flex items-center justify-center px-3 text-text-secondary-light dark:text-text-secondary-dark hover:text-text-primary-light dark:hover:text-text-primary-dark"
+                  >
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
+                      <span className="material-symbols-outlined !text-base">close</span>
+                    </span>
+                  </button>
+                )}
               </form>
             </div>
 
             {/* Page Title */}
-            <h1 className="text-text-primary-light dark:text-text-primary-dark text-[26px] font-bold px-6 pt-2 pb-2">
-              {isFiltering ? 'Suchergebnisse' : 'Kategorien'}
-            </h1>
-
-            <div className="px-6 py-2">
-              <button
-                onClick={() => setIsFilterOpen(!isFilterOpen)}
-                className={`touch-btn flex items-center gap-2 rounded-xl px-4 py-2.5 transition-colors ${isFilterOpen || selectedIngredients.length > 0 ? 'bg-primary/10 text-primary' : 'text-text-secondary-light dark:text-text-secondary-dark'}`}
-              >
-                <span className="material-symbols-outlined text-xl">filter_list</span>
-                <span className="text-sm font-medium">Filtern nach Zutaten</span>
-              </button>
-
-              {isFilterOpen && (
-                <div className="mt-3 animate-in fade-in slide-in-from-top-2 space-y-3">
-                  <form onSubmit={(e) => { e.preventDefault(); }}>
-                    <label htmlFor="ingredient-filter" className="sr-only">Zutat filtern</label>
-                    <input
-                      id="ingredient-filter"
-                      name="ingredient"
-                      autoFocus
-                      className="w-full bg-card-light dark:bg-card-dark border-0 rounded-xl p-4 text-black dark:text-white shadow-inner focus:ring-2 focus:ring-primary focus:shadow-primary-glow text-base transition-all"
-                      placeholder="Zutat eingeben und Enter drücken..."
-                      value={ingredientInput}
-                      onChange={(e) => setIngredientInput(e.target.value)}
-                      onKeyDown={handleAddIngredient}
-                      autoComplete="on"
-                      autoCorrect="on"
-                      autoCapitalize="sentences"
-                      spellCheck={true}
-                      inputMode="text"
-                    />
-                  </form>
-
-                  {selectedIngredients.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {selectedIngredients.map((ing, idx) => (
-                        <span
-                          key={ing}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${getColorClass(idx)} text-black dark:text-white shadow-sm`}
-                        >
-                          {ing}
-                          <button onClick={() => removeIngredient(ing)} className="touch-btn hover:text-red-500 ml-0.5 p-0.5">
-                            <span className="material-symbols-outlined text-sm">close</span>
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
+            <div className="flex items-baseline justify-between gap-3 px-6 pt-2 pb-2">
+              <h1 className="text-text-primary-light dark:text-text-primary-dark text-[26px] font-bold">
+                {isFiltering ? 'Suchergebnisse' : 'Kategorien'}
+              </h1>
+              {isFiltering && shownResult && shownResult.total > 0 && (
+                <span className={`text-body-sm text-text-secondary-light dark:text-text-secondary-dark transition-opacity ${isSearchPending ? 'opacity-50' : ''}`}>
+                  {formatRecipeCount(shownResult.total)}
+                </span>
               )}
             </div>
+            <p className="sr-only" role="status" aria-live="polite">{searchStatus}</p>
           </>
         )}
 
         <div className="pb-4">
           {isFiltering ? (
-            filteredRecipes.length === 0 ? (
-              <div className="text-center py-12 text-text-secondary-light dark:text-text-secondary-dark">
+            !shownResult ? (
+              <div className="grid grid-cols-1 gap-4 p-6 pb-4" aria-busy="true">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center gap-4 rounded-xl bg-card-light dark:bg-card-dark p-3 animate-pulse">
+                    <div className="h-16 w-16 flex-shrink-0 rounded-lg bg-gray-200 dark:bg-gray-700" />
+                    <div className="flex-grow space-y-2">
+                      <div className="h-4 w-40 bg-gray-200 dark:bg-gray-700 rounded" />
+                      <div className="h-3 w-24 bg-gray-200 dark:bg-gray-700 rounded" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : filteredRecipes.length === 0 ? (
+              <div className={`px-8 py-12 text-center text-text-secondary-light dark:text-text-secondary-dark transition-opacity ${isSearchPending ? 'opacity-50' : ''}`}>
                 <span className="material-symbols-outlined text-5xl mb-3 block opacity-50">search_off</span>
-                Keine Rezepte gefunden.
+                {shownResult.unmatchedTerms.length > 0 ? (
+                  <>
+                    {/* Ein bestimmtes Wort kommt nirgends vor: genau das sagen und anbieten, es wegzulassen. */}
+                    <p className="font-medium text-text-primary-light dark:text-text-primary-dark">
+                      {shownResult.unmatchedTerms.map((term) => `„${term}“`).join(' und ')}{' '}
+                      {shownResult.unmatchedTerms.length === 1 ? 'kommt' : 'kommen'} in keinem deiner Rezepte vor.
+                    </p>
+                    <p className="mt-1 text-body-sm">Gesucht wird in Titeln, Kategorien und Zutaten.</p>
+                    {shownResult.unmatchedTerms.length < shownResult.query.split(/[\s,;]+/).filter(Boolean).length && (
+                      <div className="mt-4 flex flex-wrap justify-center gap-2">
+                        {shownResult.unmatchedTerms.map((term) => (
+                          <button
+                            key={term}
+                            type="button"
+                            onClick={() => searchWithout(term)}
+                            className="touch-btn rounded-full bg-primary/15 px-4 py-2 text-sm font-semibold text-text-primary-light dark:text-text-primary-dark active:scale-95 transition"
+                          >
+                            Ohne „{term}“ suchen
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {/* Jedes Wort gibt es, nur nicht zusammen in einem Rezept. */}
+                    <p className="font-medium text-text-primary-light dark:text-text-primary-dark">Kein Rezept enthält alles davon.</p>
+                    <p className="mt-1 text-body-sm">Jedes Wort muss im selben Rezept vorkommen. Lass eins weg, um mehr zu finden.</p>
+                  </>
+                )}
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-4 p-6 pb-4">
+              <div className={`grid grid-cols-1 gap-4 p-6 pb-4 transition-opacity ${isSearchPending ? 'opacity-60' : ''}`}>
+                {shownResult.approximate && (
+                  <p className="-mt-2 text-body-sm text-text-secondary-light dark:text-text-secondary-dark">
+                    Nichts genau zu „{shownResult.query}“ gefunden. Meintest du eines davon?
+                  </p>
+                )}
                 {filteredRecipes.map((recipe, index) => (
                   <Link
                     key={recipe._id}
@@ -384,17 +403,29 @@ const CategoriesPage: React.FC = () => {
                         </div>
                       )}
                     </div>
-                    <div className="flex-grow">
+                    <div className="min-w-0 flex-grow">
                       <p className="text-body font-bold text-text-primary-light dark:text-text-primary-dark group-hover:text-primary transition-colors">{recipe.title}</p>
-                      <div className="flex gap-2 text-body-sm text-text-secondary-light dark:text-text-secondary-dark">
-                        <span>{recipe.category}</span>
-                        <span>•</span>
-                        <span>{recipe.prepTimeMinutes} Min</span>
+                      <div className="flex min-w-0 gap-2 text-body-sm text-text-secondary-light dark:text-text-secondary-dark">
+                        <span className="shrink-0">{recipe.category}</span>
+                        <span className="shrink-0">•</span>
+                        {/* Über eine Zutat gefunden: zeigen, welche. Sonst wie gewohnt die Zeit. */}
+                        {recipe.matchedIngredients.length > 0 ? (
+                          <span className="truncate">
+                            {recipe.matchedIngredients.length === 1 ? 'Zutat' : 'Zutaten'}: {recipe.matchedIngredients.join(', ')}
+                          </span>
+                        ) : (
+                          <span>{recipe.prepTimeMinutes} Min</span>
+                        )}
                       </div>
                     </div>
                     <span className="material-symbols-outlined text-text-secondary-light dark:text-text-secondary-dark flex-shrink-0 group-hover:translate-x-1 transition-transform">chevron_right</span>
                   </Link>
                 ))}
+                {shownResult.total > filteredRecipes.length && (
+                  <p className="text-center text-body-sm text-text-secondary-light dark:text-text-secondary-dark">
+                    {filteredRecipes.length} von {shownResult.total} angezeigt. Ein weiteres Wort grenzt die Suche ein.
+                  </p>
+                )}
               </div>
             )
           ) : (
