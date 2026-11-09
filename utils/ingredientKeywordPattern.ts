@@ -23,7 +23,8 @@ export const createKeywordPattern = (keyword: string) => {
 const WORD_CHAR = 'a-zA-Z0-9_\\u00C0-\\u00FF';
 // Short keywords like "ei" or "öl" only take inflection endings, so "Ei" no
 // longer swallows "eine" or "Eimasse"; longer ones still cover compounds.
-const SHORT_KEYWORD_SUFFIX = '(?:e|en|er|ern|es|s)?';
+// No "s": "Ei" must not take "Eis".
+const SHORT_KEYWORD_SUFFIX = '(?:e|en|er|ern|es)?';
 const SHORT_KEYWORD_MAX_LENGTH = 3;
 
 export const createIngredientTextPattern = (keywords: string[]) => {
@@ -133,6 +134,24 @@ const ALIASES: Record<string, string[]> = {
   'agar agar': ['agar'],
 };
 
+// Descriptors in multi-word names ("Rote Paprika", "Gehackte Tomaten") only count
+// together with their noun; alone, "rote" or "gehackte" would mark other
+// ingredients ("eine rote Zwiebel", "gehackte Petersilie").
+const DESCRIPTOR_STEMS = new Set([
+  'rot', 'grün', 'gelb', 'weiß', 'schwarz', 'braun', 'bunt', 'hell', 'dunkel',
+  'gehackt', 'geschält', 'gerieben', 'gemahlen', 'getrocknet', 'gehobelt', 'gewürfelt',
+  'geraspelt', 'gestückelt', 'geräuchert', 'geröstet', 'gesalzen', 'ungesalzen',
+  'gekocht', 'gefroren', 'tiefgekühlt', 'passiert', 'stückig', 'gemischt',
+  'frisch', 'fein', 'grob', 'roh', 'reif', 'weich', 'jung', 'alt', 'groß', 'klein',
+  'mittelgroß', 'edelsüß', 'rosenscharf', 'scharf', 'mild', 'süß', 'sauer',
+  'glatt', 'kraus', 'vegan', 'flüssig', 'fettarm', 'halbfett', 'vollfett',
+  'festkochend', 'mehligkochend', 'griechisch', 'italienisch',
+]);
+const isDescriptor = (word: string) => {
+  const lower = word.toLowerCase();
+  return DESCRIPTOR_STEMS.has(lower) || DESCRIPTOR_STEMS.has(lower.replace(/(?:em|en|er|es|e)$/, ''));
+};
+
 export type Keyword = { keyword: string; ingredientIndex: number };
 
 const addKeyword = (map: Map<string, number>, value: string, ingredientIndex: number) => {
@@ -158,6 +177,7 @@ export const buildKeywords = (ingredients: Ingredient[]): Keyword[] => {
     );
 
     for (const word of words) {
+      if (words.length > 1 && isDescriptor(word)) continue;
       const lower = word.toLowerCase();
       addKeyword(keywords, word, ingredientIndex);
       for (const base of BASE_INGREDIENTS) {

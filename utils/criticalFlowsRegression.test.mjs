@@ -96,6 +96,28 @@ test("bracketed notes in ingredient names do not become keywords", () => {
   );
 });
 
+test("descriptors and short words do not mark the wrong ingredient", () => {
+  const names = ["Eier", "Gehackte Tomaten", "Rote Paprika", "Zwiebel", "Petersilie", "Paprikapulver, edelsüß", "Ei"];
+  const ingredients = names.map((name) => ({ name }));
+  const keywords = buildKeywords(ingredients);
+  const pattern = createIngredientTextPattern(keywords.map(({ keyword }) => keyword));
+  const text = "In einer Pfanne Öl erhitzen, einen Löffel einrühren. Eine rote Zwiebel und gehackte Petersilie, "
+    + "dann die gehackten Tomaten und die rote Paprika. Mit Eis servieren, 4 Eier und das Ei dazu.";
+  const hits = [...text.matchAll(pattern)].map((match) => {
+    const keyword = keywords[match.slice(1).findIndex(Boolean)];
+    return `${match[0]}=${names[keyword.ingredientIndex]}`;
+  });
+
+  assert.deepEqual(hits, [
+    "Zwiebel=Zwiebel",
+    "Petersilie=Petersilie",
+    "gehackten Tomaten=Gehackte Tomaten",
+    "rote Paprika=Rote Paprika",
+    "Eier=Eier",
+    "Ei=Ei",
+  ]);
+});
+
 test("adjacent words belonging to one ingredient render as one pill", () => {
   const text = "schwarze Bohnen und rote Zwiebeln";
   const merged = mergeAdjacentIngredientMatches(text, [
