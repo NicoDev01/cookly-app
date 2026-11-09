@@ -56,3 +56,6 @@ stripe_backup_code.txt
 
 # Lokale Reports mit Nutzerdaten (npm run report:users)
 reports/
+
+# Lokale Konkurrenz-Screenshots (groß, nicht fürs Repo)
+docs/competitors/
