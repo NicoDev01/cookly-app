@@ -30,6 +30,7 @@ import type * as instagram from "../instagram.js";
 import type * as integrations from "../integrations.js";
 import type * as legacyImport from "../legacyImport.js";
 import type * as lib_authUser from "../lib/authUser.js";
+import type * as lib_importErrors from "../lib/importErrors.js";
 import type * as lib_remoteImagePolicy from "../lib/remoteImagePolicy.js";
 import type * as lib_socialUrls from "../lib/socialUrls.js";
 import type * as lib_tiktokContent from "../lib/tiktokContent.js";
@@ -84,6 +85,7 @@ declare const fullApi: ApiFromModules<{
   integrations: typeof integrations;
   legacyImport: typeof legacyImport;
   "lib/authUser": typeof lib_authUser;
+  "lib/importErrors": typeof lib_importErrors;
   "lib/remoteImagePolicy": typeof lib_remoteImagePolicy;
   "lib/socialUrls": typeof lib_socialUrls;
   "lib/tiktokContent": typeof lib_tiktokContent;

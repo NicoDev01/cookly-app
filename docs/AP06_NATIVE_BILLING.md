@@ -9,6 +9,10 @@
 | Monats-Package | RevenueCat-Typ `MONTHLY` |
 | Jahres-Package | RevenueCat-Typ `ANNUAL` |
 | Android App ID | `com.cookly.recipe` |
+| Play-Abo / Base Plans (seit 04.11.2026) | `cookly_pro` mit `monthly` (2,99 €) und `yearly` (24,99 €) |
+| RevenueCat-Produkte Android | `cookly_pro:monthly`, `cookly_pro:yearly` |
+
+`npm run build:android` bricht ab, solange die Billing-Flags in `.env.production` fehlen (`scripts/check-android-env.mjs`).
 
 Die konkreten Google-Play-Produkt- und Base-Plan-IDs werden nicht im Client fest verdrahtet. Sie müssen nach der Anlage in Play Console und RevenueCat als kommagetrennte Convex-Variablen gesetzt werden:
 
