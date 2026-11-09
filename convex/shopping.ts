@@ -157,6 +157,73 @@ export const addShoppingItem = mutation({
   },
 });
 
+/** Nur die Rezept-IDs auf der Liste: So weiß der Wochenplan, was schon eingekauft wird, ohne die ganze Liste zu laden. */
+export const getRecipeIdsOnList = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthenticatedUserId(ctx);
+    const items = await ctx.db
+      .query("shoppingItems")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    const ids = new Set<Id<"recipes">>();
+    for (const item of items) {
+      const recipeId = item.recipeId ?? getRecipeIdFromShoppingKey(item.key);
+      if (recipeId) ids.add(recipeId);
+    }
+    return [...ids];
+  },
+});
+
+/**
+ * Wochenplan → Einkaufsliste in einem Schritt. Zutaten liest der Server selbst, der Client lädt sie nie.
+ * Rezepte, von denen schon etwas auf der Liste steht, werden übersprungen (kein Doppeltes beim zweiten Tippen).
+ */
+export const addRecipesToShoppingList = mutation({
+  args: { recipeIds: v.array(v.id("recipes")) },
+  handler: async (ctx, args) => {
+    const userId = await getAuthenticatedUserId(ctx);
+    const items = await ctx.db
+      .query("shoppingItems")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    const existingKeys = new Set(items.map((item) => item.key));
+    const recipesOnList = new Set(items.flatMap((item) => {
+      const recipeId = item.recipeId ?? getRecipeIdFromShoppingKey(item.key);
+      return recipeId ? [recipeId] : [];
+    }));
+
+    let recipesAdded = 0;
+    let itemsAdded = 0;
+    const now = Date.now();
+    for (const recipeId of new Set(args.recipeIds)) {
+      if (recipesOnList.has(recipeId)) continue;
+      const recipe = await assertRecipeAccessible(ctx, recipeId, userId);
+      for (const ingredient of recipe.ingredients) {
+        const name = ingredient.name.trim();
+        if (!name) continue;
+        const key = buildShoppingItemKey(name, recipeId);
+        if (existingKeys.has(key)) continue;
+        existingKeys.add(key);
+        await ctx.db.insert("shoppingItems", {
+          userId,
+          name,
+          normalizedName: name.toLowerCase(),
+          amount: ingredient.amount || undefined,
+          key,
+          checked: false,
+          recipeId,
+          recipeTitle: recipe.title,
+          createdAt: now,
+        });
+        itemsAdded++;
+      }
+      recipesAdded++;
+    }
+    return { recipesAdded, itemsAdded };
+  },
+});
+
 export const toggleShoppingItemByDetails = mutation({
   args: {
     name: v.string(),

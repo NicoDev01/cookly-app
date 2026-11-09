@@ -5,6 +5,8 @@ import { logger } from "../utils/logger";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import ImageWithBlurhash from './ImageWithBlurhash';
+import DayGrid from './weekly/DayGrid';
+import { addDays, toDateString, type WeekSlot } from '../utils/weekPlan';
 
 // Modal modes: selectDay (from recipe detail) or selectRecipes (from weekly page)
 type ModalMode = 'selectDay' | 'selectRecipes';
@@ -26,6 +28,8 @@ interface MealPlanModalProps {
   scope?: 'day' | 'week';
   formattedDate?: string;
   weekStartDate?: Date; // NEW: Pass week start from parent
+  /** selectRecipes: wo ein Rezept in dieser Woche schon steht („Di“, „Ohne Tag“), gegen doppeltes Planen. */
+  plannedLabels?: Record<string, string>;
 }
 
 const MealPlanModal: React.FC<MealPlanModalProps> = ({
@@ -38,6 +42,7 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
   scope,
   formattedDate,
   weekStartDate: weekStartDateProp, // Use parent's week start if provided
+  plannedLabels,
 }) => {
   // Mutations
   const addMeal = useMutation(api.weekly.addMeal);
@@ -121,14 +126,25 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
     setCurrentWeekStart(newStart);
   };
 
-  // selectDay mode: Add recipe to specific day
-  const handleSelectDay = async (selectedDate: Date) => {
+  // selectDay mode: Tage, an denen dieses Rezept schon steht (schlanke Wochen-Query, nur solange das Modal offen ist).
+  const weekStartStr = formatDate(currentWeekStart);
+  const plannedWeek = useQuery(
+    api.weekly.getWeek,
+    isOpen && mode === 'selectDay' && recipeId
+      ? { startDate: weekStartStr, endDate: toDateString(addDays(currentWeekStart, 6)) }
+      : "skip"
+  );
+  const plannedSlots = useMemo<WeekSlot[]>(
+    () => (plannedWeek ?? [])
+      .filter((meal) => meal.recipe._id === recipeId)
+      .map((meal) => ({ date: meal.date, scope: meal.scope ?? 'day' })),
+    [plannedWeek, recipeId]
+  );
+
+  // selectDay mode: Add recipe to a day or to the week without a fixed day
+  const handleSelectSlot = async (slot: WeekSlot) => {
     if (!recipeId) return;
-    await addMeal({
-      recipeId,
-      date: formatDate(selectedDate),
-      scope: scope ?? 'day',
-    });
+    await addMeal({ recipeId, date: slot.date, scope: slot.scope });
     onClose();
   };
 
@@ -189,14 +205,7 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
     };
   }, [isOpen]);
 
-  const getDayName = (d: Date) => d.toLocaleDateString('de-DE', { weekday: 'short' });
   const getFormattedDate = (d: Date) => d.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' });
-  const isToday = (d: Date) => {
-    const today = new Date();
-    return d.getDate() === today.getDate() &&
-      d.getMonth() === today.getMonth() &&
-      d.getFullYear() === today.getFullYear();
-  };
 
   const getWeekNumber = (d: Date) => {
     d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -263,7 +272,8 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
             {mode === 'selectRecipes' ? <div className="w-10" /> : null}
           </div>
 
-          {/* Week Navigation */}
+          {/* Week Navigation: nur beim Einplanen von der Rezeptseite; beim Hinzufügen steht der Tag schon fest. */}
+          {mode === 'selectDay' && (
           <div className="flex items-center justify-between px-2">
             <button
               type="button"
@@ -283,6 +293,7 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
               <span className="material-symbols-outlined text-2xl">chevron_right</span>
             </button>
           </div>
+          )}
 
           {/* Search + Tabs (only for selectRecipes mode) */}
           {mode === 'selectRecipes' && (
@@ -326,39 +337,14 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
 
         {/* Content Area */}
         {mode === 'selectDay' ? (
-          // selectDay mode: Show days list
+          // selectDay mode: dasselbe Tagesraster wie im Wochenplan; Haken = Rezept steht dort schon.
           <div className="flex-1 overflow-y-auto p-4">
-            <div className="grid gap-2 pb-safe-offset">
-              {weekDays.map(date => {
-                const current = isToday(date);
-                return (
-                  <button
-                    type="button"
-                    key={date.toISOString()}
-                    onClick={() => handleSelectDay(date)}
-                    className={`flex items-center justify-between p-4 rounded-xl transition-all ${current
-                      ? 'bg-primary/10 border border-primary/20 shadow-sm'
-                      : 'bg-card-light dark:bg-card-dark hover:bg-gray-50 dark:hover:bg-gray-800'
-                      }`}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${current
-                        ? 'bg-primary text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-text-secondary-light dark:text-text-secondary-dark'
-                        }`}>
-                        {getDayName(date).substring(0, 2)}
-                      </div>
-                      <span className={`text-base font-medium ${current ? 'text-primary' : 'text-text-primary-light dark:text-text-primary-dark'}`}>
-                        {getFormattedDate(date)}
-                      </span>
-                    </div>
-                    <span className={`material-symbols-outlined ${current ? 'text-primary' : 'text-gray-300 dark:text-gray-600'}`}>
-                      add_circle
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            <DayGrid
+              days={weekDays}
+              marked={plannedSlots}
+              todayStr={formatDate(new Date())}
+              onPick={(slot) => void handleSelectSlot(slot)}
+            />
           </div>
         ) : (
           // selectRecipes mode: Show recipes list
@@ -410,6 +396,12 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
                           <span>{recipe.difficulty}</span>
                         </div>
                       </div>
+
+                      {plannedLabels?.[recipe._id] && (
+                        <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[11px] font-semibold text-text-secondary-light dark:bg-white/10 dark:text-text-secondary-dark">
+                          {plannedLabels[recipe._id]}
+                        </span>
+                      )}
 
                       <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-gray-300 dark:border-gray-600'
                         }`}>
