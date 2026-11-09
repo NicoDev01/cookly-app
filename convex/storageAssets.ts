@@ -42,7 +42,10 @@ function maxBytesFor(purpose: AssetPurpose) {
   return purpose === "photo_scan" ? MAX_SCAN_BYTES : MAX_IMAGE_BYTES;
 }
 
-function assertImageMetadata(metadata: { contentType?: string; size?: number } | null, purpose: AssetPurpose) {
+function assertImageMetadata<T extends { contentType?: string; size?: number }>(
+  metadata: T | null,
+  purpose: AssetPurpose,
+): asserts metadata is T & { contentType: string } {
   if (!metadata || !metadata.contentType?.startsWith("image/")) throw new Error("INVALID_STORAGE_ASSET");
   if ((metadata.size ?? 0) > maxBytesFor(purpose)) throw new Error("STORAGE_ASSET_TOO_LARGE");
 }

@@ -416,8 +416,8 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         // WICHTIG: Marker-Wert statt base64 verwenden
         // base64 würde in sanitizeSourceImageUrlForSave ausgefiltert werden
         // Der Marker signalisiert recipes.ts, dass es ein Foto-Scan ist (photo_scans Counter)
-        sourceImageUrl: '__AI_SCAN__',
         ...doc,
+        sourceImageUrl: '__AI_SCAN__',
       }));
       setImageChanged(!!doc.image);
       if (doc.image) {

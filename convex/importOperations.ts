@@ -453,7 +453,7 @@ export const cleanupExpired = internalMutation({
   },
 });
 
-export async function deleteUserImportOperations(ctx: Parameters<typeof insertRecipe>[0], userId: Id<"users">) {
+export async function deleteUserImportOperations(ctx: MutationCtx, userId: Id<"users">) {
   for (const operation of await ctx.db.query("importOperations").withIndex("by_user_operation", (q) => q.eq("userId", userId)).collect()) {
     await ctx.db.delete(operation._id);
   }

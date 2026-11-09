@@ -20,6 +20,7 @@ type RecipeListItem = {
   title: string;
   category: string;
   image?: string;
+  thumbnail?: string;
   imageAlt?: string;
   imageBlurhash?: string;
   imageWidth?: number;
