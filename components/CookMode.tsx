@@ -198,7 +198,7 @@ const CookMode: React.FC<CookModeProps> = ({ title, instructions, ingredients, t
                       type="button"
                       onClick={() => timers.start(timerId, cook.labels[index], index, seg.seconds)}
                       aria-label={running ? `${seg.text}, Timer läuft` : `Timer starten: ${seg.text}`}
-                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-solid px-2 leading-[1.25] align-baseline font-bold transition-colors active:scale-95 ${running ? 'border-primary bg-primary text-[#111718]' : 'border-[#111718]/25 hover:bg-black/5 dark:border-white/30 dark:hover:bg-white/10'}`}
+                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-solid px-2 leading-[1.25] align-baseline font-bold transition-colors active:scale-95 ${running ? 'border-[#111718]/25 bg-gray-100 dark:border-white/30 dark:bg-white/10' : 'border-[#111718]/25 hover:bg-black/5 dark:border-white/30 dark:hover:bg-white/10'}`}
                     >
                       <Timer size={16} strokeWidth={2.5} className="self-center" aria-hidden />
                       {seg.text}

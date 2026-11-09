@@ -27,8 +27,8 @@ const shouldShowNav = (pathname: string): boolean => {
 const PILL_WIDTH = 56;
 const PILL_TOP = 8;
 /** Die führende Kante läuft vor, die hintere zieht nach: so „fließt“ die Pille zum neuen Tab. */
-const PILL_LEAD = '300ms cubic-bezier(0.3, 1.25, 0.6, 1)';
-const PILL_TRAIL = '460ms cubic-bezier(0.45, 0, 0.2, 1) 40ms';
+const PILL_LEAD = '170ms cubic-bezier(0.2, 0.9, 0.3, 1.1)';
+const PILL_TRAIL = '250ms cubic-bezier(0.4, 0, 0.2, 1)';
 
 type PillBox = { left: number; right: number; top: number; movingRight: boolean; animate: boolean };
 
@@ -46,6 +46,8 @@ const AppNav: React.FC<{
   const rowRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<(HTMLAnchorElement | null)[]>([]);
   const [pill, setPill] = useState<PillBox | null>(null);
+  // Getippter Tab: Die Pille läuft sofort los, auch wenn die Seite noch lädt.
+  const [tapped, setTapped] = useState<{ index: number; from: string } | null>(null);
 
   const intentHandlers = (prefetch: () => Promise<unknown>) => ({
     onPointerEnter: () => { void prefetch(); },
@@ -53,7 +55,8 @@ const AppNav: React.FC<{
     onTouchStart: () => { void prefetch(); },
   });
 
-  const handleNavTap = () => {
+  const handleNavTap = (index: number) => {
+    setTapped({ index, from: location.pathname });
     void impact('light');
   };
 
@@ -66,7 +69,8 @@ const AppNav: React.FC<{
     { path: '/tabs/profile', icon: 'person', label: 'Profil', prefetch: prefetchProfilePage },
   ];
 
-  const activeIndex = navItems.findIndex(({ path }) => isActive(path));
+  const routeIndex = navItems.findIndex(({ path }) => isActive(path));
+  const activeIndex = tapped && tapped.from === location.pathname ? tapped.index : routeIndex;
 
   // Pille unter den aktiven Tab legen. offset* statt getBoundingClientRect, weil touch-scale
   // den gedrückten Tab skaliert. Erste Position und Größenänderungen ohne Animation.
@@ -164,9 +168,9 @@ const AppNav: React.FC<{
             ref={(el) => { tabRefs.current[index] = el; }}
             to={path}
             {...intentHandlers(prefetch)}
-            onClick={handleNavTap}
+            onClick={() => handleNavTap(index)}
             className={`touch-scale flex flex-col items-center justify-center gap-0.5 py-2 px-3 min-w-[56px] rounded-xl transition-colors duration-200 ${
-              isActive(path)
+              index === activeIndex
                 ? 'text-text-primary-light dark:text-text-primary-dark'
                 : 'text-text-secondary-light dark:text-text-secondary-dark'
             }`}
@@ -174,13 +178,13 @@ const AppNav: React.FC<{
             <div className="relative flex h-8 w-14 items-center justify-center">
               {/* Weiß erst, wenn die Pille ankommt; sonst stünde ein weißes Icon kurz auf hellem Grund. */}
               <span
-                className={`material-symbols-outlined transition-all duration-200 ${isActive(path) ? 'filled text-white delay-150 scale-105' : ''}`}
+                className={`material-symbols-outlined transition-all duration-150 ${index === activeIndex ? 'filled text-white delay-75 scale-105' : ''}`}
                 style={{ fontSize: '28px' }}
               >
                 {icon}
               </span>
             </div>
-            <p className={`text-[12px] font-bold leading-tight transition-colors duration-200 ${isActive(path) ? 'text-primary' : ''}`}>
+            <p className={`text-[12px] font-bold leading-tight transition-colors duration-200 ${index === activeIndex ? 'text-primary' : ''}`}>
               {label}
             </p>
           </Link>

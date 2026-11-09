@@ -3,6 +3,7 @@
 import React, { useState, useRef } from 'react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { Capacitor } from '@capacitor/core';
+import { LiquidMetalBorder } from '../components/ui/liquid-metal-border';
 import { useQuery, useAction, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import {
@@ -217,7 +218,8 @@ export const ProfilePage: React.FC = () => {
                 {/* Usage Cards - each in its own card */}
                 <div className="bg-card-light dark:bg-card-dark rounded-xl shadow-neo-light-convex p-4">
                   <UsageRow
-                    label="IG / FB / Website Importe"
+                    label="Link-Importe"
+                    hint="Instagram, TikTok, Facebook und Websites"
                     current={linkLimit?.current ?? 0}
                     limit={linkLimit?.limit ?? 0} // Sync with backend
                     icon={Link2}
@@ -225,7 +227,8 @@ export const ProfilePage: React.FC = () => {
                 </div>
                 <div className="bg-card-light dark:bg-card-dark rounded-xl shadow-neo-light-convex p-4">
                   <UsageRow
-                    label="KI Foto-Scan"
+                    label="KI-Foto-Scans"
+                    hint="Kochbuchseiten, Rezeptkarten und Fotos"
                     current={scanLimit?.current ?? 0}
                     limit={scanLimit?.limit ?? 0} // Sync with backend
                     icon={Sparkles}
@@ -239,13 +242,15 @@ export const ProfilePage: React.FC = () => {
                     Werde zum unlimitierten<br/>
                     <span className="text-primary italic">Pro</span> fikoch
                   </p>
-                  <button
-                    onClick={() => navigate('/tabs/subscribe')}
-                    className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-primary text-white font-semibold shadow-neo-light-convex hover:bg-primary-dark transition-all touch-btn"
-                  >
-                    <span className="material-symbols-outlined">auto_awesome</span>
-                    Jetzt upgraden
-                  </button>
+                  <LiquidMetalBorder className="shadow-lg shadow-black/15">
+                    <button
+                      onClick={() => navigate('/tabs/subscribe')}
+                      className="flex items-center justify-center gap-2 px-7 py-3 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-all touch-btn"
+                    >
+                      <span className="material-symbols-outlined">auto_awesome</span>
+                      Jetzt upgraden
+                    </button>
+                  </LiquidMetalBorder>
                 </div>
               </div>
             )}
@@ -404,7 +409,7 @@ export const ProfilePage: React.FC = () => {
 
 // --- Sub-components (Styled) ---
 
-const UsageRow = ({ icon: Icon, label, current, limit }: { icon: LucideIcon, label: string, current: number, limit: number }) => {
+const UsageRow = ({ icon: Icon, label, hint, current, limit }: { icon: LucideIcon, label: string, hint?: string, current: number, limit: number }) => {
   const percentage = limit > 0 ? Math.min((current / limit) * 100, 100) : 0;
   const isFull = percentage >= 100 && limit > 0;
 
@@ -416,7 +421,10 @@ const UsageRow = ({ icon: Icon, label, current, limit }: { icon: LucideIcon, lab
             "w-6 h-6",
             isFull ? "text-destructive" : "text-primary"
           )} />
-          <span className="font-bold text-base text-text-primary-light dark:text-text-primary-dark">{label}</span>
+          <div className="min-w-0">
+            <span className="block font-bold text-base text-text-primary-light dark:text-text-primary-dark">{label}</span>
+            {hint && <span className="block text-xs text-text-secondary-light dark:text-text-secondary-dark">{hint}</span>}
+          </div>
         </div>
         <span className={cn(
             "text-sm font-bold tabular-nums",

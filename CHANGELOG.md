@@ -6,7 +6,7 @@
 ---
 
 
-## [1.5.0] - 09.11.2026 (Build 35)
+## [1.5.0] - 09.11.2026 (Build 36)
 
 ### ✨ Neue Features
 - **Kochmodus**: Schritte einzeln und groß, Timer direkt aus dem Text (mit Ton, Benachrichtigung
@@ -23,11 +23,13 @@
 - Navigationsleiste sitzt tiefer (bis knapp über den Home-Indikator), die Auswahl-Pille fließt zum neuen Tab.
 - Kochmodus: kleinere Schrift, Timer als umrandete Pillen; Kochmodus-Button auf der Rezeptseite umrandet.
 - Bildansicht startet bildschirmfüllend und bleibt beim Zoomen scharf.
+- Profil: Nutzung nennt jetzt alle Quellen (Instagram, TikTok, Facebook, Websites) und was Foto-Scans erfassen; „Jetzt upgraden“ mit animiertem Metallrand.
+- Laufende Timer im Kochmodus grau hinterlegt; Navigationspille reagiert sofort beim Tippen.
 
 ### 🔧 Bugfixes
 - Onboarding: „Mit Apple fortfahren“ wirkte ausgegraut (Schrift wurde dunkel überschrieben).
 - Kochmodus ließ sich seitlich scrollen, lange Wörter liefen über den Rand.
-- Rezeptseite ließ sich oben über das Bild hinaus herunterziehen.
+- Rezeptseite ließ sich oben über das Bild hinaus herunterziehen (in Build 35 noch nicht wirksam).
 - Zutaten-Hervorhebung: „Ei“ markiert nicht mehr „einer“ oder „erhitzen“, Beschreibungen wie
   „rote“ oder „gehackte“ markieren keine fremden Zutaten, Klammer-Notizen werden ignoriert.
 

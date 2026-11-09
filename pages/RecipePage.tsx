@@ -236,10 +236,39 @@ const RecipeSlideWrapper = ({
     }
   }, [isActive]);
 
+  // iOS zieht Scrollbereiche am oberen Rand trotz overscroll-behavior wie eine Website herunter.
+  // Ziehen nach unten bei scrollTop 0 abfangen. iOS lässt touchmove nur abbrechen, bevor das
+  // Scrollen begonnen hat, deshalb ohne Schwelle; überwiegend seitliches Wischen (Karussell) bleibt frei.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let startX = 0;
+    let startY = 0;
+    let lastY = 0;
+    const onStart = (e: TouchEvent) => {
+      startX = e.touches[0].clientX;
+      startY = lastY = e.touches[0].clientY;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const { clientX, clientY } = e.touches[0];
+      const pullingDown = clientY > lastY;
+      lastY = clientY;
+      const vertical = Math.abs(clientY - startY) >= Math.abs(clientX - startX);
+      if (pullingDown && vertical && el.scrollTop <= 0 && e.cancelable) e.preventDefault();
+    };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+    };
+  }, []);
+
   return (
     <div 
       ref={ref} 
-      className={`flex-none w-full h-full min-w-0 relative overflow-y-auto overflow-x-hidden scrollbar-hide overscroll-y-none${isActive ? '[content-visibility:visible]' : '[content-visibility:auto]'}`}
+      className={`flex-none w-full h-full min-w-0 relative overflow-y-auto overflow-x-hidden scrollbar-hide overscroll-y-none ${isActive ? '[content-visibility:visible]' : '[content-visibility:auto]'}`}
     >
       {children}
     </div>
