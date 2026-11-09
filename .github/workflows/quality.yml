@@ -33,7 +33,9 @@ jobs:
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
       - run: npm ci
-      - run: npm run build:android
+      # Wie build:android, aber ohne check-android-env.mjs: Die CI hat keine .env.production mit
+      # Release-Keys und prüft hier nur, dass das Android-Projekt kompiliert und Lint/Tests besteht.
+      - run: npm run fonts:check && npx vite build --mode production && node scripts/sync-android.js
       # android/gradle.properties ist wegen der Signing-Passwörter nicht im Repo; Gradle-Settings
       # daher hier setzen (Default-Heap 512 MiB lässt lintAnalyzeDebug am GC-Thrashing scheitern).
       - working-directory: android
