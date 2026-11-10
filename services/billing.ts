@@ -51,6 +51,13 @@ async function nativePackage(planId: PlanId, billingUserId: string): Promise<Pur
   return selected;
 }
 
+/** RevenueCat meldet den Abbruch als Fehler mit Code "1" (PURCHASE_CANCELLED_ERROR); über Capacitor teils nur in `data`. */
+function isPurchaseCancelled(error: unknown) {
+  const e = error as { code?: unknown; message?: unknown; userCancelled?: unknown; data?: { userCancelled?: unknown; code?: unknown } } | null;
+  return e?.code === "1" || e?.code === 1 || e?.userCancelled === true || e?.data?.userCancelled === true || e?.data?.code === "1" ||
+    (typeof e?.message === "string" && /purchase was cancell?ed/i.test(e.message));
+}
+
 export function createBillingClient(billingUserId: string | undefined, web: WebActions) {
   const native = Capacitor.isNativePlatform();
   const requireBillingUserId = () => {
@@ -88,8 +95,14 @@ export function createBillingClient(billingUserId: string | undefined, web: WebA
 
       const userId = requireBillingUserId();
       const { Purchases } = await nativePurchases(userId);
-      const result = await Purchases.purchasePackage({ aPackage: await nativePackage(planId, userId) });
-      return { active: !!result.customerInfo.entitlements.active.pro };
+      try {
+        const result = await Purchases.purchasePackage({ aPackage: await nativePackage(planId, userId) });
+        return { active: !!result.customerInfo.entitlements.active.pro };
+      } catch (error) {
+        // Abbrechen im Kaufdialog ist kein Fehler: keine Meldung, kein Sentry-Eintrag.
+        if (isPurchaseCancelled(error)) return { active: false };
+        throw error;
+      }
     },
     async manage() {
       if (!native) {

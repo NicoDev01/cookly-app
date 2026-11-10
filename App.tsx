@@ -332,12 +332,16 @@ const App: React.FC = () => {
         } catch (e) {
           logger.warn('Splash', 'LottieSplashScreen.hide() failed', e);
         }
+        splashDone = true;
         logger.debug('Splash', 'Splash hidden - app visible');
       };
 
+      let splashDone = false;
       const fadeTimeout = setTimeout(hideSplash, 300);
 
+      // Nur falls das Ausblenden hängt (z. B. Fonts); lief bisher bei jedem Start und meldete eine Warnung an Sentry.
       const safetyTimeout = setTimeout(async () => {
+        if (splashDone) return;
         logger.warn('Splash', 'Safety timeout triggered - forcing splash hide');
         try { await SplashScreen.hide(); } catch { /* ignore */ }
         try { await LottieSplashScreen.hide(); } catch { /* ignore */ }
