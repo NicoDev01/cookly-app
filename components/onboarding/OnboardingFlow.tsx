@@ -324,11 +324,14 @@ export const OnboardingFlow: React.FC<Props> = ({ steps, initialStep, initialAns
       body = (
         <>
           <Ill src={ONB_IMG.account} h={170} />
-          <div className="onb-q">Erstelle dein Konto</div>
-          <div className="onb-sub" style={{ marginTop: -6 }}>Du startest kostenlos. Im Free-Plan inklusive:</div>
-          <div className="onb-why">
-            <div><span className="onb-ico"><Globe size={16} /></span>{FREE_LIMITS.LINK_IMPORTS} Importe aus Social Media & Web</div>
-            <div><span className="onb-ico"><Camera size={16} /></span>{FREE_LIMITS.PHOTO_SCANS} Rezepte per Foto</div>
+          <div className="onb-q">Erstelle dein kostenloses Konto</div>
+          <div className="onb-free">
+            <div className="hd">Kostenlos inklusive</div>
+            <ul>
+              <li><span><b>{FREE_LIMITS.LINK_IMPORTS}</b> Importe aus Social Media & Web</span></li>
+              <li><span><b>{FREE_LIMITS.PHOTO_SCANS}</b> Rezepte per Foto</span></li>
+              <li><span><b>Unbegrenzt</b> eigene Rezepte anlegen</span></li>
+            </ul>
           </div>
           {authError && <div className="onb-err">{authError}</div>}
         </>

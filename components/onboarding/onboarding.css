@@ -49,8 +49,12 @@
 .onb-input:focus { outline: none; border-color: var(--o-cta); }
 .onb-swap { display: grid; flex: 1; }
 .onb-swap > div { grid-area: 1 / 1; display: flex; flex-direction: column; gap: 16px; padding-top: clamp(8px, 9vh, 96px); transition: opacity .35s ease, transform .45s ease; }
-/* Bei offener Tastatur ist wenig Platz: Bild schrumpft zeitgleich, damit das Namensfeld über den Buttons bleibt. */
-html.keyboard-open .onb-swap .onb-ill img { height: 96px !important; transition: height var(--keyboard-transition); }
+/* Bei offener Tastatur ist kein Platz für das Bild: Es klappt zeitgleich mit der Tastatur weg,
+   Frage und Feld rücken nach oben, damit die mitwandernden Buttons nie das Feld überdecken. */
+.onb-swap .onb-ill img { transition: height var(--keyboard-transition), opacity var(--keyboard-transition); }
+.onb-swap > div { transition: opacity .35s ease, transform .45s ease, padding-top var(--keyboard-transition); }
+html.keyboard-open .onb-swap > div { padding-top: 4px; gap: 12px; }
+html.keyboard-open .onb-swap .onb-ill img { height: 0 !important; opacity: 0; }
 .onb-swap .greet { opacity: 0; transform: translateY(10px); pointer-events: none; }
 .onb-swap.done .ask { opacity: 0; transform: translateY(-10px); pointer-events: none; }
 .onb-swap.done .greet { opacity: 1; transform: none; pointer-events: auto; transition-delay: .25s; }
@@ -67,6 +71,14 @@ html.keyboard-open .onb-swap .onb-ill img { height: 96px !important; transition:
 .onb-ico { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; flex: none; color: var(--o-cta); background: var(--o-sel); }
 .onb-opt[aria-pressed="true"], .onb-tile[aria-pressed="true"], .onb-plan[aria-pressed="true"] { border-color: var(--o-cta) !important; background: var(--o-sel) !important; }
 .onb-opt[aria-pressed="true"] .onb-ico { background: #fff; }
+
+/* Konto: was kostenlos dabei ist */
+.onb-free { background: var(--o-surface); border-radius: 18px; padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 10px; }
+.onb-free .hd { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--o-cta); }
+.onb-free ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.onb-free li { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 500; }
+.onb-free li::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--o-cta); }
+.onb-free b { font-weight: 800; }
 
 /* Bereit */
 .onb-ready { display: flex; flex-direction: column; gap: 18px; padding-top: clamp(8px, 6vh, 64px); }

@@ -14,7 +14,7 @@ const Pill: React.FC<{ c: number; children: React.ReactNode; delay?: number }> =
   <span className={`pl c${c}`} style={delay === undefined ? undefined : { transitionDelay: `${delay}s` }}>{children}</span>
 );
 
-const INTRO_MS = 2600;
+const INTRO_MS = 1500;
 
 /** Animierte Schleife des echten Import-Ablaufs: Reel teilen → Cookly wählen → Import → Rezept. */
 export const ImportDemo: React.FC = () => {
