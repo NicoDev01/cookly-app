@@ -32,11 +32,14 @@ async function nativePurchases(billingUserId: string) {
   });
   setupQueue = setup;
   await setup;
-  return Purchases;
+  // Nie das Plugin selbst aus einer async-Funktion zurückgeben: Der Capacitor-Proxy beantwortet jede
+  // Eigenschaft, auch `then`. Das Promise hielt ihn für ein Thenable und löste nie auf, der Kauf hing
+  // endlos auf "Wird vorbereitet" ("Purchases.then()" is not implemented on ios).
+  return { Purchases };
 }
 
 async function nativePackage(planId: PlanId, billingUserId: string): Promise<PurchasesPackage> {
-  const Purchases = await nativePurchases(billingUserId);
+  const { Purchases } = await nativePurchases(billingUserId);
   // Ohne Timeout bleibt die Paywall bei Store-Konfigurationsfehlern endlos auf "Wird vorbereitet".
   const offerings = await Promise.race([
     Purchases.getOfferings(),
@@ -84,7 +87,7 @@ export function createBillingClient(billingUserId: string | undefined, web: WebA
       }
 
       const userId = requireBillingUserId();
-      const Purchases = await nativePurchases(userId);
+      const { Purchases } = await nativePurchases(userId);
       const result = await Purchases.purchasePackage({ aPackage: await nativePackage(planId, userId) });
       return { active: !!result.customerInfo.entitlements.active.pro };
     },
@@ -94,13 +97,13 @@ export function createBillingClient(billingUserId: string | undefined, web: WebA
         return result.portalUrl ?? undefined;
       }
 
-      const Purchases = await nativePurchases(requireBillingUserId());
+      const { Purchases } = await nativePurchases(requireBillingUserId());
       const { customerInfo } = await Purchases.getCustomerInfo();
       if (!customerInfo.managementURL) throw new Error("STORE_SUBSCRIPTION_NOT_FOUND");
       await Browser.open({ url: customerInfo.managementURL });
     },
     async restore() {
-      const Purchases = await nativePurchases(requireBillingUserId());
+      const { Purchases } = await nativePurchases(requireBillingUserId());
       const { customerInfo } = await Purchases.restorePurchases();
       return !!customerInfo.entitlements.active.pro;
     },
