@@ -15,6 +15,7 @@ import { registerBackButtonOverride } from '../../services/backButtonOverride';
 import { ImportDemo } from './ImportDemo';
 import { OnboardingPaywall } from './OnboardingPaywall';
 import { ONB_IMG, type OnboardingAnswers } from './onboardingData';
+import { FREE_LIMITS } from '../../convex/constants';
 import './onboarding.css';
 
 export type StepId = 'start' | 'name' | 'sources' | 'demo' | 'goals' | 'referral' | 'setup' | 'account' | 'push' | 'paywall';
@@ -223,7 +224,7 @@ export const OnboardingFlow: React.FC<Props> = ({ steps, initialStep, initialAns
             <div className="onb-q">Wie dürfen wir dich nennen?</div>
             <input
               className="onb-input"
-              placeholder="Dein Vorname"
+              placeholder="Dein Name"
               autoComplete="given-name"
               enterKeyHint="next"
               maxLength={40}
@@ -313,7 +314,7 @@ export const OnboardingFlow: React.FC<Props> = ({ steps, initialStep, initialAns
           <div className="onb-why">
             <div><span className="onb-ico"><BookOpen size={16} /></span>Kochbücher anlegen</div>
             <div><span className="onb-ico"><Globe size={16} /></span>Rezepte aus Social Media & Web importieren</div>
-            <div><span className="onb-ico"><Camera size={16} /></span>Rezeptfotos digitalisieren</div>
+            <div><span className="onb-ico"><Camera size={16} /></span>Dein Lieblingskochbuch per Foto digitalisieren</div>
           </div>
         </div>
       );
@@ -323,8 +324,12 @@ export const OnboardingFlow: React.FC<Props> = ({ steps, initialStep, initialAns
       body = (
         <>
           <Ill src={ONB_IMG.account} h={170} />
-          <div className="onb-q">Dein Kochbuch ist bereit{nameSuffix}.</div>
-          <div className="onb-sub" style={{ marginTop: -6 }}>Sichere es und starte kostenlos. Inklusive 60 Importen aus Social Media & Web und 60 Rezepten per Foto.</div>
+          <div className="onb-q">Erstelle dein Konto</div>
+          <div className="onb-sub" style={{ marginTop: -6 }}>Du startest kostenlos. Im Free-Plan inklusive:</div>
+          <div className="onb-why">
+            <div><span className="onb-ico"><Globe size={16} /></span>{FREE_LIMITS.LINK_IMPORTS} Importe aus Social Media & Web</div>
+            <div><span className="onb-ico"><Camera size={16} /></span>{FREE_LIMITS.PHOTO_SCANS} Rezepte per Foto</div>
+          </div>
           {authError && <div className="onb-err">{authError}</div>}
         </>
       );

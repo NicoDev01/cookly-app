@@ -2,7 +2,7 @@
 .onb {
   --o-bg: #edf3ee; --o-surface: #fff; --o-ink: #15241b; --o-muted: #56665c; --o-cta: #2f5d46;
   --o-cta-off: #a9c2b3; --o-line: #d3e0d6; --o-orange: #e8873a; --o-sel: #e2ede5;
-  position: fixed; inset: 0; display: flex; flex-direction: column; overflow: hidden;
+  position: fixed; inset: 0; bottom: var(--keyboard-height); transition: bottom var(--keyboard-transition); display: flex; flex-direction: column; overflow: hidden;
   background: var(--o-bg); color: var(--o-ink);
   padding: var(--safe-area-inset-top) var(--safe-area-inset-right) var(--safe-area-inset-bottom) var(--safe-area-inset-left);
   -webkit-tap-highlight-color: transparent;
@@ -49,8 +49,8 @@
 .onb-input:focus { outline: none; border-color: var(--o-cta); }
 .onb-swap { display: grid; flex: 1; }
 .onb-swap > div { grid-area: 1 / 1; display: flex; flex-direction: column; gap: 16px; padding-top: clamp(8px, 9vh, 96px); transition: opacity .35s ease, transform .45s ease; }
-/* Bei offener Tastatur ist zu wenig Platz: Bild ausblenden, damit das Namensfeld über den Buttons bleibt. */
-html.keyboard-open .onb-swap .onb-ill { display: none; }
+/* Bei offener Tastatur ist wenig Platz: Bild schrumpft zeitgleich, damit das Namensfeld über den Buttons bleibt. */
+html.keyboard-open .onb-swap .onb-ill img { height: 96px !important; transition: height var(--keyboard-transition); }
 .onb-swap .greet { opacity: 0; transform: translateY(10px); pointer-events: none; }
 .onb-swap.done .ask { opacity: 0; transform: translateY(-10px); pointer-events: none; }
 .onb-swap.done .greet { opacity: 1; transform: none; pointer-events: auto; transition-delay: .25s; }
