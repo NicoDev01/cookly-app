@@ -454,8 +454,8 @@ const WeeklyPlanView: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Navigation + Platz für den runden „+ Rezept“-Knopf und die schwebende Leiste darüber. */}
-      <div style={{ height: 'calc(var(--nav-height) + var(--safe-area-inset-bottom, 0px) + 8rem)' }} className="w-full shrink-0" />
+      {/* Navigation + Platz für den runden „+ Rezept“-Knopf (56 px + 8 px Abstand); mehr wirkt, als scrolle die Liste über ihr Ende hinaus. */}
+      <div style={{ height: 'calc(var(--nav-height) + var(--safe-area-inset-bottom, 0px) + 4.5rem)' }} className="w-full shrink-0" />
 
       {selecting && (
         <FloatingBar>

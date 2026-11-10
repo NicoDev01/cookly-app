@@ -9,6 +9,7 @@ import { prefetchCategoryRecipesPage, prefetchRecipePage } from '../prefetch';
 import { useDebounce } from 'use-debounce';
 import { useModal } from '../contexts/ModalContext';
 import { getCategoryPreviewImages } from '../utils/categoryPreviewImages';
+import { inputClass, inputIcon, inputShell } from '../components/ui/tabStyles';
 
 
 interface CategoryImageCache {
@@ -272,17 +273,15 @@ const CategoriesPage: React.FC = () => {
                   e.preventDefault();
                   searchInputRef.current?.blur(); // Tastatur schließen, Treffer sind schon da
                 }}
-                className="flex items-stretch rounded-xl h-12 bg-card-light dark:bg-card-dark shadow-neo-light-convex dark:shadow-neo-dark-convex transition-all duration-200 focus-within:bg-primary/10 focus-within:shadow-none focus-within:ring-2 focus-within:ring-primary group"
+                className={`${inputShell} pl-4`}
               >
                 <label htmlFor="global-search" className="sr-only">Rezepte oder Zutaten suchen</label>
-                <div className="text-text-secondary-light dark:text-text-secondary-dark group-focus-within:text-primary flex items-center justify-center pl-4 transition-colors">
-                  <span className="material-symbols-outlined">search</span>
-                </div>
+                <span className={inputIcon}>search</span>
                 <input
                   ref={searchInputRef}
                   id="global-search"
                   name="search"
-                  className="min-w-0 flex-1 bg-transparent border-none outline-none focus:outline-none focus:ring-0 focus:ring-transparent text-black dark:text-white placeholder:text-text-secondary-light dark:placeholder:text-text-secondary-dark px-4 text-base transition-all"
+                  className={inputClass}
                   placeholder="Rezept oder Zutat suchen"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -300,7 +299,7 @@ const CategoriesPage: React.FC = () => {
                     type="button"
                     onClick={clearSearch}
                     aria-label="Suche löschen"
-                    className="touch-btn flex items-center justify-center px-3 text-text-secondary-light dark:text-text-secondary-dark hover:text-text-primary-light dark:hover:text-text-primary-dark"
+                    className="touch-btn flex h-full items-center justify-center px-1.5 text-text-secondary-light dark:text-text-secondary-dark hover:text-text-primary-light dark:hover:text-text-primary-dark"
                   >
                     <span className="flex h-6 w-6 items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
                       <span className="material-symbols-outlined !text-base">close</span>

@@ -4,7 +4,8 @@ import type { Id } from '../../convex/_generated/dataModel';
 import ImageWithBlurhash from '../ImageWithBlurhash';
 import FloatingBar from '../ui/FloatingBar';
 import BottomSheet from '../weekly/BottomSheet';
-import { iconButton, inputClass, inputShell, sheetButton } from '../ui/tabStyles';
+import { iconButton, inputClass, inputIcon, inputShell, sheetButton } from '../ui/tabStyles';
+import { ONB_IMG } from '../onboarding/onboardingData';
 import { useLongPress } from '../../hooks/useLongPress';
 import { useHaptic } from '../../hooks/useHaptic';
 import { prefetchRecipePage } from '../../prefetch';
@@ -315,10 +316,8 @@ const FavoritesView: React.FC<Props> = ({
         </div>
       ) : list.length === 0 ? (
         <div className="flex flex-col items-center px-8 pt-16 text-center animate-in fade-in">
-          <span className="flex h-20 w-20 items-center justify-center rounded-full bg-ingredient-3-bg shadow-neomorphism-pill dark:shadow-dark-neomorphism-pill">
-            <span className="material-symbols-outlined filled text-4xl text-red-500">favorite</span>
-          </span>
-          <h2 className="mt-5 text-xl font-bold text-text-primary-light dark:text-text-primary-dark">Noch keine Favoriten</h2>
+          <img src={ONB_IMG.nice} alt="" className="h-40 w-auto object-contain" />
+          <h2 className="mt-4 text-xl font-bold text-text-primary-light dark:text-text-primary-dark">Noch keine Favoriten</h2>
           <p className="mt-2 max-w-xs text-[15px] text-text-secondary-light dark:text-text-secondary-dark">
             Tippe bei einem Rezept auf das Herz. Deine Lieblingsrezepte findest du dann hier.
           </p>
@@ -331,7 +330,7 @@ const FavoritesView: React.FC<Props> = ({
           {list.length >= SEARCH_FROM && (
             <div className="px-6">
               <div className={`${inputShell} pl-4`}>
-                <span className="material-symbols-outlined text-[22px] text-text-secondary-light dark:text-text-secondary-dark">search</span>
+                <span className={inputIcon}>search</span>
                 <input
                   type="search"
                   value={query}
