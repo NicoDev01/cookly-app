@@ -236,6 +236,9 @@ export default defineSchema({
     resultRecipeId: v.optional(v.id("recipes")),
     resultDraft: v.optional(v.any()),
     errorCode: v.optional(v.string()),
+    // Fortschritt für die Import-Seite: Beitrag geladen, Rezept wird erkannt; Bild schon zeigbar.
+    phase: v.optional(v.literal("extracting")),
+    previewImageUrl: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
     expiresAt: v.number(),

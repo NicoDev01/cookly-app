@@ -103,6 +103,6 @@ export const scrapePost = action({
 });
 
 export const scrapePostInternal = internalAction({
-  args: { userId: v.id("users"), url: v.string() },
+  args: { userId: v.id("users"), url: v.string(), operationId: v.optional(v.string()) },
   handler: (ctx, args) => runSocialImport(ctx, instagramPlatform, args),
 });

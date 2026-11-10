@@ -271,6 +271,8 @@ export const get = query({
       resultRecipeId: operation.resultRecipeId,
       resultDraft: operation.resultDraft,
       errorCode: operation.errorCode,
+      phase: operation.phase,
+      previewImageUrl: operation.previewImageUrl,
       updatedAt: operation.updatedAt,
     };
   },
@@ -286,6 +288,19 @@ export const markRunning = internalMutation({
     const now = Date.now();
     await ctx.db.patch(operation._id, { status: "running", updatedAt: now, expiresAt: now + ACTIVE_TTL_MS });
     return operation;
+  },
+});
+
+/** Beitrag ist geladen, Gemini startet: Phase und Vorschaubild für die Import-Seite. */
+export const markExtracting = internalMutation({
+  args: { userId: v.id("users"), operationId: v.string(), previewImageUrl: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const operation = await ctx.db.query("importOperations")
+      .withIndex("by_user_operation", (q) => q.eq("userId", args.userId).eq("operationId", args.operationId))
+      .unique();
+    if (!operation || operation.status !== "running") return;
+    const previewImageUrl = args.previewImageUrl && /^https:\/\//i.test(args.previewImageUrl) ? args.previewImageUrl : undefined;
+    await ctx.db.patch(operation._id, { phase: "extracting", previewImageUrl, updatedAt: Date.now() });
   },
 });
 
@@ -440,7 +455,7 @@ export const runImport = internalAction({
       } as const;
       const target = linkImporters[operation.provider as keyof typeof linkImporters]
         ?? internal.website.scrapeWebsiteInternal;
-      const result = await ctx.runAction(target, { userId: args.userId, url: operation.sourceUrl! });
+      const result = await ctx.runAction(target, { userId: args.userId, url: operation.sourceUrl!, operationId: args.operationId });
       await ctx.runMutation(internal.importOperations.completeLink, { ...args, ...result });
     } catch (error) {
       await ctx.runMutation(internal.importOperations.fail, { ...args, errorCode: importErrorCode(error) });

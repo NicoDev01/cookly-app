@@ -2,7 +2,7 @@
 import { action, internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import type { SocialImportResult } from "./socialImport";
+import { reportExtractingPhase, type SocialImportResult } from "./socialImport";
 import { v } from "convex/values";
 import { GoogleGenAI } from "@google/genai";
 import { GEMINI_MODELS, RECIPE_CATEGORIES } from "./constants";
@@ -97,7 +97,7 @@ export const scrapeWebsite = action({
 });
 
 export const scrapeWebsiteInternal = internalAction({
-    args: { userId: v.id("users"), url: v.string() },
+    args: { userId: v.id("users"), url: v.string(), operationId: v.optional(v.string()) },
     handler: async (ctx, args): Promise<SocialImportResult> => {
         const timer = createImportTimer("website", { url: args.url });
         if (!JINA_API_KEY) throw new Error("JINA_API_KEY is missing in Convex Environment Variables");
@@ -183,6 +183,7 @@ export const scrapeWebsiteInternal = internalAction({
 
             console.log(`Extracted content. Title: "${pageTitle}", Image: "${pageImageUrl ? 'found' : 'missing'}", Markdown length: ${markdown.length} chars`);
             timer.mark("jina_extracted", { markdownLength: markdown.length, hasPageImage: !!pageImageUrl });
+            await reportExtractingPhase(ctx, args, pageImageUrl);
 
         } catch (jinaError) {
             console.error("Jina AI error:", jinaError);

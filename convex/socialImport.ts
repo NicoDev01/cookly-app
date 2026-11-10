@@ -245,10 +245,31 @@ async function extractRecipeWithGemini(
  * Gemeinsame Import-Pipeline für alle Social-Plattformen:
  * URL normalisieren → Dedupe → Apify (mit optionalen Folgeversuchen) → Gemini → Payload.
  */
+/**
+ * Meldet der Import-Seite „Beitrag geladen, Rezept wird erkannt“ samt Vorschaubild.
+ * Nur Anzeige: Ein Fehler hier darf den Import nicht abbrechen.
+ */
+export async function reportExtractingPhase(
+  ctx: ActionCtx,
+  args: { userId: Id<"users">; operationId?: string },
+  previewImageUrl?: string,
+) {
+  if (!args.operationId) return;
+  try {
+    await ctx.runMutation(internal.importOperations.markExtracting, {
+      userId: args.userId,
+      operationId: args.operationId,
+      previewImageUrl: previewImageUrl || undefined,
+    });
+  } catch (error) {
+    console.warn("import phase update failed", error instanceof Error ? error.message : String(error));
+  }
+}
+
 export async function runSocialImport(
   ctx: ActionCtx,
   platform: SocialPlatform,
-  args: { userId: Id<"users">; url: string },
+  args: { userId: Id<"users">; url: string; operationId?: string },
 ): Promise<SocialImportResult> {
   const timer = createImportTimer(platform.id, { url: args.url });
 
@@ -372,6 +393,7 @@ export async function runSocialImport(
   if (!geminiInputText) {
     throw noRecipeContentError(`${platform.label} lieferte keinen Text für die Rezept-Extraktion.`);
   }
+  await reportExtractingPhase(ctx, args, candidate.imageUrl);
 
   let recipeData: RecipeData;
   try {
