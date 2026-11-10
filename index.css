@@ -283,12 +283,9 @@
     scroll-margin-top: 100px;
   }
 
-  /* iOS keyboard push prevention */
-  @supports (-webkit-touch-callout: none) {
-    input:focus,
-    textarea:focus {
-      transform: translateZ(0);
-    }
+  /* iOS: Bei offener Tastatur keine Tab-Leiste (Klasse setzt App.tsx über @capacitor/keyboard). */
+  html.keyboard-open .app-nav {
+    display: none;
   }
 }
 

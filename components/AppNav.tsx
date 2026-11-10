@@ -122,7 +122,7 @@ const AppNav: React.FC<{
 
   return (
     <div
-      className="fixed bottom-0 left-0 right-0 z-50 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-lg border-t border-t-black/5 dark:border-t-white/5"
+      className="app-nav fixed bottom-0 left-0 right-0 z-50 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-lg border-t border-t-black/5 dark:border-t-white/5"
       style={{
         // Bis knapp über den Home-Indikator (iOS-Tab-Leisten machen das genauso); ohne Inset 8px.
         paddingBottom: 'max(calc(var(--safe-area-inset-bottom, 0px) - 14px), 8px)',
