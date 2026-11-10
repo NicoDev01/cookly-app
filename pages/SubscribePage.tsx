@@ -24,18 +24,14 @@ import { capture } from "@/services/analytics";
 import { showsExternalPaymentBranding } from "@/utils/paymentBranding";
 import ExternalLink from "@/components/ExternalLink";
 import { LEGAL_LINKS } from "@/utils/legalLinks";
+import { ONB_IMG } from "@/components/onboarding/onboardingData";
+import { FREE_LIMITS } from "@/convex/constants";
 
-const PRO_FEATURES_MONTHLY = [
-  "Unlimitierte Rezepte speichern",
-  "Unlimitierte KI-Scans & Foto-Uploads",
-  "Unlimitierte Rezepte von URLs importieren",
-  "Jederzeit kündbar",
-];
-
-const PRO_FEATURES_YEARLY = [
-  "Alle Pro-Funktionen",
-  "Priorisierter Support",
-  "Frühzeitiger Zugriff auf neue Updates",
+/** Was Pro wirklich freischaltet: Free hat nur Kontingente für Importe und Scans. */
+const PRO_FEATURES = [
+  { label: "Unbegrenzt Rezepte importieren", hint: "Instagram, TikTok, Facebook und Websites" },
+  { label: "Unbegrenzt Rezepte scannen", hint: "Kochbuchseiten, Rezeptkarten und Fotos" },
+  { label: "Jederzeit kündbar" },
 ];
 
 export default function SubscribePage() {
@@ -50,9 +46,10 @@ export default function SubscribePage() {
   const createPortal = useAction(api.stripe.createPortalSession);
   const ensureBillingUserId = useMutation(api.users.ensureBillingUserId);
   const [loading, setLoading] = useState<string | null>(null);
-  const [isYearly, setIsYearly] = useState(false);
+  const [pickedYearly, setIsYearly] = useState(false);
   const [billingNotice, setBillingNotice] = useState<string | null>(null);
   const [nativePrices, setNativePrices] = useState<Partial<Record<"pro_monthly" | "pro_yearly", string>>>({});
+  const [nativeSavings, setNativeSavings] = useState<number | null>(null);
   const { showToast } = useNotification();
   const billing = useMemo(() => createBillingClient(currentUser?.billingUserId, {
     checkout: createCheckout,
@@ -70,10 +67,16 @@ export default function SubscribePage() {
 
   React.useEffect(() => {
     if (billing.provider !== "store" || !billing.available || !currentUser?.billingUserId) return;
-    void billing.prices().then((prices) => prices && setNativePrices(prices)).catch(() => undefined);
+    void billing.prices().then((prices) => {
+      if (!prices) return;
+      setNativePrices(prices);
+      setNativeSavings(prices.yearlySavingsPercent);
+    }).catch(() => undefined);
   }, [billing, currentUser?.billingUserId]);
 
   const { isLoadingUser, isPro } = getSubscriptionViewState(currentUser);
+  // Pro-Nutzer sehen ihren Plan statt der Auswahl.
+  const isYearly = isPro ? currentUser?.subscription === "pro_yearly" : pickedYearly;
   const nativeBillingUnavailable = billing.provider === "store" && !billing.available;
   const nativeBillingMessage = "In-App-Kauf ist in dieser App-Version noch nicht verfügbar.";
 
@@ -147,10 +150,24 @@ export default function SubscribePage() {
     selectedPlan?.billingLabel ??
     (isYearly ? "Jährliche Abrechnung (Gesamt 24,99 €)" : "Monatliche Abrechnung (Gesamt 35,88 €/Jahr)");
 
+  // Ersparnis des Jahresabos: im Store aus den Store-Preisen, sonst aus dem Stripe-Pricing.
+  const yearlySavings = billing.provider === "store"
+    ? nativeSavings
+    : pricing ? Math.floor((1 - pricing.pro_yearly.unitAmount / (pricing.pro_monthly.unitAmount * 12)) * 100) : null;
+  const endDate = currentUser?.usageStats?.subscriptionEndDate
+    ? new Date(currentUser.usageStats.subscriptionEndDate).toLocaleDateString("de-DE")
+    : null;
+  const paymentFailed = currentUser?.subscriptionStatus === "past_due";
+  const proStatus = paymentFailed
+    ? "Zahlung fehlgeschlagen"
+    : !endDate
+      ? null
+      : currentUser?.usageStats?.resetOnDowngrade
+        ? `Gekündigt, aktiv bis ${endDate}`
+        : `Verlängert sich am ${endDate}`;
+
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans pb-20">
-      {/* Wave Background Decorative Element */}
-      <div className="absolute inset-0 -z-10 h-full w-full bg-white dark:bg-slate-950 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)]"></div>
+    <div className="min-h-screen bg-muted text-foreground font-sans pb-20">
 
       <div className="container mx-auto px-4 pb-8" style={{ paddingTop: 'calc(var(--safe-area-inset-top, 0px) + 1rem)' }}>
         {/* Header */}
@@ -167,16 +184,22 @@ export default function SubscribePage() {
 
         {/* Hero Section */}
         <div className="text-center mb-16 space-y-4">
+          <img src={ONB_IMG.pro} alt="" className="mx-auto h-24 w-auto" />
           <h1 className="text-4xl md:text-6xl font-bold tracking-tight">
             Koche wie ein <span className="text-primary italic">Profi</span>
           </h1>
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-            Schalte das volle Potenzial von Cookly frei. Unbegrenzte Rezepte, KI-Power und nahtlose Planung.
+            {isPro ? "Importe und Rezept-Scans sind für dich unbegrenzt." : "Importiere und scanne Rezepte ohne Limit."}
           </p>
+          {!isPro && (
+            <p className="text-sm text-muted-foreground">
+              Free: {FREE_LIMITS.LINK_IMPORTS} Importe und {FREE_LIMITS.PHOTO_SCANS} Rezept-Scans
+            </p>
+          )}
         </div>
 
         {/* Premium Plan Selector Buttons */}
-        <div className="flex items-center justify-center gap-4 mb-20 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        {!isPro && <div className="flex items-center justify-center gap-4 mb-20 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <Button
             onClick={() => setIsYearly(false)}
             variant={!isYearly ? "default" : "outline"}
@@ -196,18 +219,17 @@ export default function SubscribePage() {
             )}
           >
             Jährlich
+            {!!yearlySavings && yearlySavings > 0 && (
+              <span className={cn("ml-1 rounded-full px-2 py-0.5 text-[11px] font-bold", isYearly ? "bg-white/25 text-white" : "bg-primary/15 text-primary")}>
+                −{yearlySavings} %
+              </span>
+            )}
           </Button>
-        </div>
+        </div>}
 
         {/* Single Pro Pricing Card */}
         <div className="max-w-xl mx-auto">
           <Card className="flex flex-col border-2 border-primary bg-primary/5 backdrop-blur-sm shadow-2xl shadow-primary/10 relative overflow-hidden group">
-            {/* Ribbon/Banner fixed */}
-            {!isYearly && (
-              <div className="absolute top-6 -right-12 px-14 py-1.5 bg-primary text-primary-foreground text-[10px] font-bold uppercase tracking-widest transform rotate-45 z-10">
-                Empfohlen
-              </div>
-            )}
             
             <CardHeader className="pb-8">
               <CardTitle className="text-2xl font-bold flex items-center gap-2">
@@ -225,6 +247,11 @@ export default function SubscribePage() {
                   <p className="text-sm font-medium mt-2 text-primary">
                     {billingLabel}
                   </p>
+                  {isPro && proStatus && (
+                    <p className={cn("mt-3 text-sm font-semibold", paymentFailed ? "text-destructive" : "text-foreground")}>
+                      {proStatus}
+                    </p>
+                  )}
                   {nativeBillingUnavailable && (
                     <p className="mt-4 rounded-xl border border-primary/20 bg-background/70 p-3 text-sm text-muted-foreground">
                       {nativeBillingMessage}
@@ -241,10 +268,13 @@ export default function SubscribePage() {
             <CardContent className="flex-grow">
               <Separator className="mb-8 bg-primary/20" />
               <ul className="space-y-4">
-                {(isYearly ? [...PRO_FEATURES_MONTHLY, ...PRO_FEATURES_YEARLY] : PRO_FEATURES_MONTHLY).map((feature, i) => (
-                  <li key={i} className="flex items-start gap-3 text-base group-hover:translate-x-1 transition-transform">
+                {PRO_FEATURES.map((feature) => (
+                  <li key={feature.label} className="flex items-start gap-3 text-base group-hover:translate-x-1 transition-transform">
                     <CheckCircle2 className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-                    <span className="font-medium">{feature}</span>
+                    <span>
+                      <span className="block font-medium">{feature.label}</span>
+                      {feature.hint && <span className="block text-sm text-muted-foreground">{feature.hint}</span>}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -306,31 +336,27 @@ export default function SubscribePage() {
 
         {/* Footer Info */}
         <div className="mt-20 text-center max-w-2xl mx-auto space-y-6">
-          <div className="flex items-center justify-center gap-8 mb-4">
+          <div className="flex items-start justify-center gap-4 mb-4">
             <div className="flex flex-col items-center gap-1 opacity-50 grayscale hover:grayscale-0 transition-all">
               <span className="material-symbols-outlined text-4xl">lock</span>
-              <span className="text-[10px] font-bold uppercase tracking-widest">Sicher</span>
+              <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wider">Sicher</span>
             </div>
             <div className="flex flex-col items-center gap-1 opacity-50 grayscale hover:grayscale-0 transition-all">
               <span className="material-symbols-outlined text-4xl">payments</span>
-              <span className="text-[10px] font-bold uppercase tracking-widest">
+              <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wider">
                 {showsExternalPaymentBranding ? "Stripe" : "Store Billing"}
               </span>
-            </div>
-            <div className="flex flex-col items-center gap-1 opacity-50 grayscale hover:grayscale-0 transition-all">
-              <span className="material-symbols-outlined text-4xl">verified</span>
-              <span className="text-[10px] font-bold uppercase tracking-widest">Garantie</span>
             </div>
             {showsExternalPaymentBranding && (
               <div className="flex flex-col items-center gap-1 opacity-50 grayscale hover:grayscale-0 transition-all">
                 <span className="material-symbols-outlined text-4xl">account_balance_wallet</span>
-                <span className="text-[10px] font-bold uppercase tracking-widest">PayPal</span>
+                <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wider">PayPal</span>
               </div>
             )}
             {showsExternalPaymentBranding && (
               <div className="flex flex-col items-center gap-1 opacity-50 grayscale hover:grayscale-0 transition-all">
                 <span className="material-symbols-outlined text-4xl">contactless</span>
-                <span className="text-[10px] font-bold uppercase tracking-widest">Google Pay</span>
+                <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wider">Google Pay</span>
               </div>
             )}
           </div>
