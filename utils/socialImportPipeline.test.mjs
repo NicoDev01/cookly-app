@@ -34,10 +34,10 @@ import {
 } from "../convex/socialImportShared.ts";
 
 // Muss zu SCRAPE_PHASE_BUDGET_MS in convex/socialImport.ts passen.
-const SCRAPE_PHASE_BUDGET_MS = 85_000;
+const SCRAPE_PHASE_BUDGET_MS = 95_000;
 
 test("ein Folgeversuch startet nur, wenn er ins Client-Timeout passt", () => {
-  // waitForImport pollt 120 s. Sprengt die Scraping-Phase das, sieht der Nutzer einen
+  // waitForImport pollt 150 s. Sprengt die Scraping-Phase das, sieht der Nutzer einen
   // Timeout, obwohl der Server das Rezept noch schreibt.
   const transcriptionTimeout = 45_000;
 
@@ -45,11 +45,11 @@ test("ein Folgeversuch startet nur, wenn er ins Client-Timeout passt", () => {
   assert.ok(hasBudgetForAttempt(27_000, transcriptionTimeout, SCRAPE_PHASE_BUDGET_MS));
 
   // Erstversuch lief in sein Timeout -> zweiter Versuch wird übersprungen statt zu überziehen.
-  assert.equal(hasBudgetForAttempt(50_000, transcriptionTimeout, SCRAPE_PHASE_BUDGET_MS), false);
+  assert.equal(hasBudgetForAttempt(60_000, transcriptionTimeout, SCRAPE_PHASE_BUDGET_MS), false);
 
   // Genau auf der Grenze ist noch erlaubt.
-  assert.ok(hasBudgetForAttempt(40_000, 45_000, SCRAPE_PHASE_BUDGET_MS));
-  assert.equal(hasBudgetForAttempt(40_001, 45_000, SCRAPE_PHASE_BUDGET_MS), false);
+  assert.ok(hasBudgetForAttempt(50_000, 45_000, SCRAPE_PHASE_BUDGET_MS));
+  assert.equal(hasBudgetForAttempt(50_001, 45_000, SCRAPE_PHASE_BUDGET_MS), false);
 });
 
 // --- TikTok-URLs -----------------------------------------------------------

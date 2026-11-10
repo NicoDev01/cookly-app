@@ -296,6 +296,12 @@ export const completeLink = internalMutation({
     recipeId: v.optional(v.id("recipes")),
     staleRecipeId: v.optional(v.id("recipes")),
     payload: v.optional(v.any()),
+    scrapeStats: v.optional(v.object({
+      scrapeMs: v.number(),
+      attemptsStarted: v.number(),
+      hedged: v.boolean(),
+      winner: v.optional(v.string()),
+    })),
   },
   handler: async (ctx, args) => {
     const operation = await ctx.db.query("importOperations")
@@ -352,7 +358,16 @@ export const completeLink = internalMutation({
       lifecycleStage: "engaged",
       updatedAt: now,
     });
-    await trackImport(ctx, user, operation, "import_succeeded", { recipeId: String(recipeId), recipeCreated: !args.recipeId });
+    await trackImport(ctx, user, operation, "import_succeeded", {
+      recipeId: String(recipeId),
+      recipeCreated: !args.recipeId,
+      ...(args.scrapeStats && {
+        scrapeMs: args.scrapeStats.scrapeMs,
+        attemptCount: args.scrapeStats.attemptsStarted,
+        hedged: args.scrapeStats.hedged,
+        winner: args.scrapeStats.winner,
+      }),
+    });
     await ctx.scheduler.runAfter(0, internal.remoteImages.proxyImportedImage, {
       userId: args.userId,
       recipeId,

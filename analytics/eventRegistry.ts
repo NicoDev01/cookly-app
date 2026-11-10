@@ -50,7 +50,7 @@ export const ALLOWED_EVENT_PROPERTIES = [
   "sourcePlatform", "stage", "errorCode", "retryCount", "hasThumbnail",
   "captionLengthBucket", "recipeCreated", "cacheHit", "networkType", "operation",
   "feature", "current", "limit", "success", "variant", "placement", "channel",
-  "scope", "expected",
+  "scope", "expected", "scrapeMs", "attemptCount", "hedged", "winner",
 ] as const;
 
 export const EVENT_REGISTRY = Object.fromEntries(

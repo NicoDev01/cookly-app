@@ -139,13 +139,14 @@ test('Android manifest disallows cleartext traffic and legacy storage permission
 });
 
 test('Apify tokens are sent through Authorization headers, not query strings', () => {
-  // Der Actor-Aufruf liegt zentral in socialImport.ts; die Plattform-Adapter dürfen den Token nie selbst in URLs setzen.
-  const engine = read('convex/socialImport.ts');
-  assert.match(engine, /Authorization: `Bearer \$\{APIFY_TOKEN\}`/, 'convex/socialImport.ts must use bearer auth');
+  // Der Actor-Aufruf liegt zentral in convex/lib/apifyRun.ts; die Plattform-Adapter dürfen den Token nie selbst in URLs setzen.
+  const runner = read('convex/lib/apifyRun.ts');
+  assert.match(runner, /Authorization: `Bearer \$\{options\.token\}`/, 'convex/lib/apifyRun.ts must use bearer auth');
+  assert.doesNotMatch(runner, /[?&]token=/, 'convex/lib/apifyRun.ts must not put the token in URLs');
 
   for (const file of ['convex/socialImport.ts', 'convex/instagram.ts', 'convex/facebook.ts', 'convex/tiktok.ts']) {
     const source = read(file);
-    assert.doesNotMatch(source, /[?&]token=\$\{APIFY_TOKEN\}/, `${file} must not put APIFY_TOKEN in URLs`);
+    assert.doesNotMatch(source, /[?&]token=\$\{(APIFY_TOKEN|apifyToken)\}/, `${file} must not put APIFY_TOKEN in URLs`);
   }
 });
 

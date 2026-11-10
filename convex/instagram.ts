@@ -14,10 +14,12 @@ import { runSocialImport, type ApifyAttempt, type SocialPlatform } from "./socia
 
 const POST_ACTOR = "apify~instagram-scraper";
 const REEL_ACTOR = "apify~instagram-reel-scraper";
-// Apify-Läufe dauern real 5–17 s (Okt. 2026); ein Abbruch verwirft bereits bezahlte Ergebnisse.
-// 30 s + 25 s bleiben im SCRAPE_PHASE_BUDGET_MS von 85 s.
-const PRIMARY_TIMEOUT_MS = 30_000;
-const FALLBACK_TIMEOUT_MS = 25_000;
+// Apify-Läufe dauern real p50 8–24 s, p90 39–42 s, Ausreißer bis 77 s (Nov. 2026). Ein Abbruch
+// verwirft bereits bezahlte Ergebnisse, daher lange Obergrenzen (gedeckelt durch
+// SCRAPE_PHASE_BUDGET_MS) und nach HEDGE_AFTER_MS ein paralleler Zweitversuch mit dem anderen Actor.
+const PRIMARY_TIMEOUT_MS = 90_000;
+const FALLBACK_TIMEOUT_MS = 80_000;
+const HEDGE_AFTER_MS = 15_000;
 const REDIRECT_TIMEOUT_MS = 4_500;
 const MIN_CAPTION_LENGTH = 12;
 
@@ -80,7 +82,13 @@ export const instagramPlatform: SocialPlatform = {
     const isReel = url.includes("/reel/");
     const [primary, fallback] = isReel ? [REEL_ACTOR, POST_ACTOR] : [POST_ACTOR, REEL_ACTOR];
     return [
-      { label: "primary", actor: primary, input: actorInput(primary, url), timeoutMs: PRIMARY_TIMEOUT_MS },
+      {
+        label: "primary",
+        actor: primary,
+        input: actorInput(primary, url),
+        timeoutMs: PRIMARY_TIMEOUT_MS,
+        hedgeAfterMs: HEDGE_AFTER_MS,
+      },
       { label: "fallback", actor: fallback, input: actorInput(fallback, url), timeoutMs: FALLBACK_TIMEOUT_MS },
     ];
   },

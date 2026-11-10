@@ -15,8 +15,10 @@ import { runSocialImport, type ApifyAttempt, type SocialPlatform } from "./socia
 
 const POSTS_ACTOR = "apify~facebook-posts-scraper";
 const REELS_ACTOR = "apify~facebook-reels-scraper";
-const PRIMARY_TIMEOUT_MS = 15_000;
-const FALLBACK_TIMEOUT_MS = 6_000;
+// Obergrenzen, keine Erwartungswerte: Apify-Läufe laufen asynchron bis zum Ende; ein früher
+// Abbruch würde bereits bezahlte Ergebnisse verwerfen (Instagram-Befund Nov. 2026).
+const PRIMARY_TIMEOUT_MS = 60_000;
+const FALLBACK_TIMEOUT_MS = 30_000;
 const REDIRECT_TIMEOUT_MS = 2_500;
 const MIN_CAPTION_LENGTH = 40;
 const MAX_GEMINI_INPUT_CHARS = 10_000;

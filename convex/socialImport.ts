@@ -23,6 +23,8 @@ import {
   type ScrapedCandidate,
 } from "./socialImportShared";
 import { isRetryableGeminiError, runWithGeminiModelFallback } from "../utils/geminiRetry";
+import { runApifyActorUntilDone } from "./lib/apifyRun";
+import { runAttemptPlan } from "./lib/attemptPlan";
 
 const GEMINI_RETRY_DELAYS_MS = [1_500, 4_000] as const;
 
@@ -30,15 +32,17 @@ const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
 /**
+ * Obergrenze für die gesamte Scraping-Phase (alle Actor-Versuche zusammen). Danach bleiben
+ * innerhalb des 150-s-Client-Budgets noch ~55 s für Untertitel, Gemini und die Convex-Writes.
+ */
+const SCRAPE_PHASE_BUDGET_MS = 95_000;
+/** Kürzer lohnt kein Actor-Start mehr (Apify braucht selbst im besten Fall einige Sekunden). */
+const MIN_ATTEMPT_MS = 5_000;
+
+/**
  * Apify meldet fachliche Probleme (privat, gelöscht, gesperrt) nicht als HTTP-Fehler,
  * sondern als Dataset-Item mit `errorCode`. Diese hier sind für den Nutzer erklärbar.
  */
-/**
- * Obergrenze für die gesamte Scraping-Phase (alle Actor-Versuche zusammen). Danach bleiben
- * innerhalb des 120-s-Client-Budgets noch ~35 s für Untertitel, Gemini und die Convex-Writes.
- */
-const SCRAPE_PHASE_BUDGET_MS = 85_000;
-
 const UNAVAILABLE_POST_ERROR_CODES = new Set([
   "POST_NOT_FOUND_OR_PRIVATE",
   "POST_SENSITIVE",
@@ -52,6 +56,20 @@ export type ApifyAttempt = {
   actor: string;
   input: Record<string, unknown>;
   timeoutMs: number;
+  /**
+   * Ist dieser Versuch nach so vielen ms nicht fertig, startet der nächste parallel; der erste
+   * brauchbare gewinnt, der andere Lauf wird abgebrochen. Nur für Versuche, deren Folgeversuch
+   * nicht vom Ergebnis abhängt (`shouldRetry` = "kein Kandidat").
+   */
+  hedgeAfterMs?: number;
+};
+
+/** Messwerte der Scraping-Phase für Analytics (keine personenbezogenen Daten). */
+export type ScrapeStats = {
+  scrapeMs: number;
+  attemptsStarted: number;
+  hedged: boolean;
+  winner?: string;
 };
 
 export type SocialPlatform = {
@@ -88,7 +106,7 @@ export type SocialPlatform = {
 
 export type SocialImportResult =
   | { recipeId: Id<"recipes"> }
-  | { staleRecipeId?: Id<"recipes">; payload: Record<string, unknown> };
+  | { staleRecipeId?: Id<"recipes">; payload: Record<string, unknown>; scrapeStats?: ScrapeStats };
 
 const toStructuredError = (payload: Record<string, unknown>): Error => new Error(JSON.stringify(payload));
 
@@ -120,33 +138,6 @@ const serviceUnavailableError = (label: string, prefillUrl: string) =>
     prefillUrl,
     message: `Der ${label}-Service ist gerade nicht verfügbar. Bitte versuche es gleich erneut.`,
   });
-
-export async function runApifyActor(
-  actor: string,
-  input: Record<string, unknown>,
-  timeoutMs: number,
-): Promise<unknown[]> {
-  const response = await fetch(`https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${APIFY_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(input),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Apify ${actor} failed: ${response.status} ${response.statusText}`);
-  }
-
-  const items = await response.json();
-  if (!Array.isArray(items)) {
-    throw new Error(`Apify ${actor} returned non-array dataset items`);
-  }
-
-  return items;
-}
 
 function pickBestCandidate(
   platform: SocialPlatform,
@@ -200,7 +191,7 @@ async function extractRecipeWithGemini(
 ): Promise<RecipeData> {
   const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
 
-  // Kurze Wartezeiten: Scraping kann bereits bis zu 85 s des 120-s-Budgets verbraucht haben.
+  // Kurze Wartezeiten: Scraping kann bereits bis zu 95 s des 150-s-Budgets verbraucht haben.
   const generate = (prompt: string) =>
     runWithGeminiModelFallback(GEMINI_MODELS.recipeTextExtraction, (model) =>
       ai.models.generateContent({
@@ -261,7 +252,8 @@ export async function runSocialImport(
 ): Promise<SocialImportResult> {
   const timer = createImportTimer(platform.id, { url: args.url });
 
-  if (!APIFY_TOKEN) throw new Error("APIFY_API_TOKEN is missing in Convex Environment Variables");
+  const apifyToken = APIFY_TOKEN;
+  if (!apifyToken) throw new Error("APIFY_API_TOKEN is missing in Convex Environment Variables");
   if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY is missing in Convex Environment Variables");
   timer.mark("env_checked");
 
@@ -289,58 +281,73 @@ export async function runSocialImport(
   }
   timer.mark("dedupe_miss");
 
-  // --- Apify: Versuche nacheinander, bis das Ergebnis ausreicht ------------
+  // --- Apify: Versuche nacheinander (oder abgesichert parallel), bis das Ergebnis reicht --
   const context = { url: normalizedUrl, targetKey };
   const attempts = platform.attempts(context);
-  const candidates: ScrapedCandidate[] = [];
+  const shouldRetry = platform.shouldRetry ?? ((candidate: ScrapedCandidate | null) => !candidate);
   let lastError: unknown = null;
   let unavailableCode: string | null = null;
 
   const scrapeStartedAt = Date.now();
+  const scrapeDeadline = scrapeStartedAt + SCRAPE_PHASE_BUDGET_MS;
 
-  for (const [index, attempt] of attempts.entries()) {
-    const best = candidates.length > 0 ? candidates[candidates.length - 1] : null;
-    if (index > 0) {
-      if (!(platform.shouldRetry ?? ((candidate) => !candidate))(best, context)) break;
-
-      const elapsedMs = Date.now() - scrapeStartedAt;
-      if (!hasBudgetForAttempt(elapsedMs, attempt.timeoutMs, SCRAPE_PHASE_BUDGET_MS)) {
-        timer.mark("apify_attempt_skipped_no_budget", { attempt: attempt.label, elapsedMs });
-        break;
-      }
-    }
-
+  const runAttempt = async (attempt: ApifyAttempt, signal: AbortSignal): Promise<ScrapedCandidate | null> => {
+    const startedAt = Date.now();
     try {
-      const items = await runApifyActor(attempt.actor, attempt.input, attempt.timeoutMs);
+      const items = await runApifyActorUntilDone(attempt.actor, attempt.input, {
+        token: apifyToken,
+        deadlineAt: Math.min(startedAt + attempt.timeoutMs, scrapeDeadline),
+        signal,
+      });
       const errorCode = extractApifyErrorCode(items);
-      if (errorCode && UNAVAILABLE_POST_ERROR_CODES.has(errorCode)) {
-        unavailableCode = errorCode;
-      }
+      if (errorCode && UNAVAILABLE_POST_ERROR_CODES.has(errorCode)) unavailableCode = errorCode;
 
       const candidate = pickBestCandidate(platform, items, normalizedUrl, targetKey);
       if (candidate && platform.collectExtraTexts) {
         candidate.extraTexts = await platform.collectExtraTexts(candidate.post);
       }
-      if (candidate) candidates.push(candidate);
-
       timer.mark(`apify_${attempt.label}_done`, {
         actor: attempt.actor,
+        durationMs: Date.now() - startedAt,
         itemsCount: items.length,
         providerErrorCode: errorCode ?? undefined,
         bestScore: candidate?.score ?? 0,
         bestCaptionLength: candidate?.caption.length ?? 0,
         extraTextCount: candidate?.extraTexts.length ?? 0,
       });
+      return candidate;
     } catch (error) {
-      lastError = error;
+      if (!signal.aborted) lastError = error;
       timer.mark(`apify_${attempt.label}_done`, {
         actor: attempt.actor,
+        durationMs: Date.now() - startedAt,
         error: error instanceof Error ? error.message : String(error),
       });
+      return null;
     }
-  }
+  };
 
-  const candidate = selectBestCandidate(candidates);
+  const plan = await runAttemptPlan(attempts, {
+    run: runAttempt,
+    shouldRetry: (best) => shouldRetry(best, context),
+    canStart: (attempt) => {
+      const elapsedMs = Date.now() - scrapeStartedAt;
+      const ok = hasBudgetForAttempt(elapsedMs, attempt.timeoutMs, SCRAPE_PHASE_BUDGET_MS);
+      if (!ok) timer.mark("apify_attempt_skipped_no_budget", { attempt: attempt.label, elapsedMs });
+      return ok;
+    },
+    canHedge: () => scrapeDeadline - Date.now() >= MIN_ATTEMPT_MS,
+    onHedge: (attempt) => timer.mark("apify_hedge_started", { attempt: attempt.label }),
+  });
+  const stats: ScrapeStats = {
+    scrapeMs: Date.now() - scrapeStartedAt,
+    attemptsStarted: plan.attemptsStarted,
+    hedged: plan.hedged,
+    winner: plan.winner?.label,
+  };
+  timer.mark("apify_phase_done", { ...stats });
+
+  const candidate = selectBestCandidate(plan.candidates);
   if (!candidate) {
     if (unavailableCode) throw postUnavailableError(platform.label, unavailableCode);
     if (lastError) throw serviceUnavailableError(platform.label, normalizedUrl);
@@ -397,6 +404,7 @@ export async function runSocialImport(
 
   return {
     staleRecipeId: staleExistingId ?? undefined,
+    scrapeStats: stats,
     payload: {
       title: recipeData.title,
       category: recipeData.category,

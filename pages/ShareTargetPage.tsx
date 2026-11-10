@@ -12,7 +12,9 @@ import { logger } from '../utils/logger';
 import { registerBackButtonOverride } from '../services/backButtonOverride';
 import { getStructuredUserError, getUserErrorMessage } from '../utils/userErrors';
 import { createPhaseSequencer, type ShareTargetPhase } from '../utils/shareTargetPhases';
-import { waitForImport } from '../utils/importOperationClient';
+import { shouldAutoRetryImport, waitForImport } from '../utils/importOperationClient';
+import { useModal } from '../contexts/ModalContext';
+import { capture } from '../services/analytics';
 import { createUuid } from '../utils/uuid';
 import { detectImportTarget, type ImportProvider } from '../utils/importTarget';
 
@@ -21,13 +23,27 @@ type LimitFeature = 'manual_recipes' | 'link_imports' | 'photo_scans';
 const isLimitFeature = (feature: unknown): feature is LimitFeature =>
     feature === 'manual_recipes' || feature === 'link_imports' || feature === 'photo_scans';
 
+/** Ab hier ist ein Import spürbar langsam (Instagram p50 ≈ 11 s, Nov. 2026). */
+const SLOW_NOTICE_AFTER_MS = 15_000;
+
+const PROVIDER_LABELS: Record<ImportProvider, string> = {
+    instagram: 'Instagram',
+    facebook: 'Facebook',
+    tiktok: 'TikTok',
+    website: 'Die Webseite',
+};
+
 const ShareTargetPage: React.FC = () => {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const convex = useConvex();
     const startImport = useMutation(api.importOperations.startImport);
+    const { openAddModal } = useModal();
     const [status, setStatus] = useState<'idle' | 'analyzing' | 'success' | 'error'>('idle');
     const [error, setError] = useState<string | null>(null);
+    const [isSlow, setIsSlow] = useState(false);
+    const [isRetrying, setIsRetrying] = useState(false);
+    const [activeTarget, setActiveTarget] = useState<{ provider: ImportProvider; url: string } | null>(null);
     const [limitData, setLimitData] = useState<{ current: number, limit: number, feature: LimitFeature } | null>(null);
     const [savedRecipeId, setSavedRecipeId] = useState<string | null>(null);
     const [phase, setPhase] = useState<ShareTargetPhase>('analyzing');
@@ -63,14 +79,49 @@ const ShareTargetPage: React.FC = () => {
     }, []);
 
     const importLink = useCallback(async (provider: ImportProvider, url: string) => {
-        const operationId = createUuid();
-        return runWithReconnectRetry(async () => {
-            const started = await startImport({ operationId, provider, url });
-            const operation = await waitForImport(convex, started.operationId);
-            if (!operation.resultRecipeId) throw new Error('IMPORT_RESULT_MISSING');
-            return operation.resultRecipeId;
-        });
+        const runOnce = () => {
+            // Eine operationId pro Versuch: der Reconnect-Retry setzt dieselbe Operation fort.
+            const operationId = createUuid();
+            return runWithReconnectRetry(async () => {
+                const started = await startImport({ operationId, provider, url });
+                const operation = await waitForImport(convex, started.operationId);
+                if (!operation.resultRecipeId) throw new Error('IMPORT_RESULT_MISSING');
+                return operation.resultRecipeId;
+            });
+        };
+
+        const startedAt = Date.now();
+        try {
+            return await runOnce();
+        } catch (err: unknown) {
+            const errorCode = getStructuredUserError(err)?.type;
+            const durationMs = Date.now() - startedAt;
+            if (!shouldAutoRetryImport(errorCode, durationMs)) throw err;
+            // Dienst kurz gestört: einmal still neu starten, statt den Nutzer in einen Fehler laufen zu lassen.
+            logger.warn('ShareTarget', 'service unavailable, retrying import once', { provider, durationMs });
+            capture('import_retry_started', { provider, errorCode: String(errorCode), retryCount: 1, durationMs, entryPoint: 'share_target' });
+            setIsRetrying(true);
+            return await runOnce();
+        }
     }, [convex, runWithReconnectRetry, startImport]);
+
+    // Ehrlicher Hinweis, wenn der Import länger dauert; der Server arbeitet ohnehin im Hintergrund weiter.
+    useEffect(() => {
+        if (status !== 'analyzing') return;
+        const timer = window.setTimeout(() => setIsSlow(true), SLOW_NOTICE_AFTER_MS);
+        return () => window.clearTimeout(timer);
+    }, [status]);
+
+    // Ausweg statt Sackgasse: Rezept per Screenshot-Scan oder von Hand speichern.
+    const openFallback = useCallback((initialTab: 'ai' | 'manual') => {
+        capture('import_cancelled', {
+            provider: activeTarget?.provider,
+            entryPoint: 'share_target',
+            nextScreen: initialTab === 'ai' ? 'photo_scan' : 'manual',
+        });
+        navigate('/tabs/categories', { replace: true });
+        openAddModal({ initialTab });
+    }, [activeTarget, navigate, openAddModal]);
 
     const notifyImportSuccess = useCallback(async (recipeId: string) => {
         try {
@@ -121,8 +172,14 @@ const ShareTargetPage: React.FC = () => {
                 setStatus('success');
                 setSavedRecipeId('preview123');
             } else if (previewMode === 'error') {
-                setError("Kein Rezept gefunden 😕");
+                setActiveTarget({ provider: 'instagram', url: 'https://www.instagram.com/reel/preview/' });
+                setError("Der Instagram-Service ist gerade nicht verfügbar. Bitte versuche es gleich erneut.");
                 setStatus('error');
+            } else if (previewMode === 'slow') {
+                setActiveTarget({ provider: 'instagram', url: 'https://www.instagram.com/reel/preview/' });
+                setIsSlow(true);
+                setStatus('analyzing');
+                setPhase('extrahieren');
             }
             return;
         }
@@ -153,6 +210,9 @@ const ShareTargetPage: React.FC = () => {
                 }
 
                 logger.debug('ShareTarget', `#${shareRunId} target detected`, target);
+                setActiveTarget(target);
+                setIsSlow(false);
+                setIsRetrying(false);
                 setStatus('analyzing');
                 const startedAt = Date.now();
 
@@ -279,11 +339,21 @@ const ShareTargetPage: React.FC = () => {
                                     </span>
                                 )}
                             </h2>
-                            <p className="text-text-secondary-light dark:text-text-secondary-dark text-lg px-4">
-                                Prozess läuft im Hintergrund weiter...
-                                <br />
-                                Kehre ohne Unterbrechung zu deiner App zurück
-                            </p>
+                            {isSlow || isRetrying ? (
+                                <p className="text-text-secondary-light dark:text-text-secondary-dark text-lg px-4 animate-in fade-in duration-300" role="status">
+                                    {isRetrying
+                                        ? 'Das hat nicht geklappt – wir versuchen es automatisch noch einmal.'
+                                        : `${activeTarget ? PROVIDER_LABELS[activeTarget.provider] : 'Die Quelle'} antwortet gerade langsam. Das kann bis zu einer Minute dauern.`}
+                                    <br />
+                                    Du kannst die App verlassen – das Rezept landet automatisch in deiner Sammlung.
+                                </p>
+                            ) : (
+                                <p className="text-text-secondary-light dark:text-text-secondary-dark text-lg px-4">
+                                    Prozess läuft im Hintergrund weiter...
+                                    <br />
+                                    Kehre ohne Unterbrechung zu deiner App zurück
+                                </p>
+                            )}
                         </div>
 
                         {/* Home & Zurück Buttons */}
@@ -448,9 +518,32 @@ const ShareTargetPage: React.FC = () => {
                                 <span className="material-symbols-outlined">refresh</span>
                                 Erneut versuchen
                             </button>
+                            {activeTarget && (
+                                <>
+                                    <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark text-center pt-2">
+                                        Oder auf anderem Weg speichern:
+                                    </p>
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => openFallback('ai')}
+                                            className="touch-btn flex-1 px-4 py-4 bg-card-light dark:bg-card-dark text-text-primary-light dark:text-text-primary-dark rounded-2xl font-bold elevation-1 flex items-center justify-center gap-2 active:scale-95 transition-all"
+                                        >
+                                            <span className="material-symbols-outlined">photo_camera</span>
+                                            Screenshot scannen
+                                        </button>
+                                        <button
+                                            onClick={() => openFallback('manual')}
+                                            className="touch-btn flex-1 px-4 py-4 bg-card-light dark:bg-card-dark text-text-primary-light dark:text-text-primary-dark rounded-2xl font-bold elevation-1 flex items-center justify-center gap-2 active:scale-95 transition-all"
+                                        >
+                                            <span className="material-symbols-outlined">edit_note</span>
+                                            Manuell anlegen
+                                        </button>
+                                    </div>
+                                </>
+                            )}
                             <button
                                 onClick={handleClose}
-                                className="touch-btn w-full px-6 py-4 bg-card-light dark:bg-card-dark text-text-secondary-light dark:text-text-secondary-dark rounded-2xl font-bold elevation-1"
+                                className="touch-btn w-full px-6 py-3 text-text-secondary-light dark:text-text-secondary-dark rounded-2xl font-bold"
                             >
                                 Zurück
                             </button>

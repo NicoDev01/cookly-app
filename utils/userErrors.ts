@@ -88,7 +88,7 @@ const mapStructuredError = (errorData: StructuredError): string | null => {
   if (errorData.type === 'LIMIT_REACHED') return getLimitMessage(errorData);
   if (errorData.type === 'RATE_LIMIT_EXCEEDED') return 'Du hast zu viele Anfragen gestellt. Bitte warte einen Moment.';
   if (errorData.type === 'PROVIDER_BUDGET_EXHAUSTED') return 'Der Importdienst ist für heute ausgelastet. Bitte versuche es morgen erneut.';
-  if (errorData.type === 'IMPORT_TIMEOUT') return 'Der Import läuft länger als erwartet. Öffne den geteilten Link erneut, um den Status fortzusetzen.';
+  if (errorData.type === 'IMPORT_TIMEOUT') return 'Der Import dauert ungewöhnlich lange. Er läuft im Hintergrund weiter – das Rezept erscheint automatisch in deiner Sammlung, sobald es fertig ist.';
   if (errorData.type === 'API_UNAVAILABLE') {
     return errorData.message?.trim() || 'Der Service ist gerade nicht verfügbar. Bitte versuche es gleich erneut.';
   }
