@@ -306,7 +306,7 @@ const ProfileView: React.FC<Props> = ({
       )}
 
       {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+        <div className="kb-shell fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className={sheetPanel}>
             <div className="w-12 h-1.5 bg-text-secondary-light/30 dark:bg-text-secondary-dark/30 rounded-full mx-auto mb-6" />
             <h2 className="text-2xl font-bold mb-3 text-destructive text-center">Konto löschen?</h2>

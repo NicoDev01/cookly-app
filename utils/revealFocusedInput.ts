@@ -1,9 +1,9 @@
 /**
  * Scrollt das fokussierte Eingabefeld in den sichtbaren Bereich seines Scroll-Containers.
  *
- * Nötig auf iOS mit @capacitor/keyboard: Das Plugin schaltet das eigene Nachscrollen der WKWebView ab
- * und verkleinert die WebView erst kurz nach der Tastatur-Animation. Danach kann das Feld unter
- * Buttons oder dem unteren Rand liegen (z. B. Onboarding-Namensfeld, Login, lange Formulare).
+ * Nötig auf iOS mit @capacitor/keyboard: Das Plugin schaltet das eigene Nachscrollen der WKWebView ab.
+ * Nachdem die .kb-shell-Flächen über die Tastatur geschrumpft sind, kann das Feld unter Buttons oder
+ * dem unteren Rand liegen (z. B. Onboarding-Namensfeld, Login, lange Formulare).
  *
  * Bewusst kein `scrollIntoView`: Das scrollt auch `overflow: hidden`-Vorfahren wie die feste App-Shell
  * und ließe die App wieder verrutschen. Gescrollt wird nur der nächste echte Scroll-Container.
@@ -20,12 +20,16 @@ export const revealFocusedInput = () => {
   let box = field.parentElement;
   while (box && box !== document.body && !canScroll(box)) box = box.parentElement;
 
+  // Die WebView bleibt gleich groß (resize: none); sichtbar ist nur, was über der Tastatur liegt.
+  const keyboard = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--keyboard-height')) || 0;
   let scroller: Element;
   let top = 0;
-  let bottom = window.innerHeight;
+  let bottom = window.innerHeight - keyboard;
   if (box && box !== document.body) {
     scroller = box;
-    ({ top, bottom } = box.getBoundingClientRect());
+    const rect = box.getBoundingClientRect();
+    top = rect.top;
+    bottom = Math.min(rect.bottom, bottom);
   } else {
     // Seiten ohne App-Shell (Login, Registrierung) scrollen das Dokument; die Shell selbst nie.
     const page = document.scrollingElement;

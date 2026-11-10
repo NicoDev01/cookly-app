@@ -21,6 +21,9 @@ import { createNotificationChannel } from './utils/notifications';
 import { logger } from './utils/logger';
 import { waitForFonts } from './utils/fontsReady';
 import { revealFocusedInput } from './utils/revealFocusedInput';
+
+/** Dauer der iOS-Tastatur-Animation; gleicher Wert wie --keyboard-transition in index.css. */
+const KEYBOARD_ANIMATION_MS = 250;
 import { PageLoader } from './components/PageLoader';
 import { AnalyticsLifecycle } from './components/AnalyticsLifecycle';
 import { PushLifecycle } from './components/PushLifecycle';
@@ -161,22 +164,26 @@ const AppContent: React.FC = () => {
     // Listener-Handles für Cleanup sammeln
     const cleanupFns: Array<() => void> = [];
 
-    // iOS-Tastatur: keine Formular-Leiste „‹ › Fertig“, und solange sie offen ist, keine Tab-Leiste
-    // (die WebView schrumpft mit, siehe capacitor.config.ts; sonst stünde die Leiste über der Tastatur).
+    // iOS-Tastatur (resize: none, siehe capacitor.config.ts): keine Formular-Leiste „‹ › Fertig“.
+    // Schon bei „will show/hide“ die Tastaturhöhe setzen: .kb-shell-Flächen schrumpfen per CSS-Transition
+    // zeitgleich mit der Tastatur-Animation. Danach das fokussierte Feld sichtbar machen, denn das
+    // Plugin hat das Nachscrollen der WKWebView abgeschaltet. Tab-Leiste ist solange ausgeblendet.
     if (Capacitor.getPlatform() === 'ios') {
       void Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => {});
       const root = document.documentElement;
-      Keyboard.addListener('keyboardWillShow', () => root.classList.add('keyboard-open'))
-        .then((handle) => cleanupFns.push(() => handle.remove()));
-      Keyboard.addListener('keyboardWillHide', () => root.classList.remove('keyboard-open'))
-        .then((handle) => cleanupFns.push(() => handle.remove()));
-      // Das Plugin verkleinert die WebView erst nach der Tastatur-Animation (resize-Event) und hat das
-      // Nachscrollen der WKWebView abgeschaltet: fokussiertes Feld danach selbst wieder sichtbar machen.
-      const onResize = () => {
-        if (root.classList.contains('keyboard-open')) requestAnimationFrame(revealFocusedInput);
-      };
-      window.addEventListener('resize', onResize);
-      cleanupFns.push(() => window.removeEventListener('resize', onResize));
+      let revealTimer: number | undefined;
+      Keyboard.addListener('keyboardWillShow', ({ keyboardHeight }) => {
+        root.classList.add('keyboard-open');
+        root.style.setProperty('--keyboard-height', `${keyboardHeight}px`);
+        window.clearTimeout(revealTimer);
+        revealTimer = window.setTimeout(revealFocusedInput, KEYBOARD_ANIMATION_MS + 30);
+      }).then((handle) => cleanupFns.push(() => handle.remove()));
+      Keyboard.addListener('keyboardWillHide', () => {
+        window.clearTimeout(revealTimer);
+        root.classList.remove('keyboard-open');
+        root.style.setProperty('--keyboard-height', '0px');
+      }).then((handle) => cleanupFns.push(() => handle.remove()));
+      cleanupFns.push(() => window.clearTimeout(revealTimer));
     }
 
     // Notification Action Listener

@@ -1,5 +1,5 @@
 import type { CapacitorConfig } from "@capacitor/cli";
-import { KeyboardResize, KeyboardStyle } from "@capacitor/keyboard";
+import { KeyboardResize } from "@capacitor/keyboard";
 
 // WebView-Remote-Debugging (chrome://inspect) ist standardmäßig AUS (Release sicher).
 // Für eine inspizierbare Debug-APK gezielt aktivieren:
@@ -31,15 +31,11 @@ const config: CapacitorConfig = {
   },
 
   plugins: {
-    // iOS: Die WebView schrumpft mit der Tastatur, statt dass WKWebView die ganze Seite nach oben schiebt.
-    // Die Shell (fixed inset-0) und vh-Sheets passen sich damit von selbst an; die Tab-Leiste blendet
-    // App.tsx bei offener Tastatur aus. Helle Tastatur, weil Cookly nur ein helles Theme hat.
+    // iOS: Die WebView bleibt gleich groß (kein verzögertes Nachziehen, kein schwarzer Rand), und WKWebView
+    // schiebt die Seite nicht mehr hoch. Platz für die Tastatur schafft App.tsx über --keyboard-height,
+    // animiert zeitgleich mit der Tastatur (index.css, .kb-shell). Kein `style`: Systemtastatur wie überall.
     Keyboard: {
-      resize: KeyboardResize.Native,
-      style: KeyboardStyle.Light,
-      // Hinter der Tastatur liegt nach dem Verkleinern das UIWindow (Standard schwarz); an den runden
-      // Tastatur-Ecken blitzte es schwarz. 'auto' färbt das Fenster in ios.backgroundColor (#f0f2f5).
-      autoBackdropColor: 'auto',
+      resize: KeyboardResize.None,
     },
     SplashScreen: {
       launchShowDuration: 0,

@@ -215,7 +215,7 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-end justify-center pointer-events-auto">
+    <div className="kb-shell fixed inset-0 z-[100] flex items-end justify-center pointer-events-auto">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
@@ -223,7 +223,7 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
       />
 
       {/* Slide-up Panel */}
-      <div className="relative w-full h-[92vh] bg-background-light dark:bg-background-dark rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up pb-safe-offset">
+      <div className="relative w-full h-[92%] bg-background-light dark:bg-background-dark rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up pb-safe-offset">
 
         {/* Drag Handle */}
         <div className="flex justify-center pt-3 pb-1">

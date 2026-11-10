@@ -47,6 +47,8 @@ export const TabsLayout: React.FC = () => {
   const { isAddModalOpen, closeAddModal, openAddModal, isAnyModalOpen } = useModal();
   const location = useLocation();
   const currentPath = location.pathname;
+  // Übergänge, die schon wie die Zielseite aussehen (Import → Rezept), ohne Einblenden.
+  const seamless = (location.state as { seamless?: boolean } | null)?.seamless === true;
   const currentTab = TAB_ROUTES.find((route) => route === currentPath);
   const categoryMatch = currentPath.match(/^\/category\/(.+)$/);
   const currentCategory = categoryMatch?.[1] ? decodeURIComponent(categoryMatch[1]) : null;
@@ -89,7 +91,7 @@ export const TabsLayout: React.FC = () => {
 
   return (
     <ErrorBoundary>
-      <div className="antialiased fixed inset-0 flex flex-col overflow-hidden bg-background-light dark:bg-background-dark">
+      <div className="antialiased kb-shell fixed inset-0 flex flex-col overflow-hidden bg-background-light dark:bg-background-dark">
         <OfflineBanner />
 
         {/* Page Content Area - Expands to fill available space */}
@@ -121,7 +123,7 @@ export const TabsLayout: React.FC = () => {
 
             {/* OUTLET-ROUTEN: Transient (werden neu gemountet) */}
             {!isTabRoute && !isCategoryRoute && (
-              <div key={currentPath} className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y page-enter">
+              <div key={currentPath} className={`absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y ${seamless ? '' : 'page-enter'}`}>
                 <Outlet />
               </div>
             )}
