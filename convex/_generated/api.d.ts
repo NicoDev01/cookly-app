@@ -29,6 +29,8 @@ import type * as importTiming from "../importTiming.js";
 import type * as instagram from "../instagram.js";
 import type * as integrations from "../integrations.js";
 import type * as legacyImport from "../legacyImport.js";
+import type * as lib_apifyRun from "../lib/apifyRun.js";
+import type * as lib_attemptPlan from "../lib/attemptPlan.js";
 import type * as lib_authUser from "../lib/authUser.js";
 import type * as lib_importErrors from "../lib/importErrors.js";
 import type * as lib_remoteImagePolicy from "../lib/remoteImagePolicy.js";
@@ -86,6 +88,8 @@ declare const fullApi: ApiFromModules<{
   instagram: typeof instagram;
   integrations: typeof integrations;
   legacyImport: typeof legacyImport;
+  "lib/apifyRun": typeof lib_apifyRun;
+  "lib/attemptPlan": typeof lib_attemptPlan;
   "lib/authUser": typeof lib_authUser;
   "lib/importErrors": typeof lib_importErrors;
   "lib/remoteImagePolicy": typeof lib_remoteImagePolicy;
