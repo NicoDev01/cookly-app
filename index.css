@@ -283,12 +283,9 @@
     scroll-margin-top: 100px;
   }
 
-  /* iOS keyboard push prevention */
-  @supports (-webkit-touch-callout: none) {
-    input:focus,
-    textarea:focus {
-      transform: translateZ(0);
-    }
+  /* iOS: Bei offener Tastatur keine Tab-Leiste (Klasse setzt App.tsx über @capacitor/keyboard). */
+  html.keyboard-open .app-nav {
+    display: none;
   }
 }
 
@@ -767,6 +764,17 @@
   html {
     font-size: 16px;
     -webkit-text-size-adjust: 100%;
+  }
+
+  /* Wie eine native App: Langes Drücken markiert keinen Text und öffnet kein Kopieren-/Bild-sichern-Menü.
+   * Eingabefelder bleiben markierbar (Regel darunter); einzelne Texte bei Bedarf mit `select-text` freigeben. */
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  img {
+    -webkit-user-drag: none;
   }
 
   /* Mobile Input Optimization - Prevent auto-zoom and ensure text selection */

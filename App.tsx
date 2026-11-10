@@ -3,6 +3,7 @@ import { SendIntent } from '@supernotes/capacitor-send-intent';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { Capacitor } from '@capacitor/core';
 import { SplashScreen } from '@capacitor/splash-screen';
+import { Keyboard } from '@capacitor/keyboard';
 import { LottieSplashScreen } from 'capacitor-lottie-splash-screen';
 import { App as CapacitorApp } from '@capacitor/app';
 import { LocalNotifications, LocalNotificationActionPerformed } from '@capacitor/local-notifications';
@@ -158,6 +159,17 @@ const AppContent: React.FC = () => {
 
     // Listener-Handles für Cleanup sammeln
     const cleanupFns: Array<() => void> = [];
+
+    // iOS-Tastatur: keine Formular-Leiste „‹ › Fertig“, und solange sie offen ist, keine Tab-Leiste
+    // (die WebView schrumpft mit, siehe capacitor.config.ts; sonst stünde die Leiste über der Tastatur).
+    if (Capacitor.getPlatform() === 'ios') {
+      void Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => {});
+      const root = document.documentElement;
+      Keyboard.addListener('keyboardWillShow', () => root.classList.add('keyboard-open'))
+        .then((handle) => cleanupFns.push(() => handle.remove()));
+      Keyboard.addListener('keyboardWillHide', () => root.classList.remove('keyboard-open'))
+        .then((handle) => cleanupFns.push(() => handle.remove()));
+    }
 
     // Notification Action Listener
     LocalNotifications.addListener(

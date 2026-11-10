@@ -74,8 +74,11 @@ export default defineConfig(() => {
                 return 'vendor-radix';
               }
               
-              // 4. Alles andere (React, Router, Virtuoso etc.)
-              return 'vendor-base';
+              // 4. Was jeder Start braucht. Alles andere (Shader, Karussell, RevenueCat …) legt
+              // Rollup in die Chunks der Seiten, die es nutzen; sonst lädt und parst der Start es mit.
+              if (/node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom|@sentry|@capacitor[\\/]core)[\\/]/.test(id)) {
+                return 'vendor-base';
+              }
             }
           },
         },

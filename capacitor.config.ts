@@ -1,4 +1,5 @@
 import type { CapacitorConfig } from "@capacitor/cli";
+import { KeyboardResize, KeyboardStyle } from "@capacitor/keyboard";
 
 // WebView-Remote-Debugging (chrome://inspect) ist standardmäßig AUS (Release sicher).
 // Für eine inspizierbare Debug-APK gezielt aktivieren:
@@ -30,6 +31,13 @@ const config: CapacitorConfig = {
   },
 
   plugins: {
+    // iOS: Die WebView schrumpft mit der Tastatur, statt dass WKWebView die ganze Seite nach oben schiebt.
+    // Die Shell (fixed inset-0) und vh-Sheets passen sich damit von selbst an; die Tab-Leiste blendet
+    // App.tsx bei offener Tastatur aus. Helle Tastatur, weil Cookly nur ein helles Theme hat.
+    Keyboard: {
+      resize: KeyboardResize.Native,
+      style: KeyboardStyle.Light,
+    },
     SplashScreen: {
       launchShowDuration: 0,
       launchAutoHide: false,
@@ -58,6 +66,9 @@ const config: CapacitorConfig = {
     contentInset: 'never',
     // Gleiche Farbe wie LaunchScreen.storyboard und App-Hintergrund: kein weißer Blitz beim Start.
     backgroundColor: '#f0f2f5',
+    // Capacitor-Default ist true: Langes Drücken auf einen Link (jeder Tab, jede Rezeptkarte)
+    // öffnet sonst Safaris Link-Vorschau statt des eigenen Long-Press-Menüs.
+    allowsLinkPreview: false,
   },
 };
 
