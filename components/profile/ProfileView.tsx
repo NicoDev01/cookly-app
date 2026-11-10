@@ -8,6 +8,7 @@ import { LEGAL_LINKS } from '../../utils/legalLinks';
 import { showsExternalPaymentBranding } from '../../utils/paymentBranding';
 import DebugSheet from '../DebugSheet';
 import ExternalLink from '../ExternalLink';
+import { ONB_IMG } from '../onboarding/onboardingData';
 import { LiquidMetalBorder } from '../ui/liquid-metal-border';
 import { PEARL_BORDER } from '../ui/pearlBorder';
 
@@ -140,7 +141,7 @@ const ProfileView: React.FC<Props> = ({
     <div className="min-h-screen bg-muted text-foreground font-sans pt-safe pb-safe select-none">
       <div className="container mx-auto px-4 py-6 max-w-xl">
         <div className="flex flex-col items-center mb-10 animate-in fade-in">
-          <span className="material-symbols-outlined text-8xl text-primary animate-pulse mb-4">person</span>
+          <img src={ONB_IMG.hello} alt="" className="h-24 w-auto mb-4" />
           {firstName && <p className="mb-1 text-xl font-semibold text-text-secondary-light dark:text-text-secondary-dark">Hallo {firstName}</p>}
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-center">
             Dein Status: <span className="text-primary italic">{isPro ? 'Pro' : 'Free'}</span>
