@@ -55,7 +55,11 @@ const AppNav: React.FC<{
     onTouchStart: () => { void prefetch(); },
   });
 
-  const handleNavTap = (index: number) => {
+  const handleNavTap = (index: number, path: string) => {
+    // Wie in iOS-Tab-Leisten: Den aktiven Tab nochmal antippen scrollt nach oben (Container in TabsLayout).
+    if (path === location.pathname) {
+      document.querySelector(`[data-tab-scroll="${path}"]`)?.scrollTo({ top: 0, behavior: 'smooth' });
+    }
     setTapped({ index, from: location.pathname });
     void impact('light');
   };
@@ -168,7 +172,7 @@ const AppNav: React.FC<{
             ref={(el) => { tabRefs.current[index] = el; }}
             to={path}
             {...intentHandlers(prefetch)}
-            onClick={() => handleNavTap(index)}
+            onClick={() => handleNavTap(index, path)}
             className={`touch-scale flex flex-col items-center justify-center gap-0.5 py-2 px-3 min-w-[56px] rounded-xl transition-colors duration-200 ${
               index === activeIndex
                 ? 'text-text-primary-light dark:text-text-primary-dark'

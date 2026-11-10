@@ -58,6 +58,9 @@ const config: CapacitorConfig = {
     contentInset: 'never',
     // Gleiche Farbe wie LaunchScreen.storyboard und App-Hintergrund: kein weißer Blitz beim Start.
     backgroundColor: '#f0f2f5',
+    // Capacitor-Default ist true: Langes Drücken auf einen Link (jeder Tab, jede Rezeptkarte)
+    // öffnet sonst Safaris Link-Vorschau statt des eigenen Long-Press-Menüs.
+    allowsLinkPreview: false,
   },
 };
 

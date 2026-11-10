@@ -73,6 +73,9 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
     return (
       <button
         ref={ref}
+        // Ohne type wäre der Knopf in Formularen ein Submit-Button: Return im Passwortfeld
+        // „klickte“ dann zuerst „Passwort anzeigen“. Überschreibbar über props.
+        type="button"
         className={cn(
           baseStyles,
           variantStyles[variant],

@@ -769,6 +769,17 @@
     -webkit-text-size-adjust: 100%;
   }
 
+  /* Wie eine native App: Langes Drücken markiert keinen Text und öffnet kein Kopieren-/Bild-sichern-Menü.
+   * Eingabefelder bleiben markierbar (Regel darunter); einzelne Texte bei Bedarf mit `select-text` freigeben. */
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  img {
+    -webkit-user-drag: none;
+  }
+
   /* Mobile Input Optimization - Prevent auto-zoom and ensure text selection */
   input,
   textarea {

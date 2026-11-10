@@ -98,6 +98,7 @@ export const TabsLayout: React.FC = () => {
             {mountedTabs.map((tabPath) => (
               <Activity key={tabPath} mode={currentTab === tabPath ? 'visible' : 'hidden'}>
                 <div
+                  data-tab-scroll={tabPath}
                   className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y page-enter"
                 >
                   {renderTab(tabPath)}

@@ -146,13 +146,17 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.cookly-card--interactive:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.1));
+@media (hover: hover) {
+  .cookly-card--interactive:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.1));
+  }
 }
 
-.dark .cookly-card--interactive:hover {
-  box-shadow: var(--dark-shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.4));
+@media (hover: hover) {
+  .dark .cookly-card--interactive:hover {
+    box-shadow: var(--dark-shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.4));
+  }
 }
 
 .cookly-card--interactive:active {
@@ -202,12 +206,16 @@
   color: var(--dark-color-text-tertiary, #9ca3af);
 }
 
-.cookly-input:hover {
-  border-color: var(--color-text-tertiary, #9ca3af);
+@media (hover: hover) {
+  .cookly-input:hover {
+    border-color: var(--color-text-tertiary, #9ca3af);
+  }
 }
 
-.dark .cookly-input:hover {
-  border-color: var(--dark-color-text-tertiary, #9ca3af);
+@media (hover: hover) {
+  .dark .cookly-input:hover {
+    border-color: var(--dark-color-text-tertiary, #9ca3af);
+  }
 }
 
 .cookly-input:focus {
@@ -235,12 +243,16 @@
   background-color: transparent;
 }
 
-.cookly-input--ghost:hover {
-  background-color: var(--color-bg-tertiary, #f3f4f6);
+@media (hover: hover) {
+  .cookly-input--ghost:hover {
+    background-color: var(--color-bg-tertiary, #f3f4f6);
+  }
 }
 
-.dark .cookly-input--ghost:hover {
-  background-color: var(--dark-color-bg-tertiary, #374151);
+@media (hover: hover) {
+  .dark .cookly-input--ghost:hover {
+    background-color: var(--dark-color-bg-tertiary, #374151);
+  }
 }
 
 .cookly-input--ghost:focus {
@@ -316,8 +328,10 @@
   color: #ffffff;
 }
 
-.cookly-button--primary:hover {
-  background-color: var(--color-primary-600, #059669);
+@media (hover: hover) {
+  .cookly-button--primary:hover {
+    background-color: var(--color-primary-600, #059669);
+  }
 }
 
 .cookly-button--primary:active {
@@ -334,12 +348,16 @@
   color: var(--dark-color-text-primary, #f9fafb);
 }
 
-.cookly-button--secondary:hover {
-  background-color: var(--color-border, #e5e7eb);
+@media (hover: hover) {
+  .cookly-button--secondary:hover {
+    background-color: var(--color-border, #e5e7eb);
+  }
 }
 
-.dark .cookly-button--secondary:hover {
-  background-color: var(--dark-color-border-light, #4b5563);
+@media (hover: hover) {
+  .dark .cookly-button--secondary:hover {
+    background-color: var(--dark-color-border-light, #4b5563);
+  }
 }
 
 .cookly-button--ghost {
@@ -351,14 +369,18 @@
   color: var(--dark-color-text-secondary, #d1d5db);
 }
 
-.cookly-button--ghost:hover {
-  background-color: var(--color-bg-tertiary, #f3f4f6);
-  color: var(--color-text-primary, #111827);
+@media (hover: hover) {
+  .cookly-button--ghost:hover {
+    background-color: var(--color-bg-tertiary, #f3f4f6);
+    color: var(--color-text-primary, #111827);
+  }
 }
 
-.dark .cookly-button--ghost:hover {
-  background-color: var(--dark-color-bg-tertiary, #374151);
-  color: var(--dark-color-text-primary, #f9fafb);
+@media (hover: hover) {
+  .dark .cookly-button--ghost:hover {
+    background-color: var(--dark-color-bg-tertiary, #374151);
+    color: var(--dark-color-text-primary, #f9fafb);
+  }
 }
 
 .cookly-button--danger {
@@ -366,8 +388,10 @@
   color: #ffffff;
 }
 
-.cookly-button--danger:hover {
-  background-color: #dc2626;
+@media (hover: hover) {
+  .cookly-button--danger:hover {
+    background-color: #dc2626;
+  }
 }
 
 /* Button Sizes */
@@ -408,14 +432,18 @@
   color: var(--dark-color-text-secondary, #d1d5db);
 }
 
-.cookly-icon-button:hover {
-  background-color: var(--color-bg-tertiary, #f3f4f6);
-  color: var(--color-text-primary, #111827);
+@media (hover: hover) {
+  .cookly-icon-button:hover {
+    background-color: var(--color-bg-tertiary, #f3f4f6);
+    color: var(--color-text-primary, #111827);
+  }
 }
 
-.dark .cookly-icon-button:hover {
-  background-color: var(--dark-color-bg-tertiary, #374151);
-  color: var(--dark-color-text-primary, #f9fafb);
+@media (hover: hover) {
+  .dark .cookly-icon-button:hover {
+    background-color: var(--dark-color-bg-tertiary, #374151);
+    color: var(--dark-color-text-primary, #f9fafb);
+  }
 }
 
 .cookly-icon-button--sm {

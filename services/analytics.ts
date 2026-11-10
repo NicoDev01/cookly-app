@@ -46,12 +46,20 @@ export const getAnalyticsIdentity = () => ({
   sessionId: storedId(sessionStorage, sessionKey),
 });
 
+/** Läuft, wenn der Browser Luft hat (spätestens nach 3 s); WKWebView ohne requestIdleCallback: nach 1,5 s. */
+const whenIdle = (task: () => void) => {
+  if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(task, { timeout: 3000 });
+  else window.setTimeout(task, 1500);
+};
+
 export const initAnalytics = () => {
   if (initialized) return;
   initialized = true;
   const identity = getAnalyticsIdentity();
 
-  if (key) {
+  // PostHog (≈300 kB) erst nach dem Start laden: Bis dahin sammelt `pending` die Events.
+  // Sonst konkurriert das Parsen beim Kaltstart mit dem ersten Bild und der Convex-Verbindung.
+  if (key) whenIdle(() => {
     void import("posthog-js").then(({ default: client }) => {
       posthog = client;
       client.init(key, {
@@ -80,7 +88,7 @@ export const initAnalytics = () => {
         },
       });
     }).catch(() => undefined);
-  }
+  });
 
   capture(localStorage.getItem(firstOpenKey) ? "app_opened" : "app_first_open");
   localStorage.setItem(firstOpenKey, "1");

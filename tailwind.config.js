@@ -12,6 +12,9 @@ export default {
     ...(process.env.NODE_ENV === "production" ? [] : ["./lab/**/*.{ts,tsx}"]),
   ],
   darkMode: "class",
+  // hover: nur auf Geräten mit echtem Zeiger. Auf dem iPhone bleibt der Hover-Zustand
+  // sonst nach dem Antippen am Element hängen (typischer Web-App-Effekt).
+  future: { hoverOnlyWhenSupported: true },
   theme: {
     container: {
       center: true,
