@@ -30,6 +30,15 @@ const INGREDIENT_STAGGER_MS = 70;
 const STEP_STAGGER_MS = 140;
 const DONE_HOLD_MS = 1_400;
 
+/**
+ * iOS meldet einen Share mehrfach (Kaltstart, Resume, Event), und jede Meldung mountet diese Seite neu
+ * (App.tsx: key = location.key). Derselbe Link übernimmt dann den laufenden Import, statt sichtbar
+ * von vorn zu beginnen; ist das Rezept schon offen, geht es direkt wieder dorthin.
+ */
+const REATTACH_WINDOW_MS = 60_000;
+type LastShare = { url: string; requestId: string; operationId: string | null; startedAt: number; at: number; recipeId: string | null; notified: boolean };
+let lastShare: LastShare | null = null;
+
 const staggerCount = (elapsed: number, at: number, stagger: number, max: number) =>
   elapsed < at ? 0 : Math.min(max, Math.floor((elapsed - at) / stagger) + 1);
 
@@ -105,9 +114,13 @@ const ShareTargetPage: React.FC = () => {
     [searchParams],
   );
 
+  const [resumed] = useState(() =>
+    target && lastShare?.url === target.url && Date.now() - lastShare.at < REATTACH_WINDOW_MS ? { ...lastShare } : null,
+  );
   const [attempt, setAttempt] = useState(0);
-  const [operationId, setOperationId] = useState<string | null>(null);
-  const [startedAt, setStartedAt] = useState(() => Date.now());
+  const [operationId, setOperationId] = useState<string | null>(resumed?.operationId ?? null);
+  const [startedAt, setStartedAt] = useState(() => resumed?.startedAt ?? Date.now());
+  const [requestId, setRequestId] = useState<string | undefined>(resumed?.requestId);
   const [failure, setFailure] = useState<ImportFailureState | null>(target ? null : INVALID_LINK);
   const [slow, setSlow] = useState(false);
   const [revealStartedAt, setRevealStartedAt] = useState<number | null>(null);
@@ -127,14 +140,22 @@ const ShareTargetPage: React.FC = () => {
   useEffect(() => {
     if (!target) return;
     let cancelled = false;
-    setOperationId(null);
+    const resume = attempt === 0 ? resumed : null;
+    if (resume?.recipeId) return;
+    // Gleiche requestId beim Wiederaufnehmen: startImport ist pro operationId idempotent.
+    const id = resume?.requestId ?? createUuid();
+    const started = resume?.startedAt ?? Date.now();
+    lastShare = { url: target.url, requestId: id, operationId: resume?.operationId ?? null, startedAt: started, at: Date.now(), recipeId: null, notified: resume?.notified ?? false };
+    setRequestId(id);
+    if (!resume) setOperationId(null);
     setFailure(null);
     setSlow(false);
     setRevealStartedAt(null);
-    setStartedAt(Date.now());
-    startImport({ operationId: createUuid(), provider: target.provider, url: target.url })
-      .then((started) => {
-        if (!cancelled) setOperationId(started.operationId);
+    setStartedAt(started);
+    startImport({ operationId: id, provider: target.provider, url: target.url })
+      .then((result) => {
+        if (lastShare?.requestId === id) lastShare.operationId = result.operationId;
+        if (!cancelled) setOperationId(result.operationId);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -144,7 +165,22 @@ const ShareTargetPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [target, attempt, startImport]);
+  }, [target, attempt, resumed, startImport]);
+
+  // Rezeptseite schon vorladen, damit der Wechsel am Ende ohne Lade-Fallback passiert.
+  useEffect(() => {
+    void import('./RecipePage');
+  }, []);
+
+  // Nach einem Fehler startet derselbe Link beim nächsten Teilen wieder frisch.
+  useEffect(() => {
+    if (failure) lastShare = null;
+  }, [failure]);
+
+  // Doppelter Intent, nachdem das Rezept schon offen war: ohne Zwischenbild zurück aufs Rezept.
+  useEffect(() => {
+    if (resumed?.recipeId) navigate(`/recipe/${resumed.recipeId}`, { replace: true, state: { nav: { ids: [resumed.recipeId], index: 0 } } });
+  }, [resumed, navigate]);
 
   // Abbruch vom Server: Dienstfehler, die schnell kamen, einmal still neu versuchen.
   useEffect(() => {
@@ -195,18 +231,22 @@ const ShareTargetPage: React.FC = () => {
       return;
     }
     if (revealStartedAt === null) setRevealStartedAt(performance.now());
-    if (!notifiedRef.current) {
+    if (!notifiedRef.current && !resumed?.notified) {
       notifiedRef.current = true;
+      if (lastShare) lastShare.notified = true;
       void notifyImportSuccess(recipeId);
     }
-  }, [recipeId, recipe, failure, revealStartedAt, notifyImportSuccess]);
+  }, [recipeId, recipe, failure, revealStartedAt, resumed, notifyImportSuccess]);
 
   const reveal = recipe ? revealTimeline(recipe) : null;
   const revealElapsed = useElapsed(reveal && !failure ? revealStartedAt : null);
   const shouldNavigate = !!reveal && revealStartedAt !== null && revealElapsed >= reveal.navigateAt;
 
   useEffect(() => {
-    if (shouldNavigate && recipeId) navigate(`/recipe/${recipeId}`, { replace: true });
+    if (!shouldNavigate || !recipeId) return;
+    if (lastShare) lastShare.recipeId = recipeId;
+    // Mit eigener ID-Liste: Sonst wartet RecipePage auf recipes.listIds und zeigt so lange einen Spinner.
+    navigate(`/recipe/${recipeId}`, { replace: true, state: { nav: { ids: [recipeId], index: 0 } } });
   }, [shouldNavigate, recipeId, navigate]);
 
   const handleClose = useCallback(async () => {
@@ -246,6 +286,8 @@ const ShareTargetPage: React.FC = () => {
     setAttempt((value) => value + 1);
   }, []);
 
+  if (resumed?.recipeId) return null;
+
   if (failure) {
     return (
       <>
@@ -267,7 +309,7 @@ const ShareTargetPage: React.FC = () => {
   const image = operation?.previewImageUrl || recipe?.image || recipe?.sourceImageUrl || null;
 
   return (
-    <div className="min-h-[100dvh] bg-white">
+    <div className={`min-h-[100dvh] bg-white ${resumed ? 'imp-instant' : ''}`}>
       <style>{IMPORT_CSS}</style>
       <ImportingRecipe
         image={image}
@@ -284,6 +326,8 @@ const ShareTargetPage: React.FC = () => {
         slow={slow}
         category={recipe?.category}
         leaving={!!reveal && revealElapsed >= reveal.leaveAt}
+        instant={!!resumed}
+        progressKey={requestId}
       />
     </div>
   );

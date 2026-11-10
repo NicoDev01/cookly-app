@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ONB_IMG } from '../onboarding/onboardingData';
 import { IMPORT_STEP_TARGET, approachPercent, type ImportStepId } from '../../utils/importProgress';
 
@@ -27,9 +28,13 @@ const FadeSwap: React.FC<{ text: string }> = ({ text }) => {
  * Prozentwert ohne Sprünge: Bei jedem Schrittwechsel startet der neue Schritt dort, wo der Balken stand,
  * und nähert sich seinem Ziel nur an (utils/importProgress.ts).
  */
-const useStepPercent = (step: ImportStepId, expectedMs: number, done: boolean) => {
-  const [percent, setPercent] = useState(0);
-  const percentRef = useRef(0);
+/** Letzter Stand je Import: Wird die Seite neu gemountet (doppelter Share-Intent), läuft der Balken weiter statt ab 0. */
+let carried: { key: string; percent: number } | null = null;
+
+const useStepPercent = (step: ImportStepId, expectedMs: number, done: boolean, progressKey?: string) => {
+  const initial = progressKey && carried?.key === progressKey ? carried.percent : 0;
+  const [percent, setPercent] = useState(initial);
+  const percentRef = useRef(initial);
   useEffect(() => {
     if (done) return;
     const base = percentRef.current;
@@ -37,12 +42,13 @@ const useStepPercent = (step: ImportStepId, expectedMs: number, done: boolean) =
     const tick = () => {
       const next = approachPercent(base, IMPORT_STEP_TARGET[step], Date.now() - startedAt, expectedMs);
       percentRef.current = next;
+      if (progressKey) carried = { key: progressKey, percent: next };
       setPercent(next);
     };
     tick();
     const id = window.setInterval(tick, TICK_MS);
     return () => window.clearInterval(id);
-  }, [step, expectedMs, done]);
+  }, [step, expectedMs, done, progressKey]);
 
   return done ? 100 : percent;
 };
@@ -50,6 +56,8 @@ const useStepPercent = (step: ImportStepId, expectedMs: number, done: boolean) =
 /**
  * Schwebende Fortschritts-Card über der entstehenden Rezeptseite: Maskottchen, Schritt, Balken, 0–100 %.
  * Die Unterzeile sagt nur, dass man die App verlassen kann; woher der Nutzer kam, wissen wir nicht.
+ * Liegt per Portal direkt im body: Der Seiten-Container (TabsLayout, .page-enter) hat ein transform,
+ * darin würde `fixed` mitscrollen statt am unteren Rand zu bleiben.
  */
 const ImportProgressCard: React.FC<{
   step: ImportStepId;
@@ -59,17 +67,21 @@ const ImportProgressCard: React.FC<{
   slow: boolean;
   category?: string;
   leaving: boolean;
-}> = ({ step, title, expectedMs, done, slow, category, leaving }) => {
-  const percent = useStepPercent(step, expectedMs, done);
+  /** Ohne Einflug-Animation, z. B. wenn die Seite für denselben Import neu gemountet wurde. */
+  instant?: boolean;
+  /** Schlüssel des Imports, damit der Prozentwert einen Neu-Mount übersteht. */
+  progressKey?: string;
+}> = ({ step, title, expectedMs, done, slow, category, leaving, instant, progressKey }) => {
+  const percent = useStepPercent(step, expectedMs, done, progressKey);
   const subtitle = done
     ? category ? `Gespeichert in „${category}“.` : 'Gespeichert in deinem Kochbuch.'
     : slow
       ? 'Dauert gerade etwas länger. Du kannst jederzeit zurück.'
       : 'Läuft im Hintergrund – du kannst jederzeit zurück.';
 
-  return (
+  return createPortal(
     <div
-      className={`imp-card pointer-events-none fixed inset-x-3 z-[60] mx-auto max-w-md ${leaving ? 'imp-card--leave' : ''}`}
+      className={`imp-card pointer-events-none fixed inset-x-3 z-[60] mx-auto max-w-md ${instant ? 'imp-card--instant' : ''} ${leaving ? 'imp-card--leave' : ''}`}
       style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 1rem)' }}
       role="status"
       aria-live="polite"
@@ -116,7 +128,8 @@ const ImportProgressCard: React.FC<{
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 

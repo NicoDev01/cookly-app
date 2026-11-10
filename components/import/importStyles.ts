@@ -27,6 +27,9 @@ export const IMPORT_CSS = `
   .imp-steps li { animation: impIn .6s ${OUT} both; }
 
   .imp-card { animation: impCardIn .7s ${OUT} .2s both; }
+  .imp-card--instant { animation:none; }
+  .imp-instant .imp-open, .imp-instant .imp-hero-img { animation:none; }
+  .imp-instant .imp-veil { display:none; }
   .imp-card--leave { animation: impCardOut ${IMPORT_CARD_EXIT_MS}ms ${IN} both; }
   .imp-swap-text { display:inline-block; transition: opacity .22s ease-in, transform .22s ease-in, filter .22s ease-in; }
   .imp-swap-text.is-out { opacity:0; transform:translateY(-5px); filter:blur(3px); }
