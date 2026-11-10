@@ -49,13 +49,15 @@
 .onb-input:focus { outline: none; border-color: var(--o-cta); }
 .onb-swap { display: grid; flex: 1; }
 .onb-swap > div { grid-area: 1 / 1; display: flex; flex-direction: column; gap: 16px; padding-top: clamp(8px, 9vh, 96px); transition: opacity .35s ease, transform .45s ease; }
+/* Bei offener Tastatur ist zu wenig Platz: Bild ausblenden, damit das Namensfeld über den Buttons bleibt. */
+html.keyboard-open .onb-swap .onb-ill { display: none; }
 .onb-swap .greet { opacity: 0; transform: translateY(10px); pointer-events: none; }
 .onb-swap.done .ask { opacity: 0; transform: translateY(-10px); pointer-events: none; }
 .onb-swap.done .greet { opacity: 1; transform: none; pointer-events: auto; transition-delay: .25s; }
 
 .onb-chk { margin-left: auto; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--o-line); flex: none; display: grid; place-items: center; background: #fff; }
 [aria-pressed="true"] > .onb-chk { background: var(--o-cta); border-color: var(--o-cta); }
-[aria-pressed="true"] > .onb-chk::after, .onb-tick.on b::after { content: ""; width: 9px; height: 5px; border: 2.5px solid #fff; border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px,-1px); }
+[aria-pressed="true"] > .onb-chk::after { content: ""; width: 9px; height: 5px; border: 2.5px solid #fff; border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px,-1px); }
 .onb-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .onb-tile { position: relative; border-radius: 16px; border: 2px solid transparent !important; background: var(--o-surface) !important; display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 6px; padding: 9px 10px !important; font-weight: 600; font-size: 13.5px; text-align: left; line-height: 1.2; transition: border-color .15s, background .15s; }
 .onb-tile .onb-chk { position: absolute; top: 9px; right: 9px; margin: 0; width: 20px; height: 20px; }
@@ -66,18 +68,9 @@
 .onb-opt[aria-pressed="true"], .onb-tile[aria-pressed="true"], .onb-plan[aria-pressed="true"] { border-color: var(--o-cta) !important; background: var(--o-sel) !important; }
 .onb-opt[aria-pressed="true"] .onb-ico { background: #fff; }
 
-/* Einrichten */
-.onb-loader { position: relative; width: 184px; height: 184px; margin: 6px auto 0; flex: none; }
-.onb-loader svg { position: absolute; inset: 0; }
-.onb-loader .pic { position: absolute; inset: 16px; border-radius: 50%; background: #fff; display: grid; place-items: center; overflow: hidden; }
-.onb-loader .pic img { width: 132px; height: auto; margin-top: 8px; }
-.onb-pct { font-size: 15px; font-weight: 700; color: var(--o-cta); text-align: center; font-variant-numeric: tabular-nums; margin-top: -6px; }
-.onb-ticks { display: flex; flex-direction: column; gap: 12px; padding: 0 6px; }
-.onb-tick { display: flex; gap: 12px; align-items: center; font-size: 15px; font-weight: 500; color: var(--o-muted); transition: color .3s; }
-.onb-tick b { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--o-line); flex: none; display: grid; place-items: center; transition: background .3s, border-color .3s; background: #fff; }
-.onb-tick.on { color: var(--o-ink); }
-.onb-tick.on b { background: var(--o-cta); border-color: var(--o-cta); }
-.onb-tick.run b { border-color: var(--o-cta); border-right-color: transparent; animation: onb-spin .8s linear infinite; }
+/* Bereit */
+.onb-ready { display: flex; flex-direction: column; gap: 18px; padding-top: clamp(8px, 6vh, 64px); }
+.onb-ready .onb-why { gap: 10px; }
 
 /* Benachrichtigungen */
 .onb-why { display: flex; flex-direction: column; gap: 8px; align-self: center; }
@@ -92,6 +85,8 @@
 .onb-pro { color: var(--o-orange); display: inline-block; transform: skewX(-9deg); margin-right: -1px; }
 
 /* Import-Demo (Mini-Handy im iPhone-Format 19,5 : 9) */
+.onb-dmi { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 12px; padding-bottom: 40px; animation: onb-slide .28s ease both; }
+.onb-dmh, .dm { animation: onb-slide .35s ease both; }
 .onb-dmh { flex: none; height: 62px; display: flex; align-items: center; justify-content: center; }
 .onb-dmh .onb-q { font-size: 25px; transition: opacity .25s; }
 .onb-dots i { font-style: normal; animation: onb-dot 1.2s infinite both; }

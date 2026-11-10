@@ -14,8 +14,12 @@ const Pill: React.FC<{ c: number; children: React.ReactNode; delay?: number }> =
   <span className={`pl c${c}`} style={delay === undefined ? undefined : { transitionDelay: `${delay}s` }}>{children}</span>
 );
 
+const INTRO_MS = 2600;
+
 /** Animierte Schleife des echten Import-Ablaufs: Reel teilen → Cookly wählen → Import → Rezept. */
 export const ImportDemo: React.FC = () => {
+  // Kurzer Vorspann, damit klar ist, was die Demo zeigt; nur beim ersten Durchlauf.
+  const [intro, setIntro] = useState(!reduced());
   const [phase, setPhase] = useState(reduced() ? 4 : 1);
   const [title, setTitle] = useState(TITLES[reduced() ? 3 : 0]);
   const [titleVisible, setTitleVisible] = useState(true);
@@ -26,7 +30,13 @@ export const ImportDemo: React.FC = () => {
   const appRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
-    if (reduced()) return;
+    if (!intro) return;
+    const timer = window.setTimeout(() => setIntro(false), INTRO_MS);
+    return () => clearTimeout(timer);
+  }, [intro]);
+
+  useEffect(() => {
+    if (reduced() || intro) return;
     const timers: number[] = [];
     const later = (fn: () => void, ms: number) => timers.push(window.setTimeout(fn, ms));
     const set = (p: number) => {
@@ -53,7 +63,16 @@ export const ImportDemo: React.FC = () => {
     };
     run();
     return () => timers.forEach(clearTimeout);
-  }, []);
+  }, [intro]);
+
+  if (intro) {
+    return (
+      <div className="onb-dmi">
+        <div className="onb-q">So funktionieren Rezeptimporte</div>
+        <div className="onb-sub">Teile ein Rezept aus Instagram, TikTok oder dem Web mit Cookly. Wir zeigen dir kurz, wie das geht.</div>
+      </div>
+    );
+  }
 
   return (
     <>

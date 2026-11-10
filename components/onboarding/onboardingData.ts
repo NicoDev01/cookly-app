@@ -10,13 +10,6 @@ export const ONB_IMG = {
   pro: '/onboarding/pot-pro.webp',
 };
 
-export const SETUP_TICKS = [
-  'Kochbuch für dich vorbereitet',
-  'Importe für Social Media & Web bereit',
-  'Foto-Importe verfügbar',
-  'Kochbuch personalisiert',
-];
-
 export const PRO_FEATURES = [
   'Unbegrenzt Rezepte speichern',
   'Unbegrenzte Social-Media-Importe',

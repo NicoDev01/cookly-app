@@ -14,7 +14,7 @@ import { logger } from '../../utils/logger';
 import { registerBackButtonOverride } from '../../services/backButtonOverride';
 import { ImportDemo } from './ImportDemo';
 import { OnboardingPaywall } from './OnboardingPaywall';
-import { ONB_IMG, SETUP_TICKS, type OnboardingAnswers } from './onboardingData';
+import { ONB_IMG, type OnboardingAnswers } from './onboardingData';
 import './onboarding.css';
 
 export type StepId = 'start' | 'name' | 'sources' | 'demo' | 'goals' | 'referral' | 'setup' | 'account' | 'push' | 'paywall';
@@ -65,8 +65,6 @@ const GOOGLE_G = (
   </svg>
 );
 
-const RING = 527.8;
-const SETUP_MS = 3600;
 const isAndroid = platform === 'android';
 
 const Ill: React.FC<{ src: string; h: number }> = ({ src, h }) => (
@@ -93,11 +91,9 @@ export const OnboardingFlow: React.FC<Props> = ({ steps, initialStep, initialAns
   const [sources, setSources] = useState<string[]>(initialAnswers?.sources ?? []);
   const [goals, setGoals] = useState<string[]>(initialAnswers?.goals ?? []);
   const [referral, setReferral] = useState(initialAnswers?.referral ?? '');
-  const [setupProgress, setSetupProgress] = useState(initialAnswers ? 1 : 0);
   const [busy, setBusy] = useState(false);
   const [authError, setAuthError] = useState('');
   const step = steps[index];
-  const setupDone = setupProgress >= 1;
   const trimmedName = name.trim();
   const nameSuffix = trimmedName ? `, ${trimmedName}` : '';
 
@@ -118,22 +114,6 @@ export const OnboardingFlow: React.FC<Props> = ({ steps, initialStep, initialAns
     if (isAndroid) void StatusBar.setBackgroundColor({ color: '#f0f2f5' });
     void StatusBar.setStyle({ style: Style.Light });
   }, []);
-
-  // Einrichten läuft einmal; wer zurückkommt, sieht den fertigen Zustand.
-  useEffect(() => {
-    if (step !== 'setup' || setupDone) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setSetupProgress(1);
-      return;
-    }
-    const t0 = performance.now();
-    const timer = window.setInterval(() => {
-      const k = Math.min(1, (performance.now() - t0) / SETUP_MS);
-      setSetupProgress(k);
-      if (k >= 1) window.clearInterval(timer);
-    }, 30);
-    return () => window.clearInterval(timer);
-  }, [step, setupDone]);
 
   const answers = (): OnboardingAnswers => ({ name: trimmedName, sources, goals, referral });
 
@@ -212,8 +192,6 @@ export const OnboardingFlow: React.FC<Props> = ({ steps, initialStep, initialAns
   const skip = <button type="button" className="onb-ghost" onClick={next}>Überspringen</button>;
   const progressIndex = PROGRESS_ORDER.indexOf(step);
   const pct = Math.round(((progressIndex + 1) / PROGRESS_ORDER.length) * 100);
-  const eased = 1 - Math.pow(1 - setupProgress, 2.2);
-  const setupPct = Math.round(eased * 100);
 
   let body: React.ReactNode;
   let footer: React.ReactNode;
@@ -327,30 +305,19 @@ export const OnboardingFlow: React.FC<Props> = ({ steps, initialStep, initialAns
       footer = <><button type="button" className="onb-cta" disabled={!referral} onClick={next}>Weiter</button>{skip}</>;
       break;
     case 'setup':
+      // Kein Ladekreis: Er wirkte auf Nutzer, als würde etwas installiert.
       body = (
-        <>
-          <div className="onb-loader">
-            <svg viewBox="0 0 184 184" aria-hidden="true">
-              <circle cx="92" cy="92" r="84" stroke="#d3e0d6" strokeWidth="8" fill="none" />
-              <circle cx="92" cy="92" r="84" stroke="#2f5d46" strokeWidth="8" fill="none" strokeLinecap="round"
-                strokeDasharray={RING} strokeDashoffset={RING * (1 - eased)} transform="rotate(-90 92 92)" />
-            </svg>
-            <div className="pic"><img src={ONB_IMG.setup} alt="" /></div>
+        <div className="onb-ready">
+          <Ill src={ONB_IMG.setup} h={150} />
+          <div className="onb-q" style={{ fontSize: 25 }}>Super{nameSuffix}!<br />Cookly ist personalisiert und bereit.</div>
+          <div className="onb-why">
+            <div><span className="onb-ico"><BookOpen size={16} /></span>Kochbücher anlegen</div>
+            <div><span className="onb-ico"><Globe size={16} /></span>Rezepte aus Social Media & Web importieren</div>
+            <div><span className="onb-ico"><Camera size={16} /></span>Rezeptfotos digitalisieren</div>
           </div>
-          <div className="onb-pct">{setupPct} %</div>
-          <div className="onb-q" style={{ fontSize: 24, height: 56, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {setupDone ? `Alles bereit${nameSuffix}!` : 'Wir richten dein Kochbuch ein'}
-          </div>
-          <div className="onb-ticks">
-            {SETUP_TICKS.map((t, i) => {
-              const on = setupPct >= (i + 1) * 25;
-              const run = !on && setupPct >= i * 25;
-              return <div key={t} className={`onb-tick${on ? ' on' : ''}${run ? ' run' : ''}`}><b /><span>{t}</span></div>;
-            })}
-          </div>
-        </>
+        </div>
       );
-      footer = <><button type="button" className="onb-cta" disabled={!setupDone} onClick={next}>Weiter</button>{skip}</>;
+      footer = <button type="button" className="onb-cta" onClick={next}>Weiter</button>;
       break;
     case 'account':
       body = (
