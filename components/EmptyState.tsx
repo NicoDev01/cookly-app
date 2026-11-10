@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import HowItWorksModal from './HowItWorksModal';
+import { ONB_IMG } from './onboarding/onboardingData';
 
 interface EmptyStateProps {
   openAddModal: (options?: { initialTab?: 'ai' | 'manual' }) => void;
@@ -21,9 +22,9 @@ const EmptyState: React.FC<EmptyStateProps> = ({ openAddModal }) => {
 
       {/* Mascot-Bild - darunter, prominent für Willkommens-Screen */}
       <img
-        src="/cookly-mascot.webp"
+        src={ONB_IMG.setup}
         alt="Cookly Maskottchen"
-        className="w-64 h-64 sm:w-80 sm:h-80 object-contain mb-6"
+        className="w-64 sm:w-80 h-auto object-contain mb-6"
       />
 
       {/* Subtext - darunter */}
