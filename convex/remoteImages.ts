@@ -30,6 +30,14 @@ import {
 } from "./lib/remoteImagePolicy";
 
 const USER_AGENT = "Cookly/1.0 remote-image-proxy";
+const IMAGE_HEADERS = { "User-Agent": USER_AGENT, Accept: "image/avif,image/webp,image/png,image/jpeg" };
+// Rezeptseiten liefern Bots oft eine Sperrseite; mit einem normalen Mobil-Browser-Kennzeichen kommt die echte Seite.
+const PAGE_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+  Accept: "text/html,application/xhtml+xml",
+  "Accept-Language": "de-DE,de;q=0.9,en;q=0.5",
+};
+const MAX_PAGE_BYTES = 4 * 1024 * 1024;
 
 type RemoteImage = {
   bytes: Uint8Array;
@@ -64,7 +72,12 @@ async function resolvePublicAddress(url: URL, timeoutMs: number) {
   return addresses.find(({ family }) => family === 4) ?? addresses[0];
 }
 
-function openResponse(url: URL, address: Awaited<ReturnType<typeof resolvePublicAddress>>, timeoutMs: number) {
+function openResponse(
+  url: URL,
+  address: Awaited<ReturnType<typeof resolvePublicAddress>>,
+  timeoutMs: number,
+  headers: Record<string, string>,
+) {
   return new Promise<{ response: IncomingMessage; cancel: () => void }>((resolve, reject) => {
     let response: IncomingMessage | undefined;
     const req = request({
@@ -74,11 +87,7 @@ function openResponse(url: URL, address: Awaited<ReturnType<typeof resolvePublic
       servername: url.hostname,
       path: `${url.pathname}${url.search}`,
       method: "GET",
-      headers: {
-        Host: url.host,
-        "User-Agent": USER_AGENT,
-        Accept: "image/avif,image/webp,image/png,image/jpeg",
-      },
+      headers: { Host: url.host, ...headers },
       checkServerIdentity: (_host, certificate) => checkServerIdentity(url.hostname, certificate),
     }, (incoming) => {
       response = incoming;
@@ -97,17 +106,20 @@ function openResponse(url: URL, address: Awaited<ReturnType<typeof resolvePublic
   });
 }
 
-async function fetchValidatedRemoteImage({
+/** Holt eine öffentliche https-URL mit DNS-Prüfung, Redirect- und Größenlimit (Schutz vor SSRF). */
+async function fetchValidatedRemote({
   url,
   provider,
-  maxBytes = MAX_REMOTE_IMAGE_BYTES,
+  maxBytes,
   timeoutMs,
+  headers,
 }: {
   url: string;
   provider: RemoteImageProvider;
-  maxBytes?: number;
+  maxBytes: number;
   timeoutMs: number;
-}): Promise<RemoteImage> {
+  headers: Record<string, string>;
+}): Promise<{ bytes: Uint8Array; contentType: string | undefined; finalUrl: string }> {
   const deadline = Date.now() + timeoutMs;
   const visited = new Set<string>();
   let current = validateRemoteUrl(url, provider);
@@ -121,7 +133,7 @@ async function fetchValidatedRemoteImage({
     const address = await resolvePublicAddress(current, remaining);
     let opened;
     try {
-      opened = await openResponse(current, address, deadline - Date.now());
+      opened = await openResponse(current, address, deadline - Date.now(), headers);
     } catch (error) {
       if (error instanceof RemoteImageError) throw error;
       throw new RemoteImageError("REMOTE_IMAGE_FETCH_FAILED");
@@ -139,8 +151,7 @@ async function fetchValidatedRemoteImage({
 
       assertContentLength(response.headers["content-length"], maxBytes);
       const bytes = await readLimitedBody(response, maxBytes);
-      const contentType = validateImageType(response.headers["content-type"], bytes);
-      return { bytes, contentType, finalUrl: current.href };
+      return { bytes, contentType: response.headers["content-type"], finalUrl: current.href };
     } catch (error) {
       if (error instanceof RemoteImageError) throw error;
       throw new RemoteImageError("REMOTE_IMAGE_FETCH_FAILED");
@@ -148,6 +159,36 @@ async function fetchValidatedRemoteImage({
       cancel();
     }
   }
+}
+
+async function fetchValidatedRemoteImage({
+  url,
+  provider,
+  maxBytes = MAX_REMOTE_IMAGE_BYTES,
+  timeoutMs,
+}: {
+  url: string;
+  provider: RemoteImageProvider;
+  maxBytes?: number;
+  timeoutMs: number;
+}): Promise<RemoteImage> {
+  const fetched = await fetchValidatedRemote({ url, provider, maxBytes, timeoutMs, headers: IMAGE_HEADERS });
+  return { bytes: fetched.bytes, contentType: validateImageType(fetched.contentType, fetched.bytes), finalUrl: fetched.finalUrl };
+}
+
+/** HTML einer Rezeptseite direkt laden (ohne Jina). Wirft RemoteImageError bei Sperre, Fehler oder Timeout. */
+export async function fetchRemotePage(url: string, timeoutMs: number): Promise<{ html: string; finalUrl: string }> {
+  const target = new URL(url);
+  target.hash = "";
+  const fetched = await fetchValidatedRemote({
+    url: target.href,
+    provider: "website",
+    maxBytes: MAX_PAGE_BYTES,
+    timeoutMs,
+    headers: PAGE_HEADERS,
+  });
+  if (fetched.contentType && !/html/i.test(fetched.contentType)) throw new RemoteImageError("REMOTE_IMAGE_HTTP_ERROR");
+  return { html: new TextDecoder("utf-8").decode(fetched.bytes), finalUrl: fetched.finalUrl };
 }
 
 function getHostname(value?: string): string {

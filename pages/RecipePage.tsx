@@ -43,6 +43,9 @@ type RecipeNavState = {
     tone?: 'success' | 'info' | 'error';
   };
   from?: 'favorites' | 'weekly';
+  /** Vom Import: Seite ohne Einblenden zeigen (TabsLayout) und an derselben Scrollposition öffnen. */
+  seamless?: boolean;
+  scrollTop?: number;
 };
 
 const RecipeSlideContent = React.memo(({ 
@@ -218,21 +221,27 @@ const RecipeSlide = ({
 
 const RecipeSlideWrapper = ({ 
   children, 
-  isActive 
+  isActive,
+  initialScrollTop = 0,
 }: { 
   children: React.ReactNode; 
   isActive: boolean;
+  /** Nur beim ersten Aktivwerden, z. B. Scrollposition der Import-Ansicht. */
+  initialScrollTop?: number;
 }) => {
   const ref = useRef<HTMLDivElement>(null);
+  const initialScrollRef = useRef(initialScrollTop);
 
   useEffect(() => {
     if (isActive && ref.current) {
+      const top = initialScrollRef.current;
+      initialScrollRef.current = 0;
       // Reset immediately
-      ref.current.scrollTop = 0;
+      ref.current.scrollTop = top;
       
       // And ensure it stays there after any layout shifts
       requestAnimationFrame(() => {
-        if (ref.current) ref.current.scrollTop = 0;
+        if (ref.current) ref.current.scrollTop = top;
       });
     }
   }, [isActive]);
@@ -475,7 +484,11 @@ const RecipePage: React.FC = () => {
         >
           <div className="flex h-full touch-pan-y touch-pinch-zoom">
             {recipeIds.map((rId, index) => (
-              <RecipeSlideWrapper key={rId} isActive={index === currentIndex}>
+              <RecipeSlideWrapper
+                key={rId}
+                isActive={index === currentIndex}
+                initialScrollTop={rId === routeRecipeId ? (location.state as RecipeNavState | null)?.scrollTop : undefined}
+              >
                 <RecipeSlide 
                   id={rId}
                   isVisible={Math.abs(currentIndex - index) <= 1}

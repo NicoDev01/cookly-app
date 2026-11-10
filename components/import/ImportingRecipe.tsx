@@ -24,17 +24,19 @@ const SKELETON_STEPS = 4;
  */
 const ImportingRecipe: React.FC<{
   image: string | null;
+  /** Bild ist schon geladen und ersetzt ein gleich aussehendes Vorschaubild: ohne Einblenden tauschen. */
+  imageInstant?: boolean;
   recipe: Recipe | null;
   ingredientCount: number;
   stepCount: number;
   onBack: () => void;
-}> = ({ image, recipe, ingredientCount, stepCount, onBack }) => {
+}> = ({ image, imageInstant, recipe, ingredientCount, stepCount, onBack }) => {
   const pillBones = recipe ? recipe.ingredients.length - ingredientCount : PILL_WIDTHS.length;
   const stepBones = recipe ? recipe.instructions.length - stepCount : SKELETON_STEPS;
 
   return (
     <main className={`imp-open relative z-10 flex min-h-[100dvh] flex-1 flex-col bg-white pb-48`} aria-busy={!recipe}>
-      <ImportHero image={image} onBack={onBack} />
+      <ImportHero image={image} instant={imageInstant} onBack={onBack} />
 
       <div className="relative z-20 -mt-3 mx-2 mb-2 flex-1 p-6 rounded-3xl glassmorphism bg-white/60 backdrop-blur-xl shadow-neo-light-convex border border-gray-100 md:mx-auto md:max-w-2xl lg:max-w-3xl">
         {recipe ? (
@@ -101,7 +103,7 @@ const ImportingRecipe: React.FC<{
  * Wie components/RecipeHero.tsx: Zurück-Knopf unter der Notch, Bild in voller Breite mit Verlauf nach Weiß.
  * Favorit, Wochenplan und Menü sind angedeutet, aber erst auf der echten Rezeptseite bedienbar.
  */
-const ImportHero: React.FC<{ image: string | null; onBack: () => void }> = ({ image, onBack }) => (
+const ImportHero: React.FC<{ image: string | null; instant?: boolean; onBack: () => void }> = ({ image, instant, onBack }) => (
   <div className="flex flex-col w-full bg-white">
     <div className="sticky top-0 z-40 h-0 w-full">
       <div className="absolute top-0 left-0 right-0 px-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}>
@@ -120,7 +122,7 @@ const ImportHero: React.FC<{ image: string | null; onBack: () => void }> = ({ im
       </div>
     </div>
     <div className="relative w-full overflow-hidden bg-white" style={{ maxHeight: '70vh' }}>
-      {image ? <HeroImage key={image} src={image} /> : <HeroBone />}
+      {image ? <HeroImage key={image} src={image} instant={instant} /> : <HeroBone />}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-b from-transparent to-white" />
     </div>
   </div>
@@ -133,8 +135,11 @@ const HeroBone = () => (
 );
 
 /** Bild erst zeigen, wenn es geladen ist; dann über den Platzhalter blenden. */
-const HeroImage: React.FC<{ src: string }> = ({ src }) => {
+const HeroImage: React.FC<{ src: string; instant?: boolean }> = ({ src, instant }) => {
   const [loaded, setLoaded] = useState(false);
+  if (instant) {
+    return <img src={sizedImageUrl(src, window.innerWidth, window.devicePixelRatio || 1)} alt="" referrerPolicy="no-referrer" className="block w-full h-auto" />;
+  }
   return (
     <>
       <img

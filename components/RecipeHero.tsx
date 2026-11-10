@@ -12,6 +12,7 @@ import { Recipe } from "../types";
 import { useMutation } from "convex/react";
 import { logger } from "../utils/logger";
 import { sizedImageUrl } from "../utils/imageUrl";
+import { useLoadedImageSrc } from "../hooks/useLoadedImageSrc";
 import { api } from "../convex/_generated/api";
 import { ModalLoader } from "./PageLoader";
 
@@ -180,7 +181,7 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
     };
   }, []);
 
-  const heroImageSrc = recipe.image || recipe.sourceImageUrl || "";
+  const heroImageSrc = useLoadedImageSrc(recipe.image || recipe.sourceImageUrl || "");
 
   return (
     <div className="flex flex-col w-full bg-white group/hero">

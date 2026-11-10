@@ -20,3 +20,16 @@ export const sizedImageUrl = (url: string, cssWidth: number, pixelRatio: number)
   sized.searchParams.set('w', String(width));
   return sized.toString();
 };
+
+/** Lädt und dekodiert ein Bild vorab. Löst immer auf, auch bei Fehlern oder ohne decode(). */
+export const preloadImage = (url: string) =>
+  new Promise<void>((resolve) => {
+    const img = new Image();
+    img.referrerPolicy = 'no-referrer';
+    img.onload = () => {
+      const decoded = typeof img.decode === 'function' ? img.decode() : Promise.resolve();
+      decoded.catch(() => undefined).then(() => resolve());
+    };
+    img.onerror = () => resolve();
+    img.src = url;
+  });

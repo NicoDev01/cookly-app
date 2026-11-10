@@ -9,8 +9,23 @@ import { GEMINI_MODELS, RECIPE_CATEGORIES } from "./constants";
 import { createImportTimer } from "./importTiming";
 import { runLegacyImport } from "./legacyImport";
 import { isRetryableGeminiError, runWithGeminiModelFallback } from "../utils/geminiRetry";
+import { extractRecipeFromHtml, type PageRecipe } from "../utils/recipeJsonLd";
+import { fetchRemotePage } from "./remoteImages";
 
 const JINA_API_KEY = process.env.JINA_API_KEY;
+/** Direktabruf der Seite: typisch < 1 s. Danach Jina als Fallback (4–12 s gemessen, Nov. 2026). */
+const PAGE_FETCH_TIMEOUT_MS = 5_000;
+
+/** Rezept aus dem JSON-LD der Seite, oder null (gesperrt, kein Rezept-Markup, Timeout). */
+const readPageRecipe = async (url: string): Promise<PageRecipe | null> => {
+    try {
+        const { html } = await fetchRemotePage(url, PAGE_FETCH_TIMEOUT_MS);
+        return extractRecipeFromHtml(html);
+    } catch (error) {
+        console.warn("Direct page fetch failed, falling back to Jina", error instanceof Error ? error.message : String(error));
+        return null;
+    }
+};
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
 interface ExtractedRecipe {
@@ -122,11 +137,22 @@ export const scrapeWebsiteInternal = internalAction({
         // ============================================================
         // 3. Fetch Content via Jina AI Reader mit Graceful Degradation
         // ============================================================
-        let pageTitle: string;
-        let markdown: string;
-        let pageImageUrl: string;
+        let pageTitle = "";
+        let markdown = "";
+        let pageImageUrl = "";
 
-        try {
+        const pageRecipe = await readPageRecipe(args.url);
+        if (pageRecipe) {
+            pageTitle = pageRecipe.title;
+            markdown = pageRecipe.content;
+            pageImageUrl = pageRecipe.image ?? "";
+            timer.mark("page_jsonld_extracted", { markdownLength: markdown.length, hasPageImage: !!pageImageUrl });
+            await reportExtractingPhase(ctx, args, pageImageUrl);
+        } else {
+            timer.mark("page_jsonld_missing");
+        }
+
+        if (!pageRecipe) try {
             const jinaUrl = `https://r.jina.ai/${encodeURIComponent(args.url)}`;
 
             const jinaResponse = await fetch(jinaUrl, {
@@ -217,7 +243,14 @@ export const scrapeWebsiteInternal = internalAction({
                 ai.models.generateContent({
                     model,
                     contents: prompt,
-                })
+                    config: { responseMimeType: "application/json", temperature: 0 },
+                }), {
+                    onRetry: ({ attempt, error }) => timer.mark("gemini_retry", {
+                        attempt,
+                        error: error instanceof Error ? error.message.slice(0, 200) : String(error),
+                    }),
+                    onFallback: ({ from, to }) => timer.mark("gemini_model_fallback", { from, to }),
+                }
             );
 
             const responseText = result.text || "";

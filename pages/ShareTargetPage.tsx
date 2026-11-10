@@ -19,6 +19,7 @@ import { IMPORT_WAIT_TIMEOUT_MS, shouldAutoRetryImport } from '../utils/importOp
 import { expectedImportStepMs, importStepFromOperation, importStepTitle } from '../utils/importProgress';
 import { capture } from '../services/analytics';
 import { createUuid } from '../utils/uuid';
+import { preloadImage, sizedImageUrl } from '../utils/imageUrl';
 import { detectImportTarget } from '../utils/importTarget';
 
 /** Ab hier ist ein Import spürbar langsam (Instagram p50 ≈ 11 s, Nov. 2026). */
@@ -29,6 +30,16 @@ const INGREDIENTS_AT_MS = 280;
 const INGREDIENT_STAGGER_MS = 70;
 const STEP_STAGGER_MS = 140;
 const DONE_HOLD_MS = 1_400;
+/** So lange wartet der Wechsel zur Rezeptseite höchstens auf das endgültige Bild. */
+const HERO_WAIT_MAX_MS = 3_000;
+
+/** Nächster scrollbarer Vorfahre (in der App der Seiten-Container aus TabsLayout). */
+const scrollParent = (el: HTMLElement | null) => {
+  for (let node = el?.parentElement; node; node = node.parentElement) {
+    if (/(auto|scroll)/.test(getComputedStyle(node).overflowY)) return node;
+  }
+  return null;
+};
 
 /**
  * iOS meldet einen Share mehrfach (Kaltstart, Resume, Event), und jede Meldung mountet diese Seite neu
@@ -238,15 +249,35 @@ const ShareTargetPage: React.FC = () => {
     }
   }, [recipeId, recipe, failure, revealStartedAt, resumed, notifyImportSuccess]);
 
+  // Endgültiges Bild vorladen (nach dem Speichern ersetzt der Server es durch die Storage-Kopie):
+  // Erst wenn es dekodiert ist, wechselt die Import-Ansicht darauf und dann zur Rezeptseite, damit dort nichts springt.
+  const finalHero = recipe ? recipe.image || recipe.sourceImageUrl || '' : '';
+  const [loadedHero, setLoadedHero] = useState<string | null>(null);
+  useEffect(() => {
+    if (!finalHero) return;
+    let active = true;
+    void preloadImage(sizedImageUrl(finalHero, window.innerWidth, window.devicePixelRatio || 1)).then(() => {
+      if (active) setLoadedHero(finalHero);
+    });
+    return () => {
+      active = false;
+    };
+  }, [finalHero]);
+  const heroReady = !finalHero || loadedHero === finalHero;
+
   const reveal = recipe ? revealTimeline(recipe) : null;
   const revealElapsed = useElapsed(reveal && !failure ? revealStartedAt : null);
-  const shouldNavigate = !!reveal && revealStartedAt !== null && revealElapsed >= reveal.navigateAt;
+  const shouldNavigate = !!reveal && revealStartedAt !== null && revealElapsed >= reveal.navigateAt
+    && (heroReady || revealElapsed >= reveal.navigateAt + HERO_WAIT_MAX_MS);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!shouldNavigate || !recipeId) return;
     if (lastShare) lastShare.recipeId = recipeId;
     // Mit eigener ID-Liste: Sonst wartet RecipePage auf recipes.listIds und zeigt so lange einen Spinner.
-    navigate(`/recipe/${recipeId}`, { replace: true, state: { nav: { ids: [recipeId], index: 0 } } });
+    // seamless + scrollTop: Die Rezeptseite sieht schon aus wie diese Ansicht, also ohne Einblenden an gleicher Stelle.
+    const scrollTop = scrollParent(rootRef.current)?.scrollTop ?? 0;
+    navigate(`/recipe/${recipeId}`, { replace: true, state: { nav: { ids: [recipeId], index: 0 }, seamless: true, scrollTop } });
   }, [shouldNavigate, recipeId, navigate]);
 
   const handleClose = useCallback(async () => {
@@ -306,13 +337,15 @@ const ShareTargetPage: React.FC = () => {
   const provider = target?.provider ?? 'website';
   const step = importStepFromOperation(operation);
   const done = !!reveal && revealElapsed >= reveal.doneAt;
-  const image = operation?.previewImageUrl || recipe?.image || recipe?.sourceImageUrl || null;
+  const preview = operation?.previewImageUrl || null;
+  const image = finalHero && heroReady ? finalHero : preview;
 
   return (
-    <div className={`min-h-[100dvh] bg-white ${resumed ? 'imp-instant' : ''}`}>
+    <div ref={rootRef} className={`min-h-[100dvh] bg-white ${resumed ? 'imp-instant' : ''}`}>
       <style>{IMPORT_CSS}</style>
       <ImportingRecipe
         image={image}
+        imageInstant={!!preview && image !== preview}
         recipe={reveal ? recipe ?? null : null}
         ingredientCount={reveal && recipe ? staggerCount(revealElapsed, INGREDIENTS_AT_MS, INGREDIENT_STAGGER_MS, recipe.ingredients.length) : 0}
         stepCount={reveal && recipe ? staggerCount(revealElapsed, reveal.stepsAt, STEP_STAGGER_MS, recipe.instructions.length) : 0}

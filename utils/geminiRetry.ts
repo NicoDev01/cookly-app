@@ -73,6 +73,8 @@ export const getGeminiApiErrorInfo = (error: unknown): GeminiApiErrorInfo => {
 
 export const isRetryableGeminiError = (error: unknown): boolean => {
   const info = getGeminiApiErrorInfo(error);
+  // 402: Guthaben aufgebraucht. Kommt mit Status RESOURCE_EXHAUSTED, ein Neuversuch hilft aber nicht.
+  if (info.code === 402) return false;
   if (typeof info.code === "number" && RETRYABLE_CODES.has(info.code)) return true;
   if (info.status && RETRYABLE_STATUSES.has(info.status)) return true;
   return false;
