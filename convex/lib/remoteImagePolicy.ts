@@ -144,7 +144,7 @@ export function validateImageType(contentTypeHeader: string | undefined, bytes: 
     (contentType === "image/webp" && matches(bytes, [0x52, 0x49, 0x46, 0x46]) && matches(bytes, [0x57, 0x45, 0x42, 0x50], 8)) ||
     (contentType === "image/avif" && matches(bytes, [0x66, 0x74, 0x79, 0x70], 4) &&
       ["avif", "avis"].includes(new TextDecoder().decode(bytes.subarray(8, 12))));
-  if (!valid) blocked("REMOTE_IMAGE_INVALID_TYPE");
+  if (!valid || !contentType) return blocked("REMOTE_IMAGE_INVALID_TYPE");
   return contentType;
 }
 

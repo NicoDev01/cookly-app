@@ -35,6 +35,7 @@ export type ShoppingRecipePreview = {
   _id: string;
   title: string;
   image?: string;
+  thumbnail?: string;
   imageBlurhash?: string;
   sourceImageUrl?: string;
 };

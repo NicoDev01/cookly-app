@@ -3,7 +3,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { action, internalAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 import { GoogleGenAI } from "@google/genai";
 import { GEMINI_MODELS } from "./constants";
 import { runWithGeminiModelFallback } from "../utils/geminiRetry";
@@ -54,7 +54,7 @@ export const scanRecipePhoto = action({
     fallback: fallbackValidator,
   },
   returns: v.object({ doc: recipeScanDocValidator }),
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ doc: Infer<typeof recipeScanDocValidator> }> => {
     const authUserId = await getAuthUserId(ctx);
     if (!authUserId) throw new Error("Not authenticated");
     const user = await ctx.runQuery(api.users.getCurrentUser, {});

@@ -113,7 +113,7 @@ export const resetAnalyticsIdentity = () => {
 export const capture = (name: EventName, properties: AnalyticsProperties = {}) => {
   const identity = getAnalyticsIdentity();
   const occurredAt = Date.now();
-  const payload = {
+  const payload: AnalyticsProperties = {
     ...identity,
     platform: Capacitor.getPlatform(),
     appVersion: APP_VERSION,

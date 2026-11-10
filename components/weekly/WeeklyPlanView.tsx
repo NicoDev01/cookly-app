@@ -34,6 +34,7 @@ export type WeekMeal = {
     _id: Id<'recipes'>;
     title: string;
     image?: string;
+    thumbnail?: string;
     imageBlurhash?: string;
     sourceImageUrl?: string;
   };

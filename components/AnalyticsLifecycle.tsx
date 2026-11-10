@@ -34,7 +34,7 @@ export const AnalyticsLifecycle = () => {
   const location = useLocation();
   const previous = useRef<string | undefined>(undefined);
   const enteredAt = useRef(0);
-  const syncedUser = useRef<string>();
+  const syncedUser = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     initAnalytics();
