@@ -4,16 +4,16 @@
  * - Pastell-Pills wie bisher; Abhaken streicht durch, nichts springt.
  * - Schnelleingabe („2 Zwiebeln“) mit Vorschlägen aus „zuletzt gekauft“ (nur auf dem Gerät gespeichert).
  * - „Abteilungen“ mit Überschrift oder „Rezepte“ mit Rezeptbild; gleiche Zutaten = eine Pill, Mengen addiert.
- * - Halten: Bearbeiten / Entfernen. ⋮: Erledigte entfernen / Liste leeren. Entfernen immer mit „Rückgängig“.
+ * - Halten: Bearbeiten / Entfernen. ⋮: Erledigte entfernen / Liste leeren. Entfernen wirkt sofort, ohne Rückgängig-Leiste.
  * - Display bleibt an, sobald man abhakt (= man steht im Laden), bis man den Tab verlässt.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { KeepAwake } from '@capacitor-community/keep-awake';
 import ImageWithBlurhash from '../ImageWithBlurhash';
-import FloatingBar from '../ui/FloatingBar';
 import { iconButton, inputClass, inputIcon, inputShell, sheetButton } from '../ui/tabStyles';
 import BottomSheet from '../weekly/BottomSheet';
+import { ONB_IMG } from '../onboarding/onboardingData';
 import { useHaptic } from '../../hooks/useHaptic';
 import { useLongPress } from '../../hooks/useLongPress';
 import { useNotification } from '../../contexts/NotificationContext';
@@ -51,16 +51,12 @@ type Props = {
   onQuickAdd: (name: string, amount?: string) => void;
   onUpdate: (id: string, name: string, amount?: string) => void;
   onRemove: (items: ShoppingListViewItem[]) => void;
-  onRestore: (items: ShoppingListViewItem[]) => void;
   emptyPath: string;
   /** localStorage-Schlüssel für „zuletzt gekauft“; das Labor nutzt einen eigenen. */
   recentsKey: string;
   initialRecents?: string[];
 };
 
-type Undo = { label: string; items: ShoppingListViewItem[] };
-
-const UNDO_MS = 5000;
 const MAX_RECENTS = 30;
 
 const readRecents = (key: string, fallback: string[]): string[] => {
@@ -133,7 +129,6 @@ const ShoppingListView: React.FC<Props> = ({
   onQuickAdd,
   onUpdate,
   onRemove,
-  onRestore,
   emptyPath,
   recentsKey,
   initialRecents = [],
@@ -146,14 +141,11 @@ const ShoppingListView: React.FC<Props> = ({
   const [fresh, setFresh] = useState<string | null>(null);
   const [menu, setMenu] = useState<'list' | ShoppingRow | null>(null);
   const [editDraft, setEditDraft] = useState('');
-  const [undo, setUndo] = useState<Undo | null>(null);
   const [shopping, setShopping] = useState(false);
-  const undoTimer = useRef<number | undefined>(undefined);
   const freshTimer = useRef<number | undefined>(undefined);
 
   useEffect(
     () => () => {
-      window.clearTimeout(undoTimer.current);
       window.clearTimeout(freshTimer.current);
     },
     [],
@@ -205,22 +197,12 @@ const ShoppingListView: React.FC<Props> = ({
     }
   };
 
-  const removeItems = (removed: ShoppingListViewItem[], label: string) => {
+  const removeItems = (removed: ShoppingListViewItem[]) => {
     setMenu(null);
     if (removed.length === 0) return;
     remember(removed.map((i) => i.name));
     onRemove(removed);
-    setUndo({ label, items: removed });
     void impact('medium');
-    window.clearTimeout(undoTimer.current);
-    undoTimer.current = window.setTimeout(() => setUndo(null), UNDO_MS);
-  };
-
-  const restore = () => {
-    if (!undo) return;
-    onRestore(undo.items);
-    setUndo(null);
-    window.clearTimeout(undoTimer.current);
   };
 
   /**
@@ -261,7 +243,6 @@ const ShoppingListView: React.FC<Props> = ({
     }
   };
 
-  const doneLabel = `${doneCount} ${doneCount === 1 ? 'Eintrag' : 'Einträge'} entfernt`;
   const rowMenu = menu && menu !== 'list' ? menu : null;
   const singleRecipeTitle = rowMenu?.ids.length === 1 ? list.find((i) => i._id === rowMenu.ids[0])?.recipeTitle : undefined;
 
@@ -398,7 +379,7 @@ const ShoppingListView: React.FC<Props> = ({
         {doneCount > 0 && (
           <button
             type="button"
-            onClick={() => removeItems(checkedItems, openCount === 0 ? 'Liste geleert' : doneLabel)}
+            onClick={() => removeItems(checkedItems)}
             className="mt-1 flex items-center gap-2 self-center rounded-full border border-solid border-black/10 px-4 py-2 text-sm font-semibold text-text-primary-light transition active:scale-95 dark:border-white/15 dark:text-text-primary-dark"
           >
             <span className="material-symbols-outlined text-[18px]">delete_sweep</span>
@@ -408,17 +389,17 @@ const ShoppingListView: React.FC<Props> = ({
 
         {items && items.length === 0 && (
           <div className="flex flex-col items-center px-6 pt-10 text-center animate-in fade-in">
-            <span className="material-symbols-outlined text-[72px] text-primary">shopping_basket</span>
-            <h2 className="mt-2 text-2xl font-bold tracking-tight text-text-primary-light dark:text-text-primary-dark">
-              Noch keine <span className="italic text-primary">Zutaten</span>
+            <img src={ONB_IMG.setup} alt="" className="h-auto w-56 object-contain" />
+            <h2 className="mt-4 text-2xl font-bold tracking-tight text-text-primary-light dark:text-text-primary-dark">
+              Noch keine Zutaten in deiner <span className="italic text-primary">Einkaufsliste</span>
             </h2>
-            <p className="mt-2 max-w-xs text-sm text-text-secondary-light dark:text-text-secondary-dark">Oben eintippen oder Zutaten aus dem Wochenplan holen.</p>
+            <p className="mt-2 max-w-xs text-sm text-text-secondary-light dark:text-text-secondary-dark">Tippe oben eine Zutat ein oder füge Zutaten aus deinen Rezepten hinzu.</p>
             <Link
               to={emptyPath}
               className="mt-6 flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white shadow-neo-light-convex transition active:scale-95"
             >
-              <span className="material-symbols-outlined text-[20px]">calendar_month</span>
-              Zum Wochenplan
+              <span className="material-symbols-outlined text-[20px]">menu_book</span>
+              Zu deinen Rezepten
             </Link>
           </div>
         )}
@@ -427,27 +408,16 @@ const ShoppingListView: React.FC<Props> = ({
       {/* Navigation + Platz für den runden „+ Rezept“-Knopf und die schwebende Leiste darüber. */}
       <div style={{ height: 'calc(var(--nav-height) + var(--safe-area-inset-bottom, 0px) + 8rem)' }} className="w-full shrink-0" />
 
-      {/* Rückgängig statt Bestätigungsdialog: Entfernen geht sofort, ein Tipp holt es zurück. */}
-      {undo && (
-        <FloatingBar>
-          <div className="flex max-w-sm items-center gap-3 rounded-full bg-[#111718] py-2 pl-4 pr-2 text-sm text-white shadow-lg">
-            <span className="truncate">{undo.label}</span>
-            <button type="button" onClick={restore} className="rounded-full px-3 py-1.5 font-semibold text-green-300 active:bg-white/10">
-              Rückgängig
-            </button>
-          </div>
-        </FloatingBar>
-      )}
 
       {menu === 'list' && (
         <BottomSheet title="Einkaufsliste" onClose={() => setMenu(null)}>
           <div className="flex flex-col gap-1 pb-2">
-            <button type="button" disabled={doneCount === 0} onClick={() => removeItems(checkedItems, doneLabel)} className={sheetButton}>
+            <button type="button" disabled={doneCount === 0} onClick={() => removeItems(checkedItems)} className={sheetButton}>
               <span className="material-symbols-outlined text-[22px]">check_circle</span>
               Erledigte entfernen
               {doneCount > 0 && <span className="ml-auto text-sm text-text-secondary-light dark:text-text-secondary-dark">{doneCount}</span>}
             </button>
-            <button type="button" onClick={() => removeItems(list, 'Liste geleert')} className={`${sheetButton} !text-red-500 active:!bg-red-500/10`}>
+            <button type="button" onClick={() => removeItems(list)} className={`${sheetButton} !text-red-500 active:!bg-red-500/10`}>
               <span className="material-symbols-outlined text-[22px]">delete_sweep</span>
               Ganze Liste leeren
             </button>
@@ -500,7 +470,7 @@ const ShoppingListView: React.FC<Props> = ({
               type="button"
               onClick={() => {
                 const ids = new Set(rowMenu.ids);
-                removeItems(list.filter((i) => ids.has(i._id)), `„${rowMenu.name}“ entfernt`);
+                removeItems(list.filter((i) => ids.has(i._id)));
               }}
               className={`${sheetButton} !text-red-500 active:!bg-red-500/10`}
             >

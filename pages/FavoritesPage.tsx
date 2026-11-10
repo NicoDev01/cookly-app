@@ -5,6 +5,7 @@ import { api } from '../convex/_generated/api';
 import FavoritesView, { type FavoriteRecipe } from '../components/favorites/FavoritesView';
 import { ModalLoader } from '../components/PageLoader';
 import { useNotification } from '../contexts/NotificationContext';
+import { useStableQuery } from '../hooks/useStableQuery';
 import { logger } from '../utils/logger';
 import { getUserErrorMessage } from '../utils/userErrors';
 import { plannedLabels } from '../utils/favoritesView';
@@ -22,7 +23,8 @@ const patchFavorites = (store: OptimisticLocalStore, fn: (list: FavoritesValue) 
 
 const FavoritesPage: React.FC = () => {
   const { showToast } = useNotification();
-  const favorites = useQuery(api.recipes.listPreviews, FAVORITES_ARGS);
+  // Beim Tab-Wechsel das letzte Ergebnis zeigen statt kurz nichts (kein Flackern).
+  const favorites = useStableQuery(api.recipes.listPreviews, FAVORITES_ARGS);
   const [planFor, setPlanFor] = useState<FavoriteRecipe | null>(null);
 
   // Aktuelle Woche für den Hinweis „schon eingeplant“; die Abfrage liefert nur schlanke Vorschauen.
@@ -43,7 +45,7 @@ const FavoritesPage: React.FC = () => {
     [week, todayString],
   );
 
-  // Optimistisch: Entfernen und Rückgängig wirken sofort.
+  // Optimistisch: Entfernen wirkt sofort.
   const setFavorite = useMutation(api.recipes.setFavorite).withOptimisticUpdate((store, args) =>
     patchFavorites(store, (list) => (args.isFavorite ? list : list.filter((r) => r._id !== args.id))),
   );
@@ -60,10 +62,6 @@ const FavoritesPage: React.FC = () => {
         recipes={favorites}
         plannedLabels={planned}
         onUnfavorite={(recipe) => void setFavorite({ id: recipe._id, isFavorite: false }).catch(fail('Unfavorite'))}
-        onRestore={(recipe) =>
-          // Alter Zeitpunkt (bei alten Favoriten das Anlagedatum), damit das Rezept an seinen Platz zurückkehrt.
-          void setFavorite({ id: recipe._id, isFavorite: true, favoritedAt: recipe.favoritedAt ?? recipe.createdAt }).catch(fail('Restore'))
-        }
         onPlan={setPlanFor}
         onAddToShopping={async (recipe) => (await addToShopping({ recipeIds: [recipe._id] })).recipesAdded > 0}
         storageKey="cookly.favorites"

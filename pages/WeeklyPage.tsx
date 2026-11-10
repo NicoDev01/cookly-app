@@ -50,7 +50,6 @@ const WeeklyPage: React.FC = () => {
       if (value) store.setQuery(api.weekly.getWeek, queryArgs, value.filter((m) => !args.mealIds.includes(m.mealId)));
     }
   });
-  const restoreMeals = useMutation(api.weekly.restoreMeals);
   const copyWeek = useMutation(api.weekly.copyWeek);
   const addRecipesToShoppingList = useMutation(api.shopping.addRecipesToShoppingList);
 
@@ -103,9 +102,6 @@ const WeeklyPage: React.FC = () => {
         }}
         onRemove={(list) => {
           removeMeals({ mealIds: list.map((m) => m.mealId) }).catch(fail('Remove meals'));
-        }}
-        onRestore={(list) => {
-          restoreMeals({ meals: list.map((m) => ({ recipeId: m.recipe._id, date: m.date, scope: m.scope })) }).catch(fail('Restore meals'));
         }}
       />
 

@@ -2,7 +2,7 @@
  * Wochenplan-Ansicht (Konzept 09.11.2026, im Labor als v1 entstanden). Reine Darstellung:
  * Daten und Speichern kommen von außen, damit App (Convex) und Labor (Testdaten) dieselbe Ansicht nutzen.
  * - 7 kompakte Tageszeilen + „Ohne festen Tag“; ein „+“ pro Tag an fester Stelle.
- * - ⋮-Sheet zum Verschieben/Entfernen, Entfernen mit „Rückgängig“.
+ * - ⋮-Sheet zum Verschieben/Entfernen; Entfernen wirkt sofort, ohne Rückgängig-Leiste.
  * - Gedrückt halten startet die Mehrfachauswahl (wie CategoryRecipesPage).
  * - Wischen wechselt die Woche; leere Woche: „Vorwoche übernehmen“; „Zutaten einkaufen“ für die ganze Woche.
  */
@@ -56,10 +56,8 @@ type Props = {
   onAdd: (slot: WeekSlot) => void;
   onMove: (meals: WeekMeal[], slot: WeekSlot) => void;
   onRemove: (meals: WeekMeal[]) => void;
-  onRestore: (meals: WeekMeal[]) => void;
 };
 
-const UNDO_MS = 5000;
 /** Wie CategoryRecipesPage: kurz genug für Absicht, lang genug, um nicht beim Scrollen auszulösen. */
 const LONG_PRESS_MS = 500;
 
@@ -188,17 +186,14 @@ const WeeklyPlanView: React.FC<Props> = ({
   onAdd,
   onMove,
   onRemove,
-  onRestore,
 }) => {
   const { impact } = useHaptic();
   const { showToast } = useNotification();
   const todayStr = toDateString(new Date());
 
   const [sheet, setSheet] = useState<SheetState>(null);
-  const [undo, setUndo] = useState<WeekMeal[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const selecting = selected.size > 0;
-  const undoTimer = useRef<number | undefined>(undefined);
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
 
   const weekStart = weekStartForOffset(weekOffset);
@@ -210,7 +205,6 @@ const WeeklyPlanView: React.FC<Props> = ({
   const allShopped = meals.length > 0 && toShopCount === 0;
 
   // Während der Auswahl sind Wochenwechsel und Wischen gesperrt, die Auswahl bleibt also in einer Woche.
-  useEffect(() => () => window.clearTimeout(undoTimer.current), []);
 
   const changeWeek = (offset: number) => {
     onWeekOffsetChange(offset);
@@ -228,17 +222,7 @@ const WeeklyPlanView: React.FC<Props> = ({
     onRemove(list);
     setSheet(null);
     setSelected(new Set());
-    setUndo(list);
     void impact('medium');
-    window.clearTimeout(undoTimer.current);
-    undoTimer.current = window.setTimeout(() => setUndo(null), UNDO_MS);
-  };
-
-  const restore = () => {
-    if (!undo) return;
-    onRestore(undo);
-    setUndo(null);
-    window.clearTimeout(undoTimer.current);
   };
 
   // Mehrfachauswahl: Halten startet sie, Tippen schaltet um, die letzte Abwahl beendet sie.
@@ -475,18 +459,6 @@ const WeeklyPlanView: React.FC<Props> = ({
             >
               <span className="material-symbols-outlined text-[20px]">delete</span>
               Entfernen
-            </button>
-          </div>
-        </FloatingBar>
-      )}
-
-      {/* Rückgängig statt Bestätigungsdialog: Entfernen geht sofort, ein Tipp holt es zurück. */}
-      {undo && !selecting && (
-        <FloatingBar>
-          <div className="flex max-w-sm items-center gap-3 rounded-full bg-[#111718] py-2 pl-4 pr-2 text-sm text-white shadow-lg">
-            <span className="truncate">{undo.length === 1 ? `„${undo[0].recipe.title}“ entfernt` : `${undo.length} Gerichte entfernt`}</span>
-            <button type="button" onClick={restore} className="rounded-full px-3 py-1.5 font-semibold text-green-300 active:bg-white/10">
-              Rückgängig
             </button>
           </div>
         </FloatingBar>

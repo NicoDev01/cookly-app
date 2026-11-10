@@ -5,6 +5,7 @@ import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
 import ShoppingListView, { type ShoppingMode } from '../components/shopping/ShoppingListView';
 import { useNotification } from '../contexts/NotificationContext';
+import { useStableQuery } from '../hooks/useStableQuery';
 import { logger } from '../utils/logger';
 import { getUserErrorMessage } from '../utils/userErrors';
 import { buildShoppingItemKey, type ShoppingListViewItem } from '../utils/shoppingListView';
@@ -28,7 +29,8 @@ const patchList = (store: OptimisticLocalStore, fn: (list: ListValue) => ListVal
 const ShoppingPage: React.FC = () => {
   const { showToast } = useNotification();
   const [mode, setMode] = useState<ShoppingMode>(readMode);
-  const items = useQuery(api.shopping.getShoppingList);
+  // Beim Tab-Wechsel die letzte Liste zeigen statt kurz die leere Ansicht.
+  const items = useStableQuery(api.shopping.getShoppingList);
   // Rezeptbilder nur in der Rezept-Ansicht; „Abteilungen“ kommt ohne aus.
   const recipes = useQuery(api.shopping.getShoppingRecipes, mode === 'recipes' && items && items.length > 0 ? {} : 'skip');
 
@@ -62,7 +64,6 @@ const ShoppingPage: React.FC = () => {
       return [...list, temp];
     }),
   );
-  const restoreItems = useMutation(api.shopping.restoreShoppingItems);
 
   const fail = (action: string) => (err: unknown) => {
     logger.error('Shopping', `${action} failed`, err);
@@ -88,19 +89,7 @@ const ShoppingPage: React.FC = () => {
       onQuickAdd={(name, amount) => void quickAdd({ name, amount }).catch(fail('add'))}
       onUpdate={(id, name, amount) => void updateItem({ id: id as Id<'shoppingItems'>, name, amount }).catch(fail('update'))}
       onRemove={(list) => void removeItems({ ids: list.map((i) => i._id as Id<'shoppingItems'>) }).catch(fail('remove'))}
-      onRestore={(list) =>
-        void restoreItems({
-          items: list.map((i) => ({
-            name: i.name,
-            amount: i.amount,
-            checked: i.checked,
-            recipeId: i.recipeId as Id<'recipes'> | undefined,
-            recipeTitle: i.recipeTitle,
-            createdAt: i.createdAt,
-          })),
-        }).catch(fail('restore'))
-      }
-      emptyPath="/tabs/weekly"
+      emptyPath="/tabs/categories"
       recentsKey="cookly.shopping.recents"
     />
   );

@@ -1,8 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Id } from '../../convex/_generated/dataModel';
 import ImageWithBlurhash from '../ImageWithBlurhash';
-import FloatingBar from '../ui/FloatingBar';
 import BottomSheet from '../weekly/BottomSheet';
 import { iconButton, inputClass, inputIcon, inputShell, sheetButton } from '../ui/tabStyles';
 import { ONB_IMG } from '../onboarding/onboardingData';
@@ -41,7 +40,6 @@ type Props = {
   /** undefined = lädt noch */
   recipes: FavoriteRecipe[] | undefined;
   onUnfavorite: (recipe: FavoriteRecipe) => void;
-  onRestore: (recipe: FavoriteRecipe) => void;
   onPlan: (recipe: FavoriteRecipe) => void;
   /** true = hinzugefügt, false = stand schon auf der Liste */
   onAddToShopping: (recipe: FavoriteRecipe) => Promise<boolean>;
@@ -54,7 +52,6 @@ type Props = {
   searchAllPath: string;
 };
 
-const UNDO_MS = 5000;
 /** Symbol für den Wechsel in die jeweils andere Ansicht. */
 const SWITCH_ICON: Record<FavoriteLayout, string> = { grid: 'view_agenda', list: 'view_module' };
 /** Suche erst ab einer Menge, bei der Scrollen länger dauert als Tippen. */
@@ -198,7 +195,6 @@ const RecipeCard: React.FC<{
 const FavoritesView: React.FC<Props> = ({
   recipes,
   onUnfavorite,
-  onRestore,
   onPlan,
   onAddToShopping,
   storageKey,
@@ -212,9 +208,6 @@ const FavoritesView: React.FC<Props> = ({
   const [query, setQuery] = useState('');
   const [chip, setChip] = useState<string | null>(null);
   const [menu, setMenu] = useState<FavoriteRecipe | 'sort' | null>(null);
-  const [undo, setUndo] = useState<FavoriteRecipe | null>(null);
-  const undoTimer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(undoTimer.current), []);
 
   const list = useMemo(() => recipes ?? [], [recipes]);
   // Rezeptseite schon laden, solange man noch auswählt: Das Öffnen wirkt dann sofort.
@@ -246,15 +239,6 @@ const FavoritesView: React.FC<Props> = ({
   const unfavorite = (recipe: FavoriteRecipe) => {
     setMenu(null);
     onUnfavorite(recipe);
-    setUndo(recipe);
-    window.clearTimeout(undoTimer.current);
-    undoTimer.current = window.setTimeout(() => setUndo(null), UNDO_MS);
-  };
-  const restore = () => {
-    if (!undo) return;
-    onRestore(undo);
-    setUndo(null);
-    window.clearTimeout(undoTimer.current);
   };
   const plan = (recipe: FavoriteRecipe) => {
     setMenu(null);
@@ -305,16 +289,8 @@ const FavoritesView: React.FC<Props> = ({
         </div>
       </header>
 
-      {recipes === undefined ? (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-5 px-6 pt-3" aria-busy="true" aria-label="Favoriten werden geladen">
-          {Array.from({ length: 6 }, (_, i) => (
-            <div key={i}>
-              <div className="aspect-[4/3] animate-pulse rounded-2xl bg-black/5 dark:bg-white/10" />
-              <div className="mt-2 h-4 w-3/4 animate-pulse rounded bg-black/5 dark:bg-white/10" />
-            </div>
-          ))}
-        </div>
-      ) : list.length === 0 ? (
+      {/* Kein Skeleton: Die Daten sind meist sofort da, ein kurzes Platzhalter-Raster wirkte nur wie Flackern. */}
+      {recipes === undefined ? null : list.length === 0 ? (
         <div className="flex flex-col items-center px-8 pt-16 text-center animate-in fade-in">
           <img src={ONB_IMG.nice} alt="" className="h-40 w-auto object-contain" />
           <h2 className="mt-4 text-xl font-bold text-text-primary-light dark:text-text-primary-dark">Noch keine Favoriten</h2>
@@ -415,16 +391,6 @@ const FavoritesView: React.FC<Props> = ({
       {/* Navigation + Platz für den runden „+ Rezept“-Knopf und die schwebende Leiste darüber. */}
       <div style={{ height: 'calc(var(--nav-height) + var(--safe-area-inset-bottom, 0px) + 8rem)' }} className="w-full shrink-0" />
 
-      {undo && (
-        <FloatingBar>
-          <div className="flex max-w-sm items-center gap-3 rounded-full bg-[#111718] py-2 pl-4 pr-2 text-sm text-white shadow-lg">
-            <span className="truncate">„{undo.title}“ entfernt</span>
-            <button type="button" onClick={restore} className="rounded-full px-3 py-1.5 font-semibold text-green-300 active:bg-white/10">
-              Rückgängig
-            </button>
-          </div>
-        </FloatingBar>
-      )}
 
       {menu === 'sort' && (
         <BottomSheet title="Sortieren" onClose={() => setMenu(null)}>
