@@ -11,7 +11,8 @@ import { api } from "../convex/_generated/api";
 import { createUuid } from "../utils/uuid";
 
 const env = (import.meta as ImportMeta & { env?: ImportMetaEnv }).env;
-const key = env?.VITE_POSTHOG_KEY;
+// Nur gebaute Apps (vite build) senden an PostHog; der Dev-Server (localhost) nicht.
+const key = env?.PROD ? env.VITE_POSTHOG_KEY : undefined;
 const host = env?.VITE_POSTHOG_HOST || "https://eu.i.posthog.com";
 const sessionKey = "cookly.sessionId";
 const anonymousKey = "cookly.anonymousId";
