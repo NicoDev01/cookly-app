@@ -62,16 +62,19 @@ test("native push registration stays disabled until Firebase is configured", asy
 });
 
 test("profile notification preference controls local and server notifications", async () => {
-  const [profile, shareTarget, users, push, marketing] = await Promise.all([
+  const [profile, profileView, shareTarget, users, push, marketing] = await Promise.all([
     source("pages/ProfilePage.tsx"),
+    source("components/profile/ProfileView.tsx"),
     source("pages/ShareTargetPage.tsx"),
     source("convex/users.ts"),
     source("convex/push.ts"),
     source("convex/marketing.ts"),
   ]);
 
-  assert.ok(profile.indexOf("Konto löschen") < profile.indexOf('role="switch"'));
-  assert.ok(profile.indexOf('role="switch"') < profile.indexOf("Datenschutz & Impressum"));
+  const deleteIndex = profileView.indexOf("Konto löschen");
+  const switchIndex = profileView.indexOf('role="switch"');
+  assert.ok(deleteIndex >= 0 && deleteIndex < switchIndex);
+  assert.ok(switchIndex < profileView.indexOf("Datenschutz</ExternalLink>"));
   assert.match(profile, /updateNotificationPreference/);
   assert.match(shareTarget, /user\?\.notificationsEnabled/);
   assert.match(users, /notificationsEnabled: enabled/);

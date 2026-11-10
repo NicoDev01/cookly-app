@@ -1,31 +1,18 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { Capacitor } from '@capacitor/core';
-import { LiquidMetalBorder } from '../components/ui/liquid-metal-border';
 import { useQuery, useAction, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import {
-  AlertTriangle,
-  Link2,
-  Sparkles,
-  CheckCircle2,
-  LucideIcon
-} from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useNotification } from '../contexts/NotificationContext';
 import { getUserErrorMessage } from '../utils/userErrors';
 import { clearLogs, logger } from '../utils/logger';
-import { APP_VERSION } from '../utils/appInfo';
 import { createUuid } from '../utils/uuid';
-import DebugSheet from '../components/DebugSheet';
-import ExternalLink from '../components/ExternalLink';
 import { useQueryCache } from '../contexts/QueryCacheContext';
-import { showsExternalPaymentBranding } from '../utils/paymentBranding';
-import { LEGAL_LINKS } from '../utils/legalLinks';
-
-import { cn } from "@/lib/utils";
+import ProfileView from '../components/profile/ProfileView';
+import { createBillingClient } from '../services/billing';
 import { resetAnalyticsIdentity } from "../services/analytics";
 import { ensureNotificationPermission } from "../utils/notifications";
 import { forgetAccountOnDevice } from "../components/onboarding/onboardingData";
@@ -37,32 +24,39 @@ export const ProfilePage: React.FC = () => {
   const { clearCache } = useQueryCache();
 
   const currentUser = useQuery(api.users.getCurrentUser);
+  const isPro = !!currentUser && currentUser.subscription !== 'free';
+  // Wo das Abo läuft, braucht nur „Abo verwalten“ im Store; Free-Nutzer abonnieren das nicht.
+  const billingSummary = useQuery(api.billing.getSummary, isPro ? {} : 'skip');
   const cancelSubscription = useAction(api.stripe.cancelSubscription);
+  const createCheckout = useAction(api.stripe.createCheckoutSession);
+  const createPortal = useAction(api.stripe.createPortalSession);
+  const ensureBillingUserId = useMutation(api.users.ensureBillingUserId);
   const requestAccountDeletion = useAction(api.accountDeletion.requestDeletion);
   const updateNotificationPreference = useMutation(api.users.updateNotificationPreference);
-
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [showCancelModal, setShowCancelModal] = useState(false);
-  const [deleteConfirmText, setDeleteConfirmText] = useState('');
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false);
-  const [isUpdatingNotifications, setIsUpdatingNotifications] = useState(false);
-
-  // Verstecktes Debug-Menü: 7× auf die Versionsnummer tippen.
-  const debugTapsRef = useRef(0);
   const deletionRequestIdRef = useRef<string | null>(null);
-  const [showDebugSheet, setShowDebugSheet] = useState(false);
-  const handleVersionTap = () => {
-    debugTapsRef.current += 1;
-    if (debugTapsRef.current >= 7) {
-      debugTapsRef.current = 0;
-      setShowDebugSheet(true);
-    }
-  };
 
-  // Usage Stats
-  const linkLimit = useQuery(api.users.canImportFromLink);
-  const scanLimit = useQuery(api.users.canScanPhoto);
+  const billing = useMemo(() => createBillingClient(currentUser?.billingUserId, {
+    checkout: createCheckout,
+    portal: createPortal,
+  }), [currentUser?.billingUserId, createCheckout, createPortal]);
+
+  // Store-Abo verwalten braucht die Billing-ID (wie auf der Upgrade-Seite).
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || !isPro || !currentUser || currentUser.billingUserId) return;
+    void ensureBillingUserId();
+  }, [currentUser, isPro, ensureBillingUserId]);
+
+  // Rückkehr aus dem Stripe-Checkout: bestätigen, auch wenn der Webhook Pro erst Sekunden später setzt.
+  const { search } = useLocation();
+  useEffect(() => {
+    if (new URLSearchParams(search).get('success') !== 'true') return;
+    showToast('Danke! Pro wird gerade freigeschaltet.', 'success');
+    navigate('/tabs/profile', { replace: true });
+  }, [search, showToast, navigate]);
+
+  const subscriptionEndDate = currentUser?.usageStats?.subscriptionEndDate
+    ? new Date(currentUser.usageStats.subscriptionEndDate)
+    : null;
 
   const handleSignOut = async () => {
     resetAnalyticsIdentity();
@@ -70,9 +64,25 @@ export const ProfilePage: React.FC = () => {
     navigate('/sign-in', { replace: true });
   };
 
+  const handleManageSubscription = async () => {
+    if (!billing.available) {
+      showToast('In-App-Kauf ist in dieser App-Version noch nicht verfügbar.');
+      return;
+    }
+    if (billing.provider === 'store' && !billingSummary?.providers.some((provider: string) => provider === 'google_play' || provider === 'app_store')) {
+      showToast('Dieses Abo wurde im Web abgeschlossen und kann dort verwaltet werden.');
+      return;
+    }
+    try {
+      const redirectUrl = await billing.manage();
+      if (redirectUrl) window.location.href = redirectUrl;
+    } catch (error: unknown) {
+      logger.error('Billing', 'Portal failed', error);
+      showToast(getUserErrorMessage(error, 'billing'), 'error');
+    }
+  };
+
   const handleDeleteAccount = async () => {
-    if (deleteConfirmText !== 'LÖSCHEN') return;
-    setIsDeleting(true);
     try {
       deletionRequestIdRef.current ??= createUuid();
       await requestAccountDeletion({ requestId: deletionRequestIdRef.current });
@@ -82,35 +92,31 @@ export const ProfilePage: React.FC = () => {
       forgetAccountOnDevice();
       await signOut();
       navigate('/welcome', { replace: true });
-      setShowDeleteModal(false);
+      return true;
     } catch (error: unknown) {
       logger.error('AccountDeletion', 'Delete account failed', error);
       showToast(getUserErrorMessage(error, 'generic'), 'error');
-    } finally {
-      setIsDeleting(false);
+      return false;
     }
   };
 
   const handleCancelSubscription = async () => {
-    setIsCancelling(true);
     try {
       await cancelSubscription();
-      setShowCancelModal(false);
       const until = subscriptionEndDate
         ? ` Deine Vorteile bleiben bis zum ${subscriptionEndDate.toLocaleDateString('de-DE')} aktiv.`
         : '';
       showToast(`Abo gekündigt.${until}`, 'success');
+      return true;
     } catch (error: unknown) {
       logger.error('Billing', 'Cancel subscription failed', error);
       showToast(getUserErrorMessage(error, 'billing'), 'error');
-    } finally {
-      setIsCancelling(false);
+      return false;
     }
   };
 
   const handleNotificationToggle = async () => {
     const enabled = !currentUser?.notificationsEnabled;
-    setIsUpdatingNotifications(true);
     try {
       if (enabled && !await ensureNotificationPermission('profile')) {
         showToast('Bitte erlaube Benachrichtigungen in den Android-Einstellungen.', 'error');
@@ -127,324 +133,23 @@ export const ProfilePage: React.FC = () => {
     } catch (error: unknown) {
       logger.error('Notifications', 'Preference update failed', error);
       showToast(getUserErrorMessage(error, 'generic'), 'error');
-    } finally {
-      setIsUpdatingNotifications(false);
     }
   };
 
-  if (!currentUser) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  const safeCurrentUser = currentUser ?? {
-    subscription: 'free' as const,
-    usageStats: { linkImports: 0, photoScans: 0 },
-  };
-
-  const isPro = safeCurrentUser.subscription !== 'free';
-  const isMarkedForCancel = currentUser?.usageStats?.resetOnDowngrade || false;
-  const subscriptionEndDate = currentUser?.usageStats?.subscriptionEndDate
-    ? new Date(currentUser.usageStats.subscriptionEndDate)
-    : null;
-
   return (
-    <div className="min-h-screen bg-muted text-foreground font-sans pt-safe pb-safe select-none">
-      <div className="container mx-auto px-4 py-6 max-w-xl">
-        {/* Hero Section - above the Card */}
-        <div className="flex flex-col items-center mb-10 animate-in fade-in">
-          {/* Icon */}
-          <span className="material-symbols-outlined text-8xl text-primary animate-pulse mb-4">
-            person
-          </span>
-
-          {/* Headline */}
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-center">
-            Dein Status: <span className="text-primary italic">{isPro ? "Pro" : "Free"}</span>
-          </h1>
-        </div>
-
-        <div className="space-y-10 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-100">
-          {/* Main Membership & Stats */}
-          <div className="max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">
-            {isPro ? (
-              // PRO CONTENT - Features in separate cards
-              <div className="space-y-4">
-                {/* Feature Cards */}
-                <div className="bg-card-light dark:bg-card-dark rounded-xl shadow-neo-light-convex dark:shadow-neo-dark-convex p-4">
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-                    <span className="font-medium text-text-primary-light dark:text-text-primary-dark">Unbegrenzte Rezepte & Importe</span>
-                  </div>
-                </div>
-                <div className="bg-card-light dark:bg-card-dark rounded-xl shadow-neo-light-convex dark:shadow-neo-dark-convex p-4">
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-                    <span className="font-medium text-text-primary-light dark:text-text-primary-dark">KI-Funktionen freigeschaltet</span>
-                  </div>
-                </div>
-                <div className="bg-card-light dark:bg-card-dark rounded-xl shadow-neo-light-convex dark:shadow-neo-dark-convex p-4">
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-                    <span className="font-medium text-text-primary-light dark:text-text-primary-dark">Jederzeit kündbar</span>
-                  </div>
-                </div>
-
-                {/* Pro Action Buttons */}
-                <div className="pt-4 flex flex-col items-center gap-3">
-                  <button
-                    onClick={() => navigate('/tabs/subscribe')}
-                    className="flex items-center gap-2 px-6 py-3 rounded-xl bg-card-light dark:bg-card-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all touch-btn text-body font-semibold text-text-primary-light dark:text-text-primary-dark hover:text-primary"
-                  >
-                    <span className="material-symbols-outlined">settings</span>
-                    Abo verwalten
-                  </button>
-                  {!Capacitor.isNativePlatform() && !isMarkedForCancel && (
-                    <button
-                      onClick={() => setShowCancelModal(true)}
-                      className="text-xs font-bold text-text-secondary-light dark:text-text-secondary-dark active:text-destructive transition-colors uppercase tracking-widest py-2"
-                    >
-                      Abo kündigen
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : (
-              // FREE CONTENT - Each UsageRow in its own card
-              <div className="space-y-4">
-                {/* Usage Cards - each in its own card */}
-                <div className="bg-card-light dark:bg-card-dark rounded-xl shadow-neo-light-convex p-4">
-                  <UsageRow
-                    label="Link-Importe"
-                    hint="Instagram, TikTok, Facebook und Websites"
-                    current={linkLimit?.current ?? 0}
-                    limit={linkLimit?.limit ?? 0} // Sync with backend
-                    icon={Link2}
-                  />
-                </div>
-                <div className="bg-card-light dark:bg-card-dark rounded-xl shadow-neo-light-convex p-4">
-                  <UsageRow
-                    label="KI-Foto-Scans"
-                    hint="Kochbuchseiten, Rezeptkarten und Fotos"
-                    current={scanLimit?.current ?? 0}
-                    limit={scanLimit?.limit ?? 0} // Sync with backend
-                    icon={Sparkles}
-
-                  />
-                </div>
-
-                {/* Upgrade Button */}
-                <div className="space-y-8 flex flex-col items-center pt-8">
-                  <p className="text-4xl md:text-5xl font-bold tracking-tight text-center">
-                    Werde zum unlimitierten<br/>
-                    <span className="text-primary italic">Pro</span> fikoch
-                  </p>
-                  <LiquidMetalBorder className="shadow-lg shadow-black/15">
-                    <button
-                      onClick={() => navigate('/tabs/subscribe')}
-                      className="flex items-center justify-center gap-2 px-7 py-3 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-all touch-btn"
-                    >
-                      <span className="material-symbols-outlined">auto_awesome</span>
-                      Jetzt upgraden
-                    </button>
-                  </LiquidMetalBorder>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-col items-center gap-3 max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300">
-            <button
-              onClick={handleSignOut}
-              className="w-64 flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-card-light dark:bg-card-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all touch-btn text-body font-semibold text-text-primary-light dark:text-text-primary-dark hover:text-primary"
-            >
-              <span className="material-symbols-outlined">logout</span>
-              Abmelden
-            </button>
-
-            <button
-              onClick={() => {
-                deletionRequestIdRef.current = null;
-                setDeleteConfirmText('');
-                setShowDeleteModal(true);
-              }}
-              className="w-64 flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-card-light dark:bg-card-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all touch-btn text-body font-semibold text-destructive hover:text-destructive/80"
-            >
-              <span className="material-symbols-outlined">delete_forever</span>
-              Konto löschen
-            </button>
-
-            <button
-              type="button"
-              role="switch"
-              aria-label="Benachrichtigungen ein- oder ausschalten"
-              aria-checked={currentUser.notificationsEnabled === true}
-              disabled={isUpdatingNotifications}
-              onClick={handleNotificationToggle}
-              className="min-h-12 flex items-center justify-center gap-4 px-2 py-2 bg-transparent touch-manipulation text-text-primary-light dark:text-text-primary-dark disabled:opacity-60"
-            >
-              <span className="material-symbols-outlined" aria-hidden="true">
-                {currentUser.notificationsEnabled ? "notifications_active" : "notifications_off"}
-              </span>
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "relative h-7 w-12 shrink-0 rounded-full transition-colors",
-                  currentUser.notificationsEnabled ? "bg-primary" : "bg-black/20 dark:bg-white/20",
-                )}
-              >
-                <span
-                  className={cn(
-                    "absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform",
-                    currentUser.notificationsEnabled && "translate-x-5",
-                  )}
-                />
-              </span>
-            </button>
-          </div>
-
-          {/* Footer Info */}
-          <div className="pt-8 pb-6 text-center animate-in fade-in slide-in-from-bottom-4 duration-500 delay-400">
-             <ExternalLink
-               href={LEGAL_LINKS.impressum}
-               className="text-xs font-bold text-primary active:underline underline-offset-4"
-             >
-               Datenschutz & Impressum
-             </ExternalLink>
-             <p
-               onClick={handleVersionTap}
-               className="mt-3 text-[11px] text-text-secondary-light/60 dark:text-text-secondary-dark/60 select-none cursor-default"
-             >
-               Version {APP_VERSION}
-             </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Cancel Modal - Bottom Sheet Style */}
-      {showCancelModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="w-full max-w-md bg-card-light dark:bg-card-dark rounded-t-[2rem] p-6 pb-safe animate-in slide-in-from-bottom duration-400 shadow-neo-light-convex dark:shadow-neo-dark-convex">
-            <div className="w-12 h-1.5 bg-text-secondary-light/30 dark:bg-text-secondary-dark/30 rounded-full mx-auto mb-6" />
-            <div className="bg-destructive/10 p-4 rounded-xl w-fit mb-6 mx-auto">
-              <AlertTriangle className="w-8 h-8 text-destructive" />
-            </div>
-            <h2 className="text-2xl font-bold mb-3 text-center text-text-primary-light dark:text-text-primary-dark">Abo wirklich kündigen?</h2>
-            <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-8 leading-relaxed text-center">
-              Deine Vorteile bleiben bis zum <strong className="text-text-primary-light dark:text-text-primary-dark">{subscriptionEndDate?.toLocaleDateString('de-DE')}</strong> aktiv.
-            </p>
-            <div className="flex flex-col gap-3">
-              <button
-                className="w-full h-14 text-lg font-bold rounded-xl bg-destructive text-white shadow-neo-light-convex active:scale-[0.98] transition-all"
-                onClick={handleCancelSubscription}
-                disabled={isCancelling}
-              >
-                {isCancelling ? "Kündigt..." : "Ja, Abo kündigen"}
-              </button>
-              <button
-                className="w-full h-14 text-lg font-bold rounded-xl bg-card-light dark:bg-card-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all text-text-primary-light dark:text-text-primary-dark"
-                onClick={() => setShowCancelModal(false)}
-              >
-                Behalten
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Modal - Bottom Sheet Style */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="w-full max-w-md bg-card-light dark:bg-card-dark rounded-t-[2rem] p-6 pb-safe animate-in slide-in-from-bottom duration-400 shadow-neo-light-convex dark:shadow-neo-dark-convex">
-            <div className="w-12 h-1.5 bg-text-secondary-light/30 dark:bg-text-secondary-dark/30 rounded-full mx-auto mb-6" />
-            <h2 className="text-2xl font-bold mb-3 text-destructive text-center">Konto löschen?</h2>
-            <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-6 leading-relaxed text-center">
-              {showsExternalPaymentBranding
-                ? "Diese Aktion ist unwiderruflich. Konto und Rezepte werden gelöscht; ein Stripe-Abo endet sofort."
-                : "Diese Aktion ist unwiderruflich. Konto und Rezepte werden gelöscht; ein laufendes Abo endet sofort."}
-              Abos über Google Play oder den App Store musst du zusätzlich dort verwalten.
-            </p>
-            <div className="relative mb-8">
-                <input
-                  className="w-full h-14 bg-card-light dark:bg-card-dark rounded-xl px-6 font-bold border-2 border-transparent focus:border-destructive transition-all outline-none text-center tracking-[0.2em] text-lg uppercase placeholder:normal-case shadow-neo-light-concave dark:shadow-neo-dark-concave text-text-primary-light dark:text-text-primary-dark"
-                  placeholder='Tippe "LÖSCHEN"'
-                  onChange={(e) => setDeleteConfirmText(e.target.value.toUpperCase())}
-                />
-            </div>
-            <div className="flex flex-col gap-3">
-              <button
-                className="w-full h-14 text-lg font-bold rounded-xl bg-destructive text-white shadow-neo-light-convex active:scale-[0.98] transition-all disabled:opacity-50"
-                disabled={isDeleting || deleteConfirmText !== 'LÖSCHEN'}
-                onClick={handleDeleteAccount}
-              >
-                {isDeleting ? "Wird gelöscht..." : "Endgültig löschen"}
-              </button>
-              <button
-                className="w-full h-14 text-lg font-bold rounded-xl bg-card-light dark:bg-card-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all text-text-primary-light dark:text-text-primary-dark"
-                disabled={isDeleting}
-                onClick={() => {
-                  deletionRequestIdRef.current = null;
-                  setShowDeleteModal(false);
-                }}
-              >
-                Abbrechen
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <DebugSheet
-        isOpen={showDebugSheet}
-        onClose={() => setShowDebugSheet(false)}
-        userId={currentUser?._id}
-      />
-    </div>
-  );
-};
-
-// --- Sub-components (Styled) ---
-
-const UsageRow = ({ icon: Icon, label, hint, current, limit }: { icon: LucideIcon, label: string, hint?: string, current: number, limit: number }) => {
-  const percentage = limit > 0 ? Math.min((current / limit) * 100, 100) : 0;
-  const isFull = percentage >= 100 && limit > 0;
-
-  return (
-    <div className="space-y-3 group">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Icon className={cn(
-            "w-6 h-6",
-            isFull ? "text-destructive" : "text-primary"
-          )} />
-          <div className="min-w-0">
-            <span className="block font-bold text-base text-text-primary-light dark:text-text-primary-dark">{label}</span>
-            {hint && <span className="block text-xs text-text-secondary-light dark:text-text-secondary-dark">{hint}</span>}
-          </div>
-        </div>
-        <span className={cn(
-            "text-sm font-bold tabular-nums",
-            isFull ? "text-destructive" : "text-text-secondary-light dark:text-text-secondary-dark"
-        )}>
-          {current} / {limit}
-        </span>
-      </div>
-      <div className="h-5 w-full bg-card-light dark:bg-card-dark rounded-xl overflow-hidden">
-        <div
-          className={cn(
-            "h-full rounded-xl transition-all duration-1000 ease-out relative overflow-hidden",
-            isFull ? "bg-destructive" : "bg-primary"
-          )}
-          style={{ width: `${percentage}%` }}
-        >
-             <div className="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite] skew-x-12"></div>
-        </div>
-      </div>
-    </div>
+    <ProfileView
+      user={currentUser}
+      onUpgrade={() => navigate('/tabs/subscribe')}
+      onManageSubscription={() => void handleManageSubscription()}
+      canCancelHere={!Capacitor.isNativePlatform()}
+      onCancelSubscription={handleCancelSubscription}
+      onSignOut={() => void handleSignOut()}
+      onDeleteDialogOpen={() => {
+        deletionRequestIdRef.current = null;
+      }}
+      onDeleteAccount={handleDeleteAccount}
+      onToggleNotifications={handleNotificationToggle}
+    />
   );
 };
 

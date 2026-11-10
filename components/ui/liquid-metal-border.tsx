@@ -18,10 +18,16 @@ export function LiquidMetalBorder({
   children,
   className,
   width = 3,
+  shift = 0.3,
+  sheen,
 }: {
   children: React.ReactNode;
   className?: string;
   width?: number;
+  /** Farbsaum an den Kanten (Rot/Blau-Verschiebung); höher = mehr Schimmer. */
+  shift?: number;
+  /** CSS-Hintergrund, der per "screen" über dem Metall liegt: hellt die dunklen Streifen farbig auf (z. B. Pastell). */
+  sheen?: string;
 }) {
   const shaderRef = useRef<HTMLDivElement>(null);
 
@@ -49,8 +55,8 @@ export function LiquidMetalBorder({
             u_colorTint: [1, 1, 1, 1],
             u_repetition: 4,
             u_softness: 0.5,
-            u_shiftRed: 0.3,
-            u_shiftBlue: 0.3,
+            u_shiftRed: shift,
+            u_shiftBlue: shift,
             u_distortion: 0,
             u_contour: 0,
             u_angle: 45,
@@ -76,7 +82,7 @@ export function LiquidMetalBorder({
       cancelled = true;
       mount?.dispose();
     };
-  }, []);
+  }, [shift]);
 
   return (
     <div className={cn('relative isolate rounded-full', className)} style={{ padding: width }}>
@@ -85,6 +91,7 @@ export function LiquidMetalBorder({
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-full bg-gray-300 [&>canvas]:absolute [&>canvas]:inset-0 [&>canvas]:!h-full [&>canvas]:!w-full"
       />
+      {sheen && <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 rounded-full mix-blend-screen" style={{ background: sheen }} />}
       {children}
     </div>
   );

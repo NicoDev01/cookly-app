@@ -76,7 +76,8 @@ export function createBillingClient(billingUserId: string | undefined, web: WebA
         const baseUrl = window.location.origin;
         const result = await web.checkout({
           planId,
-          successUrl: `${baseUrl}/#/profile?success=true`,
+          // Direkt auf die Tab-Route: Die Weiterleitung von /profile verwirft die Query, ProfilePage wertet success aus.
+          successUrl: `${baseUrl}/#/tabs/profile?success=true`,
           cancelUrl: `${baseUrl}/#/subscribe?canceled=true`,
         });
         return { redirectUrl: result.checkoutUrl ?? undefined, active: false };
