@@ -37,6 +37,9 @@ const config: CapacitorConfig = {
     Keyboard: {
       resize: KeyboardResize.Native,
       style: KeyboardStyle.Light,
+      // Hinter der Tastatur liegt nach dem Verkleinern das UIWindow (Standard schwarz); an den runden
+      // Tastatur-Ecken blitzte es schwarz. 'auto' färbt das Fenster in ios.backgroundColor (#f0f2f5).
+      autoBackdropColor: 'auto',
     },
     SplashScreen: {
       launchShowDuration: 0,

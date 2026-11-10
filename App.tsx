@@ -20,6 +20,7 @@ import { NotificationProvider } from './contexts/NotificationContext';
 import { createNotificationChannel } from './utils/notifications';
 import { logger } from './utils/logger';
 import { waitForFonts } from './utils/fontsReady';
+import { revealFocusedInput } from './utils/revealFocusedInput';
 import { PageLoader } from './components/PageLoader';
 import { AnalyticsLifecycle } from './components/AnalyticsLifecycle';
 import { PushLifecycle } from './components/PushLifecycle';
@@ -169,6 +170,13 @@ const AppContent: React.FC = () => {
         .then((handle) => cleanupFns.push(() => handle.remove()));
       Keyboard.addListener('keyboardWillHide', () => root.classList.remove('keyboard-open'))
         .then((handle) => cleanupFns.push(() => handle.remove()));
+      // Das Plugin verkleinert die WebView erst nach der Tastatur-Animation (resize-Event) und hat das
+      // Nachscrollen der WKWebView abgeschaltet: fokussiertes Feld danach selbst wieder sichtbar machen.
+      const onResize = () => {
+        if (root.classList.contains('keyboard-open')) requestAnimationFrame(revealFocusedInput);
+      };
+      window.addEventListener('resize', onResize);
+      cleanupFns.push(() => window.removeEventListener('resize', onResize));
     }
 
     // Notification Action Listener
