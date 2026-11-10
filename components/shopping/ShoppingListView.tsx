@@ -12,7 +12,7 @@ import { Link } from 'react-router-dom';
 import { KeepAwake } from '@capacitor-community/keep-awake';
 import ImageWithBlurhash from '../ImageWithBlurhash';
 import FloatingBar from '../ui/FloatingBar';
-import { iconButton, inputClass, inputShell, sheetButton } from '../ui/tabStyles';
+import { iconButton, inputClass, inputIcon, inputShell, sheetButton } from '../ui/tabStyles';
 import BottomSheet from '../weekly/BottomSheet';
 import { useHaptic } from '../../hooks/useHaptic';
 import { useLongPress } from '../../hooks/useLongPress';
@@ -298,7 +298,7 @@ const ShoppingListView: React.FC<Props> = ({
           }}
           className={`${inputShell} pl-4`}
         >
-          <span className="material-symbols-outlined text-[22px] text-text-secondary-light dark:text-text-secondary-dark">add</span>
+          <span className={inputIcon}>add</span>
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -468,7 +468,7 @@ const ShoppingListView: React.FC<Props> = ({
                 e.preventDefault();
                 saveEdit(rowMenu);
               }}
-              className={`${inputShell} mb-3 pl-4`}
+              className={`${inputShell} mb-3 pl-2`}
             >
               <input
                 value={editDraft}

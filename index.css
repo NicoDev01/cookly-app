@@ -299,6 +299,16 @@
     -webkit-tap-highlight-color: transparent;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: none;
+    /* Nie seitlich verschiebbar; clip statt hidden, damit body kein eigener Scroll-Container wird. */
+    overflow-x: clip;
+  }
+
+  /* App-Shell (TabsLayout setzt die Klasse): Die Seite selbst scrollt nie, nur die Tab-Container.
+   * Anmelde- und Onboarding-Seiten ohne Shell scrollen weiter normal. */
+  html.app-shell,
+  html.app-shell body {
+    height: 100%;
+    overflow: hidden;
   }
 
   /* Button Reset - ensures buttons match anchor styling */

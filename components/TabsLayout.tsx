@@ -58,6 +58,14 @@ export const TabsLayout: React.FC = () => {
     openAddModal();
   };
 
+  // Die Seite selbst scrollt nie, nur die Tab-Container darin. Sonst lässt sich die App wie eine Website
+  // verschieben (z. B. nach dem Antippen eines Eingabefelds) und die Navbar rutscht mit. Siehe index.css.
+  React.useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add('app-shell');
+    return () => root.classList.remove('app-shell');
+  }, []);
+
   React.useEffect(() => {
     if (currentTab) {
       setVisitedTabs((routes) => routes.includes(currentTab) ? routes : [...routes, currentTab]);
@@ -81,7 +89,7 @@ export const TabsLayout: React.FC = () => {
 
   return (
     <ErrorBoundary>
-      <div className="antialiased h-[100dvh] w-full flex flex-col overflow-hidden bg-background-light dark:bg-background-dark">
+      <div className="antialiased fixed inset-0 flex flex-col overflow-hidden bg-background-light dark:bg-background-dark">
         <OfflineBanner />
 
         {/* Page Content Area - Expands to fill available space */}
@@ -90,7 +98,7 @@ export const TabsLayout: React.FC = () => {
             {mountedTabs.map((tabPath) => (
               <Activity key={tabPath} mode={currentTab === tabPath ? 'visible' : 'hidden'}>
                 <div
-                  className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden touch-pan-y page-enter"
+                  className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y page-enter"
                 >
                   {renderTab(tabPath)}
                 </div>
@@ -103,7 +111,7 @@ export const TabsLayout: React.FC = () => {
                 
                 return (
                   <Activity key={categoryPath} mode={isActive ? 'visible' : 'hidden'}>
-                    <div className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden touch-pan-y page-enter">
+                    <div className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y page-enter">
                       <CategoryRecipesWrapper category={category} />
                     </div>
                   </Activity>
@@ -112,7 +120,7 @@ export const TabsLayout: React.FC = () => {
 
             {/* OUTLET-ROUTEN: Transient (werden neu gemountet) */}
             {!isTabRoute && !isCategoryRoute && (
-              <div key={currentPath} className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden touch-pan-y page-enter">
+              <div key={currentPath} className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y page-enter">
                 <Outlet />
               </div>
             )}
