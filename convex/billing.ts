@@ -28,7 +28,7 @@ type EntitlementInput = {
   updatedAt?: number;
 };
 
-const productIds = (name: string) => new Set((process.env[name] ?? "").split(",").map((id) => id.trim()).filter(Boolean));
+export const productIds = (name: string) => new Set((process.env[name] ?? "").split(",").map((id) => id.trim()).filter(Boolean));
 
 async function entitlementsForUser(ctx: QueryCtx | MutationCtx, userId: Id<"users">) {
   return await ctx.db.query("billingEntitlements")

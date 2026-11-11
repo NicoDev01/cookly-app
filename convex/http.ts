@@ -312,6 +312,14 @@ http.route({
     try {
       await ctx.runMutation(internal.billing.processRevenueCatWebhook, { payload });
       await ctx.runMutation(internal.growth.recordRevenueCatEvent, { payload });
+      // RevenueCat empfiehlt, nach jedem Webhook den Kundenstand per REST abzurufen. Das deckt auch TRANSFER ab
+      // (Abo wandert nach Kontolöschung und Neuanlage zum neuen Konto), das keine Abo-Daten mitschickt.
+      const event = ((payload as { event?: Record<string, unknown> }).event ?? {});
+      const ids = [event.app_user_id, ...[event.transferred_to, event.transferred_from].flatMap((list) => Array.isArray(list) ? list : [])]
+        .filter((id): id is string => typeof id === "string" && !!id && !id.startsWith("$RCAnonymousID"));
+      for (const billingUserId of new Set(ids)) {
+        await ctx.scheduler.runAfter(0, internal.revenuecat.syncCustomerById, { billingUserId });
+      }
       await ctx.runMutation(internal.billing.cleanupWebhookEvents, {
         olderThanMs: Date.now() - BILLING_WEBHOOK_RETENTION_MS,
       });

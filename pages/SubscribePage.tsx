@@ -50,6 +50,7 @@ export default function SubscribePage() {
   const createCheckout = useAction(api.stripe.createCheckoutSession);
   const createPortal = useAction(api.stripe.createPortalSession);
   const ensureBillingUserId = useMutation(api.users.ensureBillingUserId);
+  const syncStore = useAction(api.revenuecat.syncMyStoreSubscription);
   const [loading, setLoading] = useState<string | null>(null);
   const [pickedYearly, setIsYearly] = useState(false);
   const [billingNotice, setBillingNotice] = useState<string | null>(null);
@@ -176,6 +177,7 @@ export default function SubscribePage() {
       {unlocked && (
         <ProUnlocked
           synced={isPro}
+          onSync={async () => (await syncStore())?.isPro ?? false}
           onContinue={() => {
             setUnlocked(false);
             navigate("/tabs/profile", { replace: true });

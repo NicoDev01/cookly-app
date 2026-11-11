@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { entitlementIsValid, hasAnyValidEntitlement, mapRevenueCatEvent, sanitizeConvexValue } from "../convex/billingModel.ts";
+import { entitlementIsValid, hasAnyValidEntitlement, mapRevenueCatEvent, mapRevenueCatSubscriber, sanitizeConvexValue } from "../convex/billingModel.ts";
 
 const products = { monthly: new Set(["cookly_pro:monthly"]), yearly: new Set(["cookly_pro:yearly"]) };
 const event = (type, extra = {}) => ({
@@ -46,4 +46,30 @@ test("unknown products fail closed", () => {
 test("sanitizeConvexValue drops reserved $ keys from RevenueCat attributes", () => {
   const payload = { event: { id: "e1", subscriber_attributes: { $attConsentStatus: { value: "notDetermined" }, name: { value: "Nico" } }, aliases: ["a", "b"] } };
   assert.deepEqual(sanitizeConvexValue(payload), { event: { id: "e1", subscriber_attributes: { name: { value: "Nico" } }, aliases: ["a", "b"] } });
+});
+
+test("mapRevenueCatSubscriber reads the pro entitlement from GET /subscribers", () => {
+  const future = new Date(Date.now() + 86400000).toISOString();
+  const subscriber = {
+    entitlements: { pro: { expires_date: future, product_identifier: "cookly_pro:monthly" } },
+    subscriptions: { cookly_pro: { store: "play_store", is_sandbox: true, unsubscribe_detected_at: null } },
+  };
+  const mapped = mapRevenueCatSubscriber(subscriber, products);
+  assert.equal(mapped.provider, "google_play");
+  assert.equal(mapped.plan, "pro_monthly");
+  assert.equal(mapped.status, "active");
+  assert.equal(mapped.environment, "sandbox");
+  assert.equal(mapped.periodEnd, Date.parse(future));
+});
+
+test("mapRevenueCatSubscriber marks cancelled and expired subscriptions", () => {
+  const past = new Date(Date.now() - 1000).toISOString();
+  const future = new Date(Date.now() + 86400000).toISOString();
+  const sub = (expires, extra = {}) => ({
+    entitlements: { pro: { expires_date: expires, product_identifier: "cookly_pro:yearly" } },
+    subscriptions: { "cookly_pro:yearly": { store: "app_store", ...extra } },
+  });
+  assert.equal(mapRevenueCatSubscriber(sub(future, { unsubscribe_detected_at: past }), products).status, "canceled");
+  assert.equal(mapRevenueCatSubscriber(sub(past), products).status, "expired");
+  assert.equal(mapRevenueCatSubscriber({ entitlements: {} }, products), null);
 });

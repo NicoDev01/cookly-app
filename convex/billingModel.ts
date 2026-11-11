@@ -127,3 +127,71 @@ export function mapRevenueCatEvent(event: RevenueCatEvent, products: RevenueCatP
     environment: event.environment === "SANDBOX" ? "sandbox" as const : "production" as const,
   };
 }
+
+type RevenueCatSubscriber = {
+  entitlements?: Record<string, {
+    expires_date?: string | null;
+    grace_period_expires_date?: string | null;
+    product_identifier?: string;
+  } | undefined>;
+  subscriptions?: Record<string, {
+    store?: string;
+    is_sandbox?: boolean;
+    unsubscribe_detected_at?: string | null;
+    billing_issues_detected_at?: string | null;
+    store_transaction_id?: string;
+  } | undefined>;
+};
+
+export type StoreEntitlement = {
+  provider: Exclude<BillingProvider, "stripe">;
+  productId: string;
+  plan: BillingPlan;
+  status: BillingStatus;
+  periodEnd?: number;
+  willRenew: boolean;
+  environment: BillingEnvironment;
+};
+
+const date = (value: unknown) => {
+  const ms = typeof value === "string" ? Date.parse(value) : NaN;
+  return Number.isFinite(ms) ? ms : undefined;
+};
+
+/**
+ * Aktueller Stand aus GET /v1/subscribers (RevenueCat empfiehlt das nach jedem Webhook; TRANSFER-Events
+ * enthalten keine Abo-Daten). `null`: kein Store-Pro (mehr), Stripe läuft über den Stripe-Webhook.
+ */
+export function mapRevenueCatSubscriber(subscriber: RevenueCatSubscriber, products: RevenueCatProducts, now = Date.now()): StoreEntitlement | null {
+  const pro = subscriber.entitlements?.pro;
+  const productId = text(pro?.product_identifier);
+  if (!pro || !productId) return null;
+  // Play-Produkte heißen in der Entitlement „abo:basisplan“, in `subscriptions` nur „abo“.
+  const subscription = subscriber.subscriptions?.[productId] ?? subscriber.subscriptions?.[productId.split(":")[0]];
+  const provider = ({ app_store: "app_store", play_store: "google_play", promotional: "promotional" } as const)[
+    text(subscription?.store) as "app_store"
+  ] ?? (subscription ? undefined : "promotional");
+  if (!provider) return null;
+
+  const plan = products.yearly.has(productId) ? "pro_yearly" : products.monthly.has(productId) ? "pro_monthly" : undefined;
+  if (!plan) throw new Error("UNKNOWN_REVENUECAT_PRODUCT");
+
+  const periodEnd = date(pro.expires_date);
+  const grace = date(pro.grace_period_expires_date);
+  const unsubscribed = !!subscription?.unsubscribe_detected_at;
+  const billingIssue = !!subscription?.billing_issues_detected_at;
+  let status: BillingStatus = "active";
+  if (periodEnd !== undefined && periodEnd <= now && !(grace && grace > now)) status = "expired";
+  else if (billingIssue) status = grace && grace > now ? "grace_period" : "past_due";
+  else if (unsubscribed) status = "canceled";
+
+  return {
+    provider,
+    productId,
+    plan,
+    status,
+    periodEnd: status === "grace_period" ? grace : periodEnd,
+    willRenew: status === "active",
+    environment: subscription?.is_sandbox ? "sandbox" : "production",
+  };
+}

@@ -5,7 +5,9 @@
   display: grid; place-items: center; padding: 24px 16px;
   background: rgba(21, 36, 27, .45); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   animation: pro-ok-fade .25s ease both;
+  touch-action: none; overscroll-behavior: none;
 }
+html.pro-ok-open [data-tab-scroll], html.pro-ok-open .overflow-y-auto { overflow: hidden !important; }
 .pro-ok-card {
   width: 100%; max-width: 360px; border-radius: 28px; padding: 28px 24px 22px;
   background: #fff; color: #15241b; text-align: center;

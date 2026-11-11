@@ -28,6 +28,7 @@ export const OnboardingPaywall: React.FC<Props> = ({ onDone }) => {
   const createCheckout = useAction(api.stripe.createCheckoutSession);
   const createPortal = useAction(api.stripe.createPortalSession);
   const ensureBillingUserId = useMutation(api.users.ensureBillingUserId);
+  const syncStore = useAction(api.revenuecat.syncMyStoreSubscription);
   const [plan, setPlan] = useState<PlanId>('pro_yearly');
   const [storePrices, setStorePrices] = useState<Prices | null>(null);
   const [busy, setBusy] = useState(false);
@@ -133,7 +134,7 @@ export const OnboardingPaywall: React.FC<Props> = ({ onDone }) => {
         </div>
       </div>
       {unlocked && (
-        <ProUnlocked synced={(currentUser?.subscription ?? 'free') !== 'free'} onContinue={() => { void onDone('purchased'); }} />
+        <ProUnlocked synced={(currentUser?.subscription ?? 'free') !== 'free'} onSync={async () => (await syncStore())?.isPro ?? false} onContinue={() => { void onDone('purchased'); }} />
       )}
     </>
   );
