@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cleanText, extractRecipeFromHtml } from './recipeJsonLd.ts';
+import { cleanText, extractPageText, extractRecipeFromHtml } from './recipeJsonLd.ts';
 
 const page = (jsonLd, head = '') =>
   `<html><head>${head}<script type="application/ld+json">${JSON.stringify(jsonLd)}</script></head><body></body></html>`;
@@ -43,4 +43,18 @@ test('ohne Zutaten oder Schritte gibt es kein Rezept, og:image dient als Bild-Fa
 
 test('cleanText löst Entities auf und entfernt Tags', () => {
   assert.equal(cleanText('Gr&ouml;&szlig;e&nbsp;M <br/>&#8211; &#x2013; <i>fein</i>, &Uuml;bersicht &bogus;'), 'Größe M – – fein, Übersicht &bogus;');
+});
+
+test('extractPageText liest Rezeptseiten ohne JSON-LD und ignoriert Seiten ohne Rezept', () => {
+  const filler = 'Ein cremiges Pastagericht mit Pilzen und Spinat, in 20 Minuten fertig und komplett pflanzlich. '.repeat(4);
+  const html = `<html><head><title>Pilz-Pasta</title><meta property="og:image" content="https://x.de/a.jpg"></head><body>
+    <nav>Menü</nav><script>var x = 1;</script>
+    <div class="wprm"><h2>Pilz-Pasta</h2><p>${filler}</p><h3>Zutaten</h3><ul><li>250 g Pasta</li><li>300 g Champignons</li></ul>
+    <h3>Anleitung</h3><ol><li>Pasta kochen.</li><li>Pilze anbraten.</li></ol></div></body></html>`;
+  const page = extractPageText(html);
+  assert.equal(page.title, 'Pilz-Pasta');
+  assert.equal(page.image, 'https://x.de/a.jpg');
+  assert.match(page.content, /250 g Pasta\n300 g Champignons/);
+  assert.doesNotMatch(page.content, /var x|Menü/);
+  assert.equal(extractPageText(`<html><body><p>${filler} Bitte akzeptiere Cookies.</p></body></html>`), null);
 });

@@ -8,8 +8,8 @@ import { GoogleGenAI } from "@google/genai";
 import { GEMINI_MODELS, RECIPE_CATEGORIES } from "./constants";
 import { createImportTimer } from "./importTiming";
 import { runLegacyImport } from "./legacyImport";
-import { isRetryableGeminiError, runWithGeminiModelFallback } from "../utils/geminiRetry";
-import { extractRecipeFromHtml, type PageRecipe } from "../utils/recipeJsonLd";
+import { GEMINI_TEXT_TIMEOUT_MS, isRetryableGeminiError, runWithGeminiModelFallback } from "../utils/geminiRetry";
+import { extractPageText, extractRecipeFromHtml, type PageRecipe } from "../utils/recipeJsonLd";
 import { fetchRemotePage } from "./remoteImages";
 
 const JINA_API_KEY = process.env.JINA_API_KEY;
@@ -17,10 +17,13 @@ const JINA_API_KEY = process.env.JINA_API_KEY;
 const PAGE_FETCH_TIMEOUT_MS = 5_000;
 
 /** Rezept aus dem JSON-LD der Seite, oder null (gesperrt, kein Rezept-Markup, Timeout). */
-const readPageRecipe = async (url: string): Promise<PageRecipe | null> => {
+const readPageRecipe = async (url: string): Promise<(PageRecipe & { source: "jsonld" | "text" }) | null> => {
     try {
         const { html } = await fetchRemotePage(url, PAGE_FETCH_TIMEOUT_MS);
-        return extractRecipeFromHtml(html);
+        const recipe = extractRecipeFromHtml(html);
+        if (recipe) return { ...recipe, source: "jsonld" };
+        const page = extractPageText(html);
+        return page ? { ...page, source: "text" } : null;
     } catch (error) {
         console.warn("Direct page fetch failed, falling back to Jina", error instanceof Error ? error.message : String(error));
         return null;
@@ -146,7 +149,7 @@ export const scrapeWebsiteInternal = internalAction({
             pageTitle = pageRecipe.title;
             markdown = pageRecipe.content;
             pageImageUrl = pageRecipe.image ?? "";
-            timer.mark("page_jsonld_extracted", { markdownLength: markdown.length, hasPageImage: !!pageImageUrl });
+            timer.mark(pageRecipe.source === "jsonld" ? "page_jsonld_extracted" : "page_text_extracted", { markdownLength: markdown.length, hasPageImage: !!pageImageUrl });
             await reportExtractingPhase(ctx, args, pageImageUrl);
         } else {
             timer.mark("page_jsonld_missing");
@@ -243,8 +246,10 @@ export const scrapeWebsiteInternal = internalAction({
                 ai.models.generateContent({
                     model,
                     contents: prompt,
-                    config: { responseMimeType: "application/json", temperature: 0 },
+                    config: { responseMimeType: "application/json", temperature: 0, httpOptions: { timeout: GEMINI_TEXT_TIMEOUT_MS } },
                 }), {
+                    // Bei Überlast lieber früher aufs Ersatzmodell als 8,5 s auf dasselbe warten.
+                    delaysMs: [1_000, 2_500],
                     onRetry: ({ attempt, error }) => timer.mark("gemini_retry", {
                         attempt,
                         error: error instanceof Error ? error.message.slice(0, 200) : String(error),

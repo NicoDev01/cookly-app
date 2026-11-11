@@ -18,7 +18,7 @@ const isObject = (value: Json | undefined): value is JsonObject =>
 const asArray = (value: Json | undefined): Json[] => (value === undefined || value === null ? [] : Array.isArray(value) ? value : [value]);
 
 const ENTITIES: Record<string, string> = {
-  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', deg: '°', frac12: '½', frac14: '¼', frac34: '¾',
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', shy: '', deg: '°', frac12: '½', frac14: '¼', frac34: '¾',
   auml: 'ä', ouml: 'ö', uuml: 'ü', Auml: 'Ä', Ouml: 'Ö', Uuml: 'Ü', szlig: 'ß', eacute: 'é', egrave: 'è',
   ndash: '–', mdash: '—', hellip: '…', lsquo: '‘', rsquo: '’', sbquo: '‚', ldquo: '“', rdquo: '”', bdquo: '„',
 };
@@ -153,4 +153,33 @@ export const extractRecipeFromHtml = (html: string): PageRecipe | null => {
     };
   }
   return null;
+};
+
+const RECIPE_HINTS = [/zutaten|ingredients|ingrédients|ingredienti/i, /zubereitung|anleitung|instructions|directions|method|schritt|préparation|preparazione/i];
+
+/**
+ * Lesbarer Text einer Seite ohne JSON-LD (z. B. WP-Recipe-Maker-Druckansicht). Spart den Jina-Umweg (7–11 s),
+ * weil das HTML ohnehin schon geladen ist. Nur wenn die Seite erkennbar Zutaten und Zubereitung enthält;
+ * sonst (Cookie-Wand, per JavaScript gerenderte Seite) bleibt Jina zuständig.
+ */
+export const extractPageText = (html: string): PageRecipe | null => {
+  const withoutNoise = html
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<(script|style|noscript|svg|nav|header|footer|form|aside|iframe|template)\b[\s\S]*?<\/\1>/gi, ' ');
+  const main = withoutNoise.match(/<(article|main)\b[\s\S]*<\/\1>/i)?.[0];
+  const body = main && cleanText(main).length >= 400 ? main : withoutNoise.match(/<body\b[\s\S]*<\/body>/i)?.[0] ?? withoutNoise;
+  const content = body
+    .replace(/<\/(p|div|li|tr|h[1-6]|section|ul|ol|table|blockquote)>|<br\s*\/?>/gi, '\n')
+    .split('\n')
+    .map(cleanText)
+    .filter(Boolean)
+    .join('\n');
+  if (content.length < 400 || !RECIPE_HINTS.every((hint) => hint.test(content))) return null;
+
+  const title = metaContent(html, 'og:title') ?? cleanText(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '');
+  return {
+    title,
+    image: imageUrl(metaContent(html, 'og:image') ?? null),
+    content: content.slice(0, 20_000),
+  };
 };

@@ -9,8 +9,11 @@ export type ImportStepId = 'detect' | 'scrape' | 'extract' | 'save';
 
 export const IMPORT_STEP_ORDER: ImportStepId[] = ['detect', 'scrape', 'extract', 'save'];
 
-/** Balken-Ziel je Schritt in Prozent. */
-export const IMPORT_STEP_TARGET: Record<ImportStepId, number> = { detect: 8, scrape: 55, extract: 92, save: 100 };
+/**
+ * Balken-Ziel je Schritt in Prozent. Bewusst vorne schwer: Die ersten ~75 % laufen zügig durch (Laden des Beitrags),
+ * das fühlt sich schneller an als ein gleichmäßiger Balken; der Rest wartet ehrlich auf Gemini.
+ */
+export const IMPORT_STEP_TARGET: Record<ImportStepId, number> = { detect: 15, scrape: 82, extract: 97, save: 100 };
 
 export const importStepTitle = (step: ImportStepId, provider: ImportProvider) => {
   if (step === 'detect') return 'Link erkannt';
@@ -40,6 +43,6 @@ export const importStepFromOperation = (operation: OperationSnapshot): ImportSte
  * und springt beim Schrittwechsel nicht.
  */
 export const approachPercent = (base: number, to: number, elapsedMs: number, expectedMs: number) => {
-  const frac = 0.9 * (1 - Math.exp(-Math.max(0, elapsedMs) / (Math.max(1, expectedMs) * 0.7)));
+  const frac = 0.9 * (1 - Math.exp(-Math.max(0, elapsedMs) / (Math.max(1, expectedMs) * 0.4)));
   return base + (Math.max(base, to) - base) * frac;
 };

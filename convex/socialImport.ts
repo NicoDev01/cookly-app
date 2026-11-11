@@ -22,7 +22,7 @@ import {
   type RecipeData,
   type ScrapedCandidate,
 } from "./socialImportShared";
-import { isRetryableGeminiError, runWithGeminiModelFallback } from "../utils/geminiRetry";
+import { GEMINI_TEXT_TIMEOUT_MS, isRetryableGeminiError, runWithGeminiModelFallback } from "../utils/geminiRetry";
 import { runApifyActorUntilDone } from "./lib/apifyRun";
 import { runAttemptPlan } from "./lib/attemptPlan";
 
@@ -201,6 +201,7 @@ async function extractRecipeWithGemini(
           responseMimeType: "application/json",
           responseJsonSchema: RECIPE_RESPONSE_JSON_SCHEMA,
           temperature: 0,
+          httpOptions: { timeout: GEMINI_TEXT_TIMEOUT_MS },
         },
       }), {
       delaysMs: GEMINI_RETRY_DELAYS_MS,
