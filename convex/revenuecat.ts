@@ -4,7 +4,7 @@ import { internal } from "./_generated/api";
 import { action, internalAction, internalMutation, internalQuery } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
 import { productIds, setProviderStatus, upsertEntitlement } from "./billing";
-import { mapRevenueCatSubscriber } from "./billingModel";
+import { mapRevenueCatSubscription, pickProSubscription, type RevenueCatSubscription } from "./billingModel";
 
 const STORE_PROVIDERS = ["app_store", "google_play", "promotional"] as const;
 
@@ -18,22 +18,63 @@ const storeEntitlement = v.object({
   environment: v.union(v.literal("sandbox"), v.literal("production")),
 });
 
-/** Holt den Abo-Stand bei RevenueCat und schreibt ihn in Convex. `null`, wenn kein Secret Key gesetzt ist. */
+const API = "https://api.revenuecat.com/v2";
+let cachedProjectId: string | undefined;
+
+class RevenueCatError extends Error {
+  readonly status: number;
+  constructor(status: number, detail: string) {
+    super(`REVENUECAT_SYNC_FAILED_${status}: ${detail}`);
+    this.status = status;
+  }
+}
+
+async function rc<T>(path: string, key: string): Promise<T> {
+  const response = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${key}` } });
+  if (!response.ok) throw new RevenueCatError(response.status, (await response.text().catch(() => "")).slice(0, 300));
+  return await response.json() as T;
+}
+
+/** Der Secret Key (API v2) gehört zu genau einem Projekt; REVENUECAT_PROJECT_ID überschreibt das. */
+async function projectId(key: string) {
+  if (process.env.REVENUECAT_PROJECT_ID) return process.env.REVENUECAT_PROJECT_ID;
+  if (!cachedProjectId) {
+    const { items } = await rc<{ items?: Array<{ id: string }> }>("/projects", key);
+    if (!items?.[0]?.id) throw new Error("REVENUECAT_PROJECT_NOT_FOUND");
+    cachedProjectId = items[0].id;
+  }
+  return cachedProjectId;
+}
+
+/** Holt den Abo-Stand bei RevenueCat (API v2) und schreibt ihn in Convex. `null`, wenn kein Secret Key gesetzt ist. */
 async function syncCustomer(ctx: ActionCtx, billingUserId: string) {
   const key = process.env.REVENUECAT_SECRET_API_KEY;
   if (!key) {
     console.warn("REVENUECAT_SECRET_API_KEY fehlt, Store-Abgleich übersprungen");
     return null;
   }
-  const response = await fetch(`https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(billingUserId)}`, {
-    headers: { Authorization: `Bearer ${key}` },
-  });
-  if (!response.ok) throw new Error(`REVENUECAT_SYNC_FAILED_${response.status}`);
-  const { subscriber } = await response.json() as { subscriber?: Parameters<typeof mapRevenueCatSubscriber>[0] };
-  const entitlement = mapRevenueCatSubscriber(subscriber ?? {}, {
-    monthly: productIds("REVENUECAT_PRO_MONTHLY_PRODUCT_IDS"),
-    yearly: productIds("REVENUECAT_PRO_YEARLY_PRODUCT_IDS"),
-  });
+  const project = await projectId(key);
+  let items: RevenueCatSubscription[] = [];
+  try {
+    ({ items = [] } = await rc<{ items?: RevenueCatSubscription[] }>(
+      `/projects/${project}/customers/${encodeURIComponent(billingUserId)}/subscriptions?limit=50`, key));
+  } catch (error) {
+    if (!(error instanceof RevenueCatError && error.status === 404)) throw error; // Kunde unbekannt: kein Abo
+  }
+  const subscription = pickProSubscription(items);
+  let entitlement = null;
+  if (subscription) {
+    // v2 nennt in product_id die RevenueCat-ID; den Plan liefert die Store-Produkt-ID.
+    const storeProductId = subscription.product_id
+      ? await rc<{ store_identifier?: string }>(`/projects/${project}/products/${subscription.product_id}`, key)
+        .then((product) => product.store_identifier)
+        .catch(() => undefined)
+      : undefined;
+    entitlement = mapRevenueCatSubscription(subscription, {
+      monthly: productIds("REVENUECAT_PRO_MONTHLY_PRODUCT_IDS"),
+      yearly: productIds("REVENUECAT_PRO_YEARLY_PRODUCT_IDS"),
+    }, storeProductId);
+  }
   return await ctx.runMutation(internal.revenuecat.applyCustomer, { billingUserId, entitlement });
 }
 

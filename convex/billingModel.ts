@@ -128,19 +128,17 @@ export function mapRevenueCatEvent(event: RevenueCatEvent, products: RevenueCatP
   };
 }
 
-type RevenueCatSubscriber = {
-  entitlements?: Record<string, {
-    expires_date?: string | null;
-    grace_period_expires_date?: string | null;
-    product_identifier?: string;
-  } | undefined>;
-  subscriptions?: Record<string, {
-    store?: string;
-    is_sandbox?: boolean;
-    unsubscribe_detected_at?: string | null;
-    billing_issues_detected_at?: string | null;
-    store_transaction_id?: string;
-  } | undefined>;
+/** Abo aus der RevenueCat-API v2 (GET /projects/{id}/customers/{id}/subscriptions). */
+export type RevenueCatSubscription = {
+  product_id?: string | null;
+  store?: string;
+  environment?: string;
+  status?: string;
+  gives_access?: boolean;
+  auto_renewal_status?: string;
+  current_period_ends_at?: number | null;
+  ends_at?: number | null;
+  entitlements?: { items?: Array<{ lookup_key?: string }> };
 };
 
 export type StoreEntitlement = {
@@ -153,45 +151,45 @@ export type StoreEntitlement = {
   environment: BillingEnvironment;
 };
 
-const date = (value: unknown) => {
-  const ms = typeof value === "string" ? Date.parse(value) : NaN;
-  return Number.isFinite(ms) ? ms : undefined;
+const STORE_PROVIDER: Record<string, StoreEntitlement["provider"]> = {
+  app_store: "app_store", mac_app_store: "app_store", play_store: "google_play", promotional: "promotional",
 };
 
+/** Das Store-Abo, das „pro“ freischaltet; bevorzugt eines mit Zugang, sonst das zuletzt endende. Stripe läuft über den Stripe-Webhook. */
+export function pickProSubscription(items: RevenueCatSubscription[]) {
+  const pro = items.filter((item) =>
+    STORE_PROVIDER[item.store ?? ""] && item.entitlements?.items?.some((entitlement) => entitlement.lookup_key === "pro"));
+  const end = (item: RevenueCatSubscription) => item.ends_at ?? item.current_period_ends_at ?? Number.MAX_SAFE_INTEGER;
+  return pro.sort((a, b) => Number(!!b.gives_access) - Number(!!a.gives_access) || end(b) - end(a))[0] ?? null;
+}
+
 /**
- * Aktueller Stand aus GET /v1/subscribers (RevenueCat empfiehlt das nach jedem Webhook; TRANSFER-Events
- * enthalten keine Abo-Daten). `null`: kein Store-Pro (mehr), Stripe läuft über den Stripe-Webhook.
+ * Abo-Stand für Convex. `storeProductId` ist die Store-Produkt-ID (v2 liefert in `product_id` nur die RevenueCat-ID);
+ * ist sie unbekannt, gilt der bisherige Plan bzw. monatlich.
  */
-export function mapRevenueCatSubscriber(subscriber: RevenueCatSubscriber, products: RevenueCatProducts, now = Date.now()): StoreEntitlement | null {
-  const pro = subscriber.entitlements?.pro;
-  const productId = text(pro?.product_identifier);
-  if (!pro || !productId) return null;
-  // Play-Produkte heißen in der Entitlement „abo:basisplan“, in `subscriptions` nur „abo“.
-  const subscription = subscriber.subscriptions?.[productId] ?? subscriber.subscriptions?.[productId.split(":")[0]];
-  const provider = ({ app_store: "app_store", play_store: "google_play", promotional: "promotional" } as const)[
-    text(subscription?.store) as "app_store"
-  ] ?? (subscription ? undefined : "promotional");
-  if (!provider) return null;
-
-  const plan = products.yearly.has(productId) ? "pro_yearly" : products.monthly.has(productId) ? "pro_monthly" : undefined;
-  if (!plan) throw new Error("UNKNOWN_REVENUECAT_PRODUCT");
-
-  const periodEnd = date(pro.expires_date);
-  const grace = date(pro.grace_period_expires_date);
-  const unsubscribed = !!subscription?.unsubscribe_detected_at;
-  const billingIssue = !!subscription?.billing_issues_detected_at;
+export function mapRevenueCatSubscription(
+  item: RevenueCatSubscription,
+  products: RevenueCatProducts,
+  storeProductId: string | undefined,
+  fallbackPlan: BillingPlan = "pro_monthly",
+): StoreEntitlement {
+  const provider = STORE_PROVIDER[item.store ?? ""];
+  if (!provider) throw new Error("UNSUPPORTED_REVENUECAT_STORE");
+  const plan = storeProductId && products.yearly.has(storeProductId) ? "pro_yearly"
+    : storeProductId && products.monthly.has(storeProductId) ? "pro_monthly"
+      : fallbackPlan;
   let status: BillingStatus = "active";
-  if (periodEnd !== undefined && periodEnd <= now && !(grace && grace > now)) status = "expired";
-  else if (billingIssue) status = grace && grace > now ? "grace_period" : "past_due";
-  else if (unsubscribed) status = "canceled";
-
+  if (!item.gives_access) status = "expired";
+  else if (item.status === "in_grace_period") status = "grace_period";
+  else if (item.status === "in_billing_retry") status = "past_due";
+  else if (item.auto_renewal_status === "will_not_renew" || item.auto_renewal_status === "will_pause") status = "canceled";
   return {
     provider,
-    productId,
+    productId: storeProductId ?? item.product_id ?? "unknown",
     plan,
     status,
-    periodEnd: status === "grace_period" ? grace : periodEnd,
+    periodEnd: item.ends_at ?? item.current_period_ends_at ?? undefined,
     willRenew: status === "active",
-    environment: subscription?.is_sandbox ? "sandbox" : "production",
+    environment: item.environment === "sandbox" ? "sandbox" : "production",
   };
 }
