@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/convex/_generated/api";
 import { useBackNavigation } from "@/hooks/useBackNavigation";
 import { Capacitor } from "@capacitor/core";
@@ -26,6 +27,7 @@ import ExternalLink from "@/components/ExternalLink";
 import { LEGAL_LINKS } from "@/utils/legalLinks";
 import { ONB_IMG } from "@/components/onboarding/onboardingData";
 import { FREE_LIMITS } from "@/convex/constants";
+import ProUnlocked from "@/components/subscribe/ProUnlocked";
 
 /** Was Pro wirklich freischaltet: Free hat nur Kontingente für Importe und Scans. */
 const PRO_FEATURES = [
@@ -39,6 +41,9 @@ export default function SubscribePage() {
     capture("paywall_viewed");
   }, []);
   const handleBack = useBackNavigation();
+  const navigate = useNavigate();
+  // Store hat den Kauf bestätigt: Erfolg zeigen, bis der Nutzer weitergeht.
+  const [unlocked, setUnlocked] = useState(false);
   const currentUser = useQuery(api.users.getCurrentUser);
   const pricing = useQuery(api.stripe.getPlanPricing);
   const billingSummary = useQuery(api.billing.getSummary);
@@ -94,8 +99,7 @@ export default function SubscribePage() {
       if (result.redirectUrl) window.location.href = result.redirectUrl;
       if (result.active) {
         capture("purchase_completed", { plan: planId, provider: billing.provider });
-        setBillingNotice("Kauf bestätigt. Die Pro-Berechtigung wird synchronisiert.");
-        showToast("Pro wurde aktiviert.", "success");
+        setUnlocked(true);
       }
     } catch (error) {
       logger.error('Billing', 'Checkout failed', error);
@@ -132,7 +136,8 @@ export default function SubscribePage() {
     setLoading("restore");
     try {
       const active = await billing.restore();
-      setBillingNotice(active ? "Käufe wiederhergestellt. Die Pro-Berechtigung wird synchronisiert." : "Kein aktives Store-Abo gefunden.");
+      if (active) setUnlocked(true);
+      else setBillingNotice("Kein aktives Store-Abo gefunden.");
     } catch (error) {
       logger.error("Billing", "Restore failed", error);
       showToast(getUserErrorMessage(error, "billing"), "error");
@@ -168,6 +173,15 @@ export default function SubscribePage() {
 
   return (
     <div className="min-h-screen bg-muted text-foreground font-sans pb-20">
+      {unlocked && (
+        <ProUnlocked
+          synced={isPro}
+          onContinue={() => {
+            setUnlocked(false);
+            navigate("/tabs/profile", { replace: true });
+          }}
+        />
+      )}
 
       <div className="container mx-auto px-4 pb-8" style={{ paddingTop: 'calc(var(--safe-area-inset-top, 0px) + 1rem)' }}>
         {/* Header */}

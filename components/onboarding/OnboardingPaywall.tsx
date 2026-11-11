@@ -10,6 +10,7 @@ import { getUserErrorMessage } from '../../utils/userErrors';
 import { LEGAL_LINKS } from '../../utils/legalLinks';
 import ExternalLink from '../ExternalLink';
 import { ONB_IMG, PRO_FEATURES } from './onboardingData';
+import ProUnlocked from '../subscribe/ProUnlocked';
 
 type Prices = { monthly: string; yearly: string; yearlyPerMonth: string | null; savingsPercent: number | null };
 
@@ -31,6 +32,7 @@ export const OnboardingPaywall: React.FC<Props> = ({ onDone }) => {
   const [storePrices, setStorePrices] = useState<Prices | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
+  const [unlocked, setUnlocked] = useState(false);
   const billingUserId = currentUser?.billingUserId;
   const billing = useMemo(
     () => createBillingClient(billingUserId, { checkout: createCheckout, portal: createPortal }),
@@ -77,7 +79,7 @@ export const OnboardingPaywall: React.FC<Props> = ({ onDone }) => {
       }
       if (result.active) {
         capture('purchase_completed', { plan, provider: billing.provider, placement: 'onboarding' });
-        await onDone('purchased');
+        setUnlocked(true);
       }
     } catch (error) {
       logger.error('Billing', 'Onboarding checkout failed', error);
@@ -130,6 +132,9 @@ export const OnboardingPaywall: React.FC<Props> = ({ onDone }) => {
           <ExternalLink href={LEGAL_LINKS.privacy}>Datenschutz</ExternalLink>
         </div>
       </div>
+      {unlocked && (
+        <ProUnlocked synced={(currentUser?.subscription ?? 'free') !== 'free'} onContinue={() => { void onDone('purchased'); }} />
+      )}
     </>
   );
 };

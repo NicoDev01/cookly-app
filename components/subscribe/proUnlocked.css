@@ -1,0 +1,53 @@
+/* Erfolg nach dem Pro-Kauf: Karte springt auf, Funken fliegen einmal aus dem Topf. */
+.pro-ok {
+  --pro-green: #2f5d46;
+  position: fixed; inset: 0; z-index: 110;
+  display: grid; place-items: center; padding: 24px 16px;
+  background: rgba(21, 36, 27, .45); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  animation: pro-ok-fade .25s ease both;
+}
+.pro-ok-card {
+  width: 100%; max-width: 360px; border-radius: 28px; padding: 28px 24px 22px;
+  background: #fff; color: #15241b; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .25);
+  animation: pro-ok-pop .55s cubic-bezier(.34, 1.56, .64, 1) both;
+}
+.pro-ok-art { position: relative; display: grid; place-items: center; height: 132px; margin-bottom: 4px; }
+.pro-ok-art img { position: relative; height: 128px; width: auto; animation: pro-ok-bob .7s .15s cubic-bezier(.34, 1.56, .64, 1) both; }
+.pro-ok-spark {
+  position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; margin: -4px; border-radius: 2px;
+  background: hsl(calc(var(--i) * 26 + 20) 70% 58%);
+  transform: rotate(calc(var(--i) * 25.7deg)) translateY(0) scale(0);
+  animation: pro-ok-spark .9s .2s cubic-bezier(.2, .8, .3, 1) both;
+}
+.pro-ok-spark:nth-child(odd) { border-radius: 50%; width: 6px; height: 6px; margin: -3px; }
+.pro-ok-card h2 { margin: 6px 0 0; font-size: 24px; font-weight: 800; letter-spacing: -.01em; }
+.pro-ok-card p { margin: 0; font-size: 15px; line-height: 1.4; color: #56665c; }
+.pro-ok-sync {
+  margin-top: 6px; display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  background: #edf3ee; color: #56665c; transition: background .3s, color .3s;
+}
+.pro-ok-sync.done { background: var(--pro-green); color: #fff; }
+.pro-ok-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #c9d8cd; border-top-color: var(--pro-green); animation: pro-ok-rot .8s linear infinite; }
+.pro-ok-card button {
+  margin-top: 12px; width: 100%; height: 52px; border: 0; border-radius: 999px;
+  background: var(--pro-green); color: #fff; font-size: 17px; font-weight: 700;
+}
+.pro-ok-card button:active { transform: scale(.97); }
+
+@keyframes pro-ok-fade { from { opacity: 0; } }
+@keyframes pro-ok-pop { from { opacity: 0; transform: scale(.85) translateY(16px); } }
+@keyframes pro-ok-bob { from { transform: scale(.6) rotate(-8deg); } }
+@keyframes pro-ok-spark {
+  0% { transform: rotate(calc(var(--i) * 25.7deg)) translateY(0) scale(0); opacity: 1; }
+  60% { opacity: 1; }
+  100% { transform: rotate(calc(var(--i) * 25.7deg)) translateY(-92px) scale(1); opacity: 0; }
+}
+@keyframes pro-ok-rot { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pro-ok, .pro-ok-card, .pro-ok-art img { animation: none; }
+  .pro-ok-spark { display: none; }
+}
