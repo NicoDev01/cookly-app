@@ -98,7 +98,11 @@ html.keyboard-open .onb-swap .onb-ill img, .onb-swap.kb-frozen .ask .onb-ill img
 .onb-pro { color: var(--o-orange); display: inline-block; transform: skewX(-9deg); margin-right: -1px; }
 
 /* Import-Demo (Mini-Handy im iPhone-Format 19,5 : 9) */
-.onb-dmi { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 12px; padding-bottom: 40px; animation: onb-slide .28s ease both; }
+.onb-dmw { position: relative; display: flex; flex-direction: column; gap: 16px; }
+.onb-dmw .dm { transition: filter .6s ease; }
+.onb-dmw.intro .dm { filter: grayscale(1) opacity(.12); }
+.onb-dmi { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: center; gap: 12px; padding: 0 6px 40px; text-align: center; pointer-events: none; opacity: 0; transform: translateY(-6px); transition: opacity .35s ease, transform .35s ease; }
+.onb-dmw.intro .onb-dmi { opacity: 1; transform: none; animation: onb-slide .35s ease both; }
 .onb-dmh, .dm { animation: onb-slide .35s ease both; }
 .onb-dmh { flex: none; height: 62px; display: flex; align-items: center; justify-content: center; }
 .onb-dmh .onb-q { font-size: 25px; transition: opacity .25s; }

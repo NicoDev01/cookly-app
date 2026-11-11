@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { useLocation, Link } from 'react-router-dom';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { useConvexAuth } from 'convex/react';
 import { useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
@@ -36,6 +36,7 @@ const AppNav: React.FC<{
   onAddRecipe: () => void;
 }> = ({ onAddRecipe }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { isAuthenticated, isLoading } = useConvexAuth();
   const currentUser = useQuery(api.users.getCurrentUser);
   const { impact } = useHaptic();
@@ -54,6 +55,23 @@ const AppNav: React.FC<{
     onFocus: () => { void prefetch(); },
     onTouchStart: () => { void prefetch(); },
   });
+
+  // Wie iOS-Tab-Leisten schon beim Antippen wechseln, nicht erst beim Loslassen (spart die Fingerdauer).
+  const pressedRef = useRef(false);
+  const handlePointerDown = (event: React.PointerEvent, index: number, path: string) => {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    pressedRef.current = true;
+    handleNavTap(index, path);
+    if (path !== location.pathname) navigate(path);
+  };
+  const handleClick = (event: React.MouseEvent, index: number, path: string) => {
+    if (pressedRef.current) {
+      pressedRef.current = false;
+      event.preventDefault();
+      return;
+    }
+    handleNavTap(index, path); // Tastatur oder Screenreader
+  };
 
   const handleNavTap = (index: number, path: string) => {
     // Wie in iOS-Tab-Leisten: Den aktiven Tab nochmal antippen scrollt nach oben (Container in TabsLayout).
@@ -175,7 +193,8 @@ const AppNav: React.FC<{
             ref={(el) => { tabRefs.current[index] = el; }}
             to={path}
             {...intentHandlers(prefetch)}
-            onClick={() => handleNavTap(index, path)}
+            onPointerDown={(event) => handlePointerDown(event, index, path)}
+            onClick={(event) => handleClick(event, index, path)}
             className={`touch-scale flex flex-col items-center justify-center gap-0.5 py-2 px-3 min-w-[56px] rounded-xl transition-colors duration-200 ${
               index === activeIndex
                 ? 'text-text-primary-light dark:text-text-primary-dark'

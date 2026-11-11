@@ -14,7 +14,8 @@ const Pill: React.FC<{ c: number; children: React.ReactNode; delay?: number }> =
   <span className={`pl c${c}`} style={delay === undefined ? undefined : { transitionDelay: `${delay}s` }}>{children}</span>
 );
 
-const INTRO_MS = 1500;
+/** Titel über dem ausgeblichenen Handy, danach blendet er aus und die Demo startet. */
+const INTRO_MS = 1800;
 
 /** Animierte Schleife des echten Import-Ablaufs: Reel teilen → Cookly wählen → Import → Rezept. */
 export const ImportDemo: React.FC = () => {
@@ -65,18 +66,13 @@ export const ImportDemo: React.FC = () => {
     return () => timers.forEach(clearTimeout);
   }, [intro]);
 
-  if (intro) {
-    return (
-      <div className="onb-dmi">
-        <div className="onb-q">So funktionieren Rezeptimporte</div>
-        <div className="onb-sub">Teile ein Rezept aus Instagram, TikTok oder dem Web mit Cookly. Wir zeigen dir kurz, wie das geht.</div>
-      </div>
-    );
-  }
-
   return (
-    <>
-      <div className="onb-dmh"><div className="onb-q" style={{ opacity: titleVisible ? 1 : 0 }}>
+    <div className={`onb-dmw${intro ? ' intro' : ''}`}>
+      <div className="onb-dmi" aria-hidden={!intro}>
+        <div className="onb-q">So funktionieren Rezeptimporte</div>
+        <div className="onb-sub">Teile ein Rezept aus Instagram, TikTok oder dem Web mit Cookly.</div>
+      </div>
+      <div className="onb-dmh"><div className="onb-q" style={{ opacity: titleVisible && !intro ? 1 : 0 }}>
           {title}{title === TITLES[2] && <span className="onb-dots"><i>.</i><i>.</i><i>.</i></span>}
         </div></div>
       <div className="dm" data-p={phase} aria-hidden="true">
@@ -143,6 +139,6 @@ export const ImportDemo: React.FC = () => {
           {tap && <div key={tap.key} className="tap go" style={{ left: tap.x, top: tap.y }} />}
         </div>
       </div>
-    </>
+    </div>
   );
 };

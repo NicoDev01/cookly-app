@@ -99,9 +99,10 @@ export const TabsLayout: React.FC = () => {
           <Suspense fallback={<PageLoader />}>
             {mountedTabs.map((tabPath) => (
               <Activity key={tabPath} mode={currentTab === tabPath ? 'visible' : 'hidden'}>
+                {/* Ohne Einblenden: display:none startet CSS-Animationen bei jedem Tab-Wechsel neu, das wirkte träge. */}
                 <div
                   data-tab-scroll={tabPath}
-                  className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y page-enter"
+                  className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y"
                 >
                   {renderTab(tabPath)}
                 </div>
@@ -114,7 +115,7 @@ export const TabsLayout: React.FC = () => {
                 
                 return (
                   <Activity key={categoryPath} mode={isActive ? 'visible' : 'hidden'}>
-                    <div className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y page-enter">
+                    <div className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y">
                       <CategoryRecipesWrapper category={category} />
                     </div>
                   </Activity>
