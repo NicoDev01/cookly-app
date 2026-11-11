@@ -1,5 +1,6 @@
 import React from 'react';
 import { useMutation, useQuery } from 'convex/react';
+import { CheckCheck, X } from 'lucide-react';
 import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
 import { Ingredient } from '../types';
@@ -91,7 +92,22 @@ const Ingredients: React.FC<IngredientsProps> = ({ ingredients, highlightedIndex
       };
     })]);
   });
+  // „Alle abwählen“: alle Einträge dieses Rezepts wieder von der Liste nehmen (auch alte Schlüsselformate).
+  const recipeKeys = new Set(rows.flatMap((row) => [row.key, ...buildLegacyShoppingItemKeys(row.name, row.amount, recipeId)]));
+  const removeAll = useMutation(api.shopping.removeShoppingItems).withOptimisticUpdate((localStore, { ids }) => {
+    const currentList = localStore.getQuery(api.shopping.getShoppingList);
+    if (!currentList) return;
+    const removed = new Set<string>(ids);
+    localStore.setQuery(api.shopping.getShoppingList, {}, currentList.filter((item) => !removed.has(item._id) && !(item._id.startsWith('optimistic-') && recipeKeys.has(item.key))));
+  });
+  const deselectAll = () => {
+    const ids = (shoppingItems ?? [])
+      .filter((item) => recipeKeys.has(item.key) && !item._id.startsWith('optimistic-'))
+      .map((item) => item._id);
+    void removeAll({ ids });
+  };
   const showSelectAll = !!recipeId && selectedCount > 0;
+  const allSelected = missing.length === 0;
 
   // Helper to cycle through colors defined in tailwind config for visual variety
   const INGREDIENT_COLORS = [
@@ -113,25 +129,19 @@ const Ingredients: React.FC<IngredientsProps> = ({ ingredients, highlightedIndex
 
   return (
     <div className="mt-6">
-      <div className="mb-4 flex min-h-8 items-center justify-between gap-3">
+      <div className="mb-4 flex min-h-7 items-center justify-between gap-3">
         <h2 className="text-xl font-bold text-[#111718] dark:text-white">Zutaten</h2>
         {/* Erscheint, sobald eine Zutat auf der Liste steht: der Rest mit einem Tipp. */}
+        {/* Fein wie der Kochmodus-Knopf; erscheint ab der ersten Zutat auf der Liste und schaltet zwischen alle/keine. */}
         {showSelectAll && (
           <button
             type="button"
-            disabled={!missing.length}
-            onClick={() => recipeId && void addAll({ recipeIds: [recipeId] })}
-            aria-label={missing.length ? `Alle ${missing.length} fehlenden Zutaten auf die Einkaufsliste` : 'Alle Zutaten stehen auf der Einkaufsliste'}
-            className={`flex h-8 items-center gap-1.5 rounded-full pl-2 pr-3 text-xs font-semibold transition-all duration-300 ease-out animate-in fade-in zoom-in-90 active:scale-95 ${
-              missing.length
-                ? 'bg-primary/10 text-primary shadow-neomorphism-pill dark:shadow-dark-neomorphism-pill'
-                : 'text-text-secondary-light dark:text-text-secondary-dark'
-            }`}
+            onClick={() => (allSelected ? deselectAll() : recipeId && void addAll({ recipeIds: [recipeId] }))}
+            aria-label={allSelected ? 'Alle Zutaten von der Einkaufsliste nehmen' : 'Alle Zutaten auf die Einkaufsliste'}
+            className="relative flex items-center gap-1 whitespace-nowrap rounded-full border border-solid border-gray-300 px-2.5 py-1 text-xs text-gray-500 transition animate-in fade-in duration-200 after:absolute after:-inset-2 after:content-[''] active:scale-95 hover:text-[#111718] dark:border-white/25 dark:text-gray-400 dark:hover:text-white"
           >
-            <span className={`material-symbols-outlined !text-[16px] leading-none transition-transform duration-300 ${missing.length ? '' : 'scale-110'}`}>
-              {missing.length ? 'shopping_cart' : 'check_circle'}
-            </span>
-            {missing.length ? `Alle · +${missing.length}` : 'Alle drauf'}
+            {allSelected ? <X size={13} strokeWidth={2.25} aria-hidden /> : <CheckCheck size={13} strokeWidth={2.25} aria-hidden />}
+            {allSelected ? 'Alle abwählen' : 'Alle'}
           </button>
         )}
       </div>

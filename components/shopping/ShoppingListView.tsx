@@ -170,6 +170,9 @@ const ShoppingListView: React.FC<Props> = ({
   const checkedItems = list.filter((i) => i.checked);
   // Reihenfolge bleibt fest: Abgehaktes wird nur durchgestrichen, nichts springt.
   const groups = mode === 'sections' ? groupBySection(rows) : groupByRecipe(list);
+  // Nach Abteilung laufen die Farben über alle Gruppen weiter, sonst zeigen kleine Abteilungen immer nur die ersten Farben.
+  // Nach Rezept beginnt jede Gruppe neu, passend zur Rezeptseite.
+  const colorOffsets = groups.reduce<number[]>((offsets, group, i) => [...offsets, i === 0 ? 0 : offsets[i - 1] + groups[i - 1].rows.length], []);
   const suggestions = inputFocused ? suggest(draft, recents, rows) : [];
 
   const remember = (names: string[]) => {
@@ -341,8 +344,9 @@ const ShoppingListView: React.FC<Props> = ({
           </div>
         )}
 
-        {groups.map((group) => {
+        {groups.map((group, groupIndex) => {
           const open = group.rows.filter((r) => !r.checked).length;
+          const colorStart = mode === 'sections' ? colorOffsets[groupIndex] : 0;
           return (
             <section key={group.key} className={`transition-opacity duration-300 ${open === 0 ? 'opacity-60' : ''}`}>
               <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">
@@ -361,7 +365,7 @@ const ShoppingListView: React.FC<Props> = ({
                   <Pill
                     key={row.ids.join()}
                     row={row}
-                    color={colorClass(index)}
+                    color={colorClass(colorStart + index)}
                     fresh={fresh === row.key}
                     onToggle={() => toggle(row)}
                     onLongPress={() => {

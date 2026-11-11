@@ -17,6 +17,8 @@ export type GeminiRetryOptions = {
 const DEFAULT_RETRY_DELAYS_MS = [1000, 2500, 5000] as const;
 /** Zeitlimit je Text-Anfrage. Ohne Limit hing eine Anfrage bei Überlast bis zu 60 s; ein Neuversuch ist meist schnell. */
 export const GEMINI_TEXT_TIMEOUT_MS = 20_000;
+/** Foto-Scan: Bild plus längere Antwort, daher mehr Luft; ein Hänger wird trotzdem abgebrochen und wiederholt. */
+export const GEMINI_IMAGE_TIMEOUT_MS = 35_000;
 const RETRYABLE_CODES = new Set([429, 500, 503, 504]);
 const RETRYABLE_STATUSES = new Set(["RESOURCE_EXHAUSTED", "INTERNAL", "UNAVAILABLE", "DEADLINE_EXCEEDED"]);
 

@@ -6,7 +6,7 @@ import { api, internal } from "./_generated/api";
 import { v, type Infer } from "convex/values";
 import { GoogleGenAI } from "@google/genai";
 import { GEMINI_MODELS } from "./constants";
-import { runWithGeminiModelFallback } from "../utils/geminiRetry";
+import { GEMINI_IMAGE_TIMEOUT_MS, runWithGeminiModelFallback } from "../utils/geminiRetry";
 import {
   AI_SCAN_PROMPT_FIXED,
   AI_SCAN_RESPONSE_JSON_SCHEMA,
@@ -110,8 +110,10 @@ export const scanRecipePhotoInternal = internalAction({
           responseMimeType: "application/json",
           responseJsonSchema: AI_SCAN_RESPONSE_JSON_SCHEMA,
           temperature: 0,
+          httpOptions: { timeout: GEMINI_IMAGE_TIMEOUT_MS },
         },
-      })
+      }),
+      { delaysMs: [1_000, 2_500] },
     );
 
     const parsed = parseGeminiJson(response.text);
