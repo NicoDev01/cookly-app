@@ -306,6 +306,19 @@
   padding-bottom: var(--keyboard-height);
   transition: padding-bottom var(--keyboard-transition);
 }
+/* Bei offener Tastatur entbehrliche Leisten ausblenden (mehr Platz für das Formular). */
+html.keyboard-open .kb-hide {
+  display: none;
+}
+/* Füllt bei Bottom-Sheets den Bereich hinter der Tastatur in Sheet-Farbe, damit an deren runden Ecken nichts durchscheint. */
+.kb-under {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: var(--keyboard-height);
+  transition: height var(--keyboard-transition);
+  pointer-events: none;
+}
 /* Seiten ohne App-Shell (Login, Registrierung) scrollen das Dokument: Platz unter dem Inhalt schaffen. */
 html:not(.app-shell) body {
   padding-bottom: var(--keyboard-height);

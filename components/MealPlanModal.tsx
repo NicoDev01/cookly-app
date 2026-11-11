@@ -215,12 +215,13 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="kb-shell fixed inset-0 z-[100] flex items-end justify-center pointer-events-auto">
-      {/* Backdrop */}
+    <div className="kb-pad fixed inset-0 z-[100] flex items-end justify-center pointer-events-auto">
+      {/* Backdrop: vollflächig, auch hinter der Tastatur */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       />
+      <div className="kb-under bg-background-light dark:bg-background-dark" />
 
       {/* Slide-up Panel */}
       <div className="relative w-full h-[92%] bg-background-light dark:bg-background-dark rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up pb-safe-offset">

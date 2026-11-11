@@ -1,7 +1,7 @@
 import React from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useBackNavigation } from '../hooks/useBackNavigation';
-import { useMutation } from "convex/react";
+import { useConvex, useMutation } from "convex/react";
 import { useCachedQuery } from '../contexts/QueryCacheContext';
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
@@ -69,7 +69,7 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
 
   // PERFORMANCE: Use cached query for instant navigation (eliminates spinner)
   const cacheKey = isAll ? 'category-all-recipes' : `category-${category}`;
-  const { data: rawRecipes } = useCachedQuery<RecipeListItem[]>(
+  const { data: rawRecipes, isRefreshing } = useCachedQuery<RecipeListItem[]>(
     api.recipes.listPreviews,
     listArgs,
     cacheKey
@@ -90,14 +90,29 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
   }, [rawRecipes, isAll, sortOption]);
 
   // Letztes Rezept gelöscht (hier oder auf der Rezeptseite): zurück zur Kategorienübersicht statt leerer Seite.
-  // Läuft nur, solange die Seite sichtbar ist (Activity pausiert Effekte im Hintergrund).
+  // Läuft nur, solange die Seite sichtbar ist (Activity pausiert Effekte im Hintergrund). Die zwischengespeicherte
+  // Seite kann beim Wiederöffnen kurz eine veraltete leere Liste zeigen; deshalb erst beim Server nachfragen und
+  // den Merker beim Weiterleiten zurücksetzen, sonst sperrt die Weiterleitung die Kategorie dauerhaft.
   const navigate = useNavigate();
+  const convex = useConvex();
   const hadRecipesRef = React.useRef(false);
   React.useEffect(() => {
     if (!recipes) return;
-    if (recipes.length) hadRecipesRef.current = true;
-    else if (hadRecipesRef.current) navigate('/tabs/categories', { replace: true });
-  }, [recipes, navigate]);
+    if (recipes.length) {
+      hadRecipesRef.current = true;
+      return;
+    }
+    if (!hadRecipesRef.current || isRefreshing || listArgs === 'skip') return;
+    let cancelled = false;
+    convex.query(api.recipes.listPreviews, listArgs).then((fresh) => {
+      if (cancelled || fresh.length) return;
+      hadRecipesRef.current = false;
+      navigate('/tabs/categories', { replace: true });
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [recipes, isRefreshing, listArgs, convex, navigate]);
 
   const recipeIds = React.useMemo(() => {
     if (!recipes) return [];

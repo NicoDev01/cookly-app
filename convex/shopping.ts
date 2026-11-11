@@ -66,20 +66,24 @@ export const getShoppingList = query({
       item,
       recipeId: item.recipeId ?? getRecipeIdFromShoppingKey(item.key),
     }));
-    const linkedRecipeIds = [...new Set(resolvedItems
-      .filter(({ item, recipeId }) => recipeId && !item.recipeTitle)
-      .map(({ recipeId }) => recipeId!))];
-    const linkedRecipes = await Promise.all(linkedRecipeIds.map((recipeId) => ctx.db.get(recipeId)));
+    // Alle verknüpften Rezepte laden: Einträge gelöschter Rezepte (Altbestand vor der Bereinigung beim Löschen) ausblenden.
+    const linkedRecipeIds = [...new Set(resolvedItems.flatMap(({ recipeId }) => (recipeId ? [recipeId] : [])))];
+    const linkedRecipes = await Promise.all(linkedRecipeIds.map((recipeId) => {
+      const id = ctx.db.normalizeId("recipes", recipeId);
+      return id ? ctx.db.get(id) : null;
+    }));
     const recipeTitles = new Map(linkedRecipes.flatMap((recipe) =>
       recipe && recipe.userId === user._id
         ? [[recipe._id, recipe.title] as const]
         : []
     ));
+    const existingRecipeIds = new Set(linkedRecipes.flatMap((recipe) => (recipe ? [recipe._id as string] : [])));
+    const liveItems = resolvedItems.filter(({ recipeId }) => !recipeId || existingRecipeIds.has(recipeId));
     // Nur Alt-Einträge ohne Rezeptbezug brauchen den Namensabgleich über alle Rezepte.
     // Neue eigene Einträge (Schnelleingabe) würden ihn sonst bei jedem Listen-Update auslösen.
     const isLegacyUnlinked = (item: (typeof items)[number], recipeId: unknown) =>
       !recipeId && !item.recipeTitle && item.createdAt < LEGACY_RECIPE_LOOKUP_BEFORE;
-    const needsLegacyLookup = resolvedItems.some(({ item, recipeId }) => isLegacyUnlinked(item, recipeId));
+    const needsLegacyLookup = liveItems.some(({ item, recipeId }) => isLegacyUnlinked(item, recipeId));
     const legacyRecipes = needsLegacyLookup
       ? await ctx.db
         .query("recipes")
@@ -87,7 +91,7 @@ export const getShoppingList = query({
         .collect()
       : [];
 
-    return resolvedItems.map(({ item, recipeId }) => {
+    return liveItems.map(({ item, recipeId }) => {
       if (recipeId) {
         return {
           ...item,

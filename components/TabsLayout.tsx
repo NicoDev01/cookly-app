@@ -1,5 +1,7 @@
 import React, { Activity, Suspense, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
+import { Keyboard } from '@capacitor/keyboard';
 import AppNav from './AppNav';
 import { OfflineBanner } from './OfflineBanner';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -81,7 +83,14 @@ export const TabsLayout: React.FC = () => {
   React.useEffect(() => {
     const root = document.documentElement;
     root.classList.add('app-shell');
-    return () => root.classList.remove('app-shell');
+    // iOS schiebt beim Fokussieren eines Felds sonst die ganze WebView hoch (zusätzlich zu .kb-shell/.kb-pad):
+    // Felder rutschen aus dem Bild, unten scheint Weiß durch. Innere Scrollbereiche scrollen weiter normal.
+    const ios = Capacitor.getPlatform() === 'ios';
+    if (ios) void Keyboard.setScroll({ isDisabled: true }).catch(() => undefined);
+    return () => {
+      root.classList.remove('app-shell');
+      if (ios) void Keyboard.setScroll({ isDisabled: false }).catch(() => undefined);
+    };
   }, []);
 
   React.useEffect(() => {

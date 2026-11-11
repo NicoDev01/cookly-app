@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useAction, useConvex } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Recipe } from '../types';
@@ -918,10 +919,15 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
     }
   };
 
-  return (
+  // An body gehängt: In der Rezeptseite läge das Modal sonst in einem Container, der selbst schon mit der
+  // Tastatur schrumpft (doppelte Verkleinerung, Felder rutschen aus dem Bild). Abdunklung vollflächig, damit
+  // an den runden Tastatur-Ecken nichts Helles durchscheint; nur der Inhalt rückt per .kb-pad über die Tastatur.
+  return createPortal(
     <>
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm">
+    <div className="kb-pad h-full">
     <div
-      className="kb-shell fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+      className="flex h-full items-center justify-center p-4"
       style={{
         paddingTop: 'calc(var(--safe-area-inset-top, 0px) + 1rem)',
         paddingBottom: 'calc(var(--safe-area-inset-bottom, 0px) + 1rem)',
@@ -947,7 +953,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
 
         {/* Tabs (nur bei neuem Rezept sinnvoll, aber wir lassen es der Konsistenz halber) */}
         {!initialData && (
-          <div className="flex border-b border-gray-200 dark:border-gray-800">
+          <div className="kb-hide flex border-b border-gray-200 dark:border-gray-800">
             <button
               onClick={() => setActiveTab('ai')}
               className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab === 'ai' ? 'text-primary border-b-2 border-primary' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5'}`}
@@ -1036,6 +1042,8 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
 
       </div>
     </div>
+    </div>
+    </div>
 
     {/* ============================================================
         UPGRADE MODAL - Wird angezeigt bei Limit Reached
@@ -1049,7 +1057,8 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         limit={showUpgradeModal.limit}
       />
     )}
-  </>
+  </>,
+    document.body,
   );
 };
 

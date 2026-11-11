@@ -1,4 +1,4 @@
-import { action, query, mutation, internalMutation, internalQuery, type QueryCtx } from "./_generated/server";
+import { action, query, mutation, internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import { FREE_LIMITS } from "./constants";
@@ -722,6 +722,26 @@ export const update = mutation({
   },
 });
 
+/**
+ * Was am Rezept hängt, geht mit: Einkaufslisten-Einträge (auch alte Schlüssel „…|recipe:<id>“) und Wochenplan-Einträge.
+ * Sonst stehen Zutaten eines gelöschten Rezepts weiter auf der Liste.
+ */
+async function deleteRecipeRelations(ctx: MutationCtx, userId: Id<"users">, recipeIds: Set<Id<"recipes">>) {
+  if (!recipeIds.size) return;
+  const items = await ctx.db.query("shoppingItems").withIndex("by_user", (q) => q.eq("userId", userId)).collect();
+  for (const item of items) {
+    const marker = item.key.lastIndexOf("|recipe:");
+    const keyRecipeId = marker === -1 ? undefined : item.key.slice(marker + "|recipe:".length);
+    if ((item.recipeId && recipeIds.has(item.recipeId)) || (keyRecipeId && recipeIds.has(keyRecipeId as Id<"recipes">))) {
+      await ctx.db.delete(item._id);
+    }
+  }
+  const meals = await ctx.db.query("weeklyMeals").withIndex("by_user_date", (q) => q.eq("userId", userId)).collect();
+  for (const meal of meals) {
+    if (recipeIds.has(meal.recipeId)) await ctx.db.delete(meal._id);
+  }
+}
+
 // Delete recipe
 export const deleteRecipe = mutation({
   args: { id: v.id("recipes") },
@@ -742,6 +762,7 @@ export const deleteRecipe = mutation({
 
     await deleteRecipeThumbnailFile(ctx, recipe);
     await adjustCategoryCount(ctx, recipe.category, -1, userId);
+    await deleteRecipeRelations(ctx, userId, new Set([args.id]));
     await ctx.db.delete(args.id);
   },
 });
@@ -751,10 +772,12 @@ export const deleteRecipes = mutation({
   args: { ids: v.array(v.id("recipes")) },
   handler: async (ctx, args) => {
     const userId = await getAuthenticatedUserId(ctx);
+    const deleted = new Set<Id<"recipes">>();
 
     for (const id of args.ids) {
       const recipe = await ctx.db.get(id);
       if (recipe && recipe.userId === userId) {
+        deleted.add(id);
         if (recipe.imageStorageId) {
           try {
             if (!await deleteTrackedAsset(ctx, userId, recipe.imageStorageId)) {
@@ -769,6 +792,7 @@ export const deleteRecipes = mutation({
         await ctx.db.delete(id);
       }
     }
+    await deleteRecipeRelations(ctx, userId, deleted);
   },
 });
 
