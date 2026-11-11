@@ -142,6 +142,7 @@ export const ProfilePage: React.FC = () => {
       onUpgrade={() => navigate('/tabs/subscribe')}
       onManageSubscription={() => void handleManageSubscription()}
       canCancelHere={!Capacitor.isNativePlatform()}
+      storeSubscription={!!billingSummary?.providers.some((provider) => provider === 'app_store' || provider === 'google_play')}
       onCancelSubscription={handleCancelSubscription}
       onSignOut={() => void handleSignOut()}
       onDeleteDialogOpen={() => {

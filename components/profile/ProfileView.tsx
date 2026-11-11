@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Capacitor } from '@capacitor/core';
 import { AlertTriangle, Link2, Sparkles, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -37,6 +38,8 @@ type Props = {
   onManageSubscription: () => void;
   /** Web-Abos kündigt man hier, Store-Abos nur im Store. */
   canCancelHere: boolean;
+  /** Pro läuft über App Store oder Google Play: Das Abo endet nicht mit dem Konto. */
+  storeSubscription?: boolean;
   /** `true`, wenn gekündigt; Fehler meldet die Seite selbst. */
   onCancelSubscription: () => Promise<boolean>;
   onSignOut: () => void;
@@ -64,6 +67,7 @@ const ProfileView: React.FC<Props> = ({
   onUpgrade,
   onManageSubscription,
   canCancelHere,
+  storeSubscription = false,
   onCancelSubscription,
   onSignOut,
   onDeleteDialogOpen,
@@ -277,8 +281,8 @@ const ProfileView: React.FC<Props> = ({
         </div>
       </div>
 
-      {showCancelModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+      {showCancelModal && createPortal(
+        <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className={sheetPanel}>
             <div className="w-12 h-1.5 bg-text-secondary-light/30 dark:bg-text-secondary-dark/30 rounded-full mx-auto mb-6" />
             <div className="bg-destructive/10 p-4 rounded-xl w-fit mb-6 mx-auto">
@@ -302,31 +306,41 @@ const ProfileView: React.FC<Props> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
-      {showDeleteModal && (
-        <div className="kb-shell fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className={sheetPanel}>
-            <div className="w-12 h-1.5 bg-text-secondary-light/30 dark:bg-text-secondary-dark/30 rounded-full mx-auto mb-6" />
-            <h2 className="text-2xl font-bold mb-3 text-destructive text-center">Konto löschen?</h2>
-            <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-6 leading-relaxed text-center">
-              {showsExternalPaymentBranding
-                ? 'Diese Aktion ist unwiderruflich. Konto und Rezepte werden gelöscht; ein Stripe-Abo endet sofort.'
-                : 'Diese Aktion ist unwiderruflich. Konto und Rezepte werden gelöscht; ein laufendes Abo endet sofort.'}
-              Abos über Google Play oder den App Store musst du zusätzlich dort verwalten.
+      {/* Per Portal am Body und zentriert über der Tastatur: Im Tab-Container verrutschte `fixed` samt Eingabefeld aus dem Bild. */}
+      {showDeleteModal && createPortal(
+        <div className="kb-shell fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="my-auto w-full max-w-sm rounded-[2rem] bg-card-light p-6 shadow-2xl animate-in zoom-in-95 fade-in duration-200 dark:bg-card-dark">
+            <h2 className="mb-2 text-center text-2xl font-bold text-destructive">Konto löschen?</h2>
+            <p className="mb-5 text-center text-sm leading-relaxed text-text-secondary-light dark:text-text-secondary-dark">
+              Dein Konto und alle Rezepte werden unwiderruflich gelöscht.
+              {isPro && !storeSubscription && showsExternalPaymentBranding && ' Dein Pro-Abo endet sofort.'}
             </p>
-            <div className="relative mb-8">
-              <input
-                className="w-full h-14 bg-card-light dark:bg-card-dark rounded-xl px-6 font-bold border-2 border-transparent focus:border-destructive transition-all outline-none text-center tracking-[0.2em] text-lg uppercase placeholder:normal-case shadow-neo-light-concave dark:shadow-neo-dark-concave text-text-primary-light dark:text-text-primary-dark"
-                placeholder='Tippe "LÖSCHEN"'
-                onChange={(e) => setDeleteConfirmText(e.target.value.toUpperCase())}
-              />
-            </div>
+            {isPro && storeSubscription && (
+              <div className="mb-5 rounded-2xl bg-amber-500/10 p-4 text-sm leading-relaxed text-text-primary-light dark:text-text-primary-dark">
+                <p>
+                  Dein Pro-Abo wird weiter über {Capacitor.getPlatform() === 'ios' ? 'App Store' : 'Google Play'} abgerechnet, auch nach dem Löschen. Kündige es bitte vorher.
+                </p>
+                <button type="button" onClick={onManageSubscription} className="mt-3 w-full rounded-xl bg-card-light py-2.5 font-semibold text-text-primary-light shadow-neo-light-convex active:scale-[0.98] dark:bg-card-dark dark:text-text-primary-dark">
+                  Abo kündigen
+                </button>
+              </div>
+            )}
+            <input
+              className="mb-5 h-14 w-full rounded-xl border-2 border-transparent bg-muted px-6 text-center text-lg font-bold uppercase tracking-[0.2em] text-text-primary-light outline-none transition-colors placeholder:normal-case placeholder:tracking-normal focus:border-destructive dark:text-text-primary-dark"
+              placeholder='Tippe "LÖSCHEN"'
+              autoCapitalize="characters"
+              autoCorrect="off"
+              enterKeyHint="done"
+              onChange={(e) => setDeleteConfirmText(e.target.value.toUpperCase())}
+            />
             <div className="flex flex-col gap-3">
               <button
                 type="button"
-                className="w-full h-14 text-lg font-bold rounded-xl bg-destructive text-white shadow-neo-light-convex active:scale-[0.98] transition-all disabled:opacity-50"
+                className="h-14 w-full rounded-xl bg-destructive text-lg font-bold text-white transition-all active:scale-[0.98] disabled:opacity-50"
                 disabled={isDeleting || deleteConfirmText !== 'LÖSCHEN'}
                 onClick={handleDelete}
               >
@@ -337,7 +351,8 @@ const ProfileView: React.FC<Props> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       <DebugSheet isOpen={showDebugSheet} onClose={() => setShowDebugSheet(false)} userId={user._id} />
