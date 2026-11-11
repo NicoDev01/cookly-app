@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import Stripe from "stripe";
 import { auth } from "./auth";
 import type { Id } from "./_generated/dataModel";
+import { sanitizeConvexValue } from "./billingModel";
 
 const http = httpRouter();
 let stripeWebhookClient: Stripe | null = null;
@@ -303,7 +304,7 @@ http.route({
 
     let payload: unknown;
     try {
-      payload = await request.json();
+      payload = sanitizeConvexValue(await request.json());
     } catch {
       return new Response("Invalid payload", { status: 400 });
     }

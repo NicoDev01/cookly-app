@@ -36,6 +36,20 @@ type RevenueCatEvent = {
 
 export type RevenueCatProducts = { monthly: Set<string>; yearly: Set<string> };
 
+/**
+ * Convex lehnt Feldnamen mit "$" ab. RevenueCat schickt reservierte Attribute wie `$attConsentStatus`
+ * in `subscriber_attributes`; ohne Bereinigung scheitert jeder Webhook und Käufe kommen nie an.
+ */
+export function sanitizeConvexValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeConvexValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key, item]) => !key.startsWith("$") && item !== undefined)
+      .map(([key, item]) => [key, sanitizeConvexValue(item)]),
+  );
+}
+
 const text = (value: unknown) => typeof value === "string" && value ? value : undefined;
 const time = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : undefined;
 

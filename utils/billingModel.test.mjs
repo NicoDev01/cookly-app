@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { entitlementIsValid, hasAnyValidEntitlement, mapRevenueCatEvent } from "../convex/billingModel.ts";
+import { entitlementIsValid, hasAnyValidEntitlement, mapRevenueCatEvent, sanitizeConvexValue } from "../convex/billingModel.ts";
 
 const products = { monthly: new Set(["cookly_pro:monthly"]), yearly: new Set(["cookly_pro:yearly"]) };
 const event = (type, extra = {}) => ({
@@ -41,4 +41,9 @@ test("one active provider keeps Pro when another provider expires", () => {
 test("unknown products fail closed", () => {
   assert.throws(() => mapRevenueCatEvent(event("INITIAL_PURCHASE", { product_id: "unknown" }), products), /UNKNOWN_REVENUECAT_PRODUCT/);
   assert.throws(() => mapRevenueCatEvent(event("INITIAL_PURCHASE", { environment: "UNKNOWN" }), products), /INVALID_REVENUECAT_ENVIRONMENT/);
+});
+
+test("sanitizeConvexValue drops reserved $ keys from RevenueCat attributes", () => {
+  const payload = { event: { id: "e1", subscriber_attributes: { $attConsentStatus: { value: "notDetermined" }, name: { value: "Nico" } }, aliases: ["a", "b"] } };
+  assert.deepEqual(sanitizeConvexValue(payload), { event: { id: "e1", subscriber_attributes: { name: { value: "Nico" } }, aliases: ["a", "b"] } });
 });
