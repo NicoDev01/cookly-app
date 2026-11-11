@@ -47,6 +47,7 @@ import type * as recipeThumbnails from "../recipeThumbnails.js";
 import type * as recipeThumbnailsNode from "../recipeThumbnailsNode.js";
 import type * as recipes from "../recipes.js";
 import type * as remoteImages from "../remoteImages.js";
+import type * as revenuecat from "../revenuecat.js";
 import type * as shopping from "../shopping.js";
 import type * as socialImport from "../socialImport.js";
 import type * as socialImportPrompts from "../socialImportPrompts.js";
@@ -106,6 +107,7 @@ declare const fullApi: ApiFromModules<{
   recipeThumbnailsNode: typeof recipeThumbnailsNode;
   recipes: typeof recipes;
   remoteImages: typeof remoteImages;
+  revenuecat: typeof revenuecat;
   shopping: typeof shopping;
   socialImport: typeof socialImport;
   socialImportPrompts: typeof socialImportPrompts;
