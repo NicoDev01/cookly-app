@@ -129,7 +129,7 @@ const Ingredients: React.FC<IngredientsProps> = ({ ingredients, highlightedIndex
             }`}
           >
             <span className={`material-symbols-outlined !text-[16px] leading-none transition-transform duration-300 ${missing.length ? '' : 'scale-110'}`}>
-              {missing.length ? 'done_all' : 'check_circle'}
+              {missing.length ? 'shopping_cart' : 'check_circle'}
             </span>
             {missing.length ? `Alle · +${missing.length}` : 'Alle drauf'}
           </button>
