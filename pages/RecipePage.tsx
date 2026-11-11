@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react';
+import { usePreventPullDown } from '../hooks/usePreventPullDown';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useBackNavigation } from '../hooks/useBackNavigation';
@@ -246,34 +247,7 @@ const RecipeSlideWrapper = ({
     }
   }, [isActive]);
 
-  // iOS zieht Scrollbereiche am oberen Rand trotz overscroll-behavior wie eine Website herunter.
-  // Ziehen nach unten bei scrollTop 0 abfangen. iOS lässt touchmove nur abbrechen, bevor das
-  // Scrollen begonnen hat, deshalb ohne Schwelle; überwiegend seitliches Wischen (Karussell) bleibt frei.
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    let startX = 0;
-    let startY = 0;
-    let lastY = 0;
-    const onStart = (e: TouchEvent) => {
-      startX = e.touches[0].clientX;
-      startY = lastY = e.touches[0].clientY;
-    };
-    const onMove = (e: TouchEvent) => {
-      if (e.touches.length !== 1) return;
-      const { clientX, clientY } = e.touches[0];
-      const pullingDown = clientY > lastY;
-      lastY = clientY;
-      const vertical = Math.abs(clientY - startY) >= Math.abs(clientX - startX);
-      if (pullingDown && vertical && el.scrollTop <= 0 && e.cancelable) e.preventDefault();
-    };
-    el.addEventListener('touchstart', onStart, { passive: true });
-    el.addEventListener('touchmove', onMove, { passive: false });
-    return () => {
-      el.removeEventListener('touchstart', onStart);
-      el.removeEventListener('touchmove', onMove);
-    };
-  }, []);
+  usePreventPullDown(ref);
 
   return (
     <div 

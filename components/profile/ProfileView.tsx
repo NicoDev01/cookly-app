@@ -30,9 +30,13 @@ export type ProfileUser = {
   };
 };
 
+/** Laufende Pro-Periode aus `billing.getSummary`. */
+export type ProRenewal = { plan: 'pro_monthly' | 'pro_yearly'; periodEnd: number | null; willRenew: boolean };
+
 type Props = {
   /** `null`/`undefined` = lädt noch. */
   user: ProfileUser | null | undefined;
+  renewal?: ProRenewal | null;
   onUpgrade: () => void;
   /** Öffnet direkt Stripe-Portal bzw. Store-Abo (auch zum Reaktivieren und bei fehlgeschlagener Zahlung). */
   onManageSubscription: () => void;
@@ -64,6 +68,7 @@ const sheetSecondary =
  */
 const ProfileView: React.FC<Props> = ({
   user,
+  renewal,
   onUpgrade,
   onManageSubscription,
   canCancelHere,
@@ -102,9 +107,12 @@ const ProfileView: React.FC<Props> = ({
 
   const firstName = user.name?.trim().split(/\s+/)[0];
   const isPro = (user.subscription ?? 'free') !== 'free';
-  const isMarkedForCancel = user.usageStats?.resetOnDowngrade ?? false;
+  const isMarkedForCancel = (user.usageStats?.resetOnDowngrade ?? false) || renewal?.willRenew === false;
   const paymentFailed = user.subscriptionStatus === 'past_due';
-  const subscriptionEndDate = user.usageStats?.subscriptionEndDate ? new Date(user.usageStats.subscriptionEndDate) : null;
+  const endMs = renewal?.periodEnd ?? user.usageStats?.subscriptionEndDate;
+  const subscriptionEndDate = endMs ? new Date(endMs) : null;
+  const planLabel = (renewal?.plan ?? user.subscription) === 'pro_yearly' ? 'Jahresabo' : 'Monatsabo';
+  const endLabel = subscriptionEndDate?.toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' });
   // Gerade laufende Importe zählen erst mit, wenn sie fertig sind; dafür entfallen zwei Abfragen.
   const linkUsage = { current: user.usageStats?.linkImports ?? 0, limit: FREE_LIMITS.LINK_IMPORTS };
   const scanUsage = { current: user.usageStats?.photoScans ?? 0, limit: FREE_LIMITS.PHOTO_SCANS };
@@ -165,8 +173,9 @@ const ProfileView: React.FC<Props> = ({
                     </>
                   ) : (
                     <>
-                      <p className="font-medium text-text-primary-light dark:text-text-primary-dark">
-                        {isMarkedForCancel ? 'Gekündigt, aktiv bis' : 'Verlängert sich am'} {subscriptionEndDate?.toLocaleDateString('de-DE')}
+                      <p className="text-xs font-semibold uppercase tracking-wider text-primary">{planLabel}</p>
+                      <p className="mt-1 font-medium text-text-primary-light dark:text-text-primary-dark">
+                        {!endLabel ? 'Pro ist aktiv' : isMarkedForCancel ? `Gekündigt, aktiv bis ${endLabel}` : `Verlängert sich am ${endLabel}`}
                       </p>
                       <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">Unbegrenzte Importe und Rezept-Scans</p>
                     </>
@@ -312,8 +321,10 @@ const ProfileView: React.FC<Props> = ({
 
       {/* Per Portal am Body und zentriert über der Tastatur: Im Tab-Container verrutschte `fixed` samt Eingabefeld aus dem Bild. */}
       {showDeleteModal && createPortal(
-        <div className="kb-shell fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="my-auto w-full max-w-sm rounded-[2rem] bg-card-light p-6 shadow-2xl animate-in zoom-in-95 fade-in duration-200 dark:bg-card-dark">
+        <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="kb-pad flex h-full items-center justify-center overflow-y-auto overscroll-none">
+          <div className="my-auto w-full max-w-sm px-4 py-4">
+          <div className="w-full rounded-[2rem] bg-card-light p-6 shadow-2xl animate-in zoom-in-95 fade-in duration-200 dark:bg-card-dark">
             <h2 className="mb-2 text-center text-2xl font-bold text-destructive">Konto löschen?</h2>
             <p className="mb-5 text-center text-sm leading-relaxed text-text-secondary-light dark:text-text-secondary-dark">
               Dein Konto und alle Rezepte werden unwiderruflich gelöscht.
@@ -350,6 +361,8 @@ const ProfileView: React.FC<Props> = ({
                 Abbrechen
               </button>
             </div>
+          </div>
+          </div>
           </div>
         </div>,
         document.body,

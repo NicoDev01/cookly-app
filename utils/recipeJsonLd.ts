@@ -94,6 +94,37 @@ const metaContent = (html: string, property: string) => {
   return content ? cleanText(content) : undefined;
 };
 
+const attr = (tag: string, name: string) => tag.match(new RegExp(`\\s${name}=["']([^"']+)["']`, 'i'))?.[1];
+const SKIP_IMAGE = /logo|avatar|gravatar|icon|emoji|sprite|badge|pinit|placeholder|\.svg(\?|$)/i;
+
+/** Beste Bild-URL eines <img>: größte srcset-Variante bis 1600 px, sonst src ohne WordPress-Größenzusatz (-360x361). */
+const bestImageSource = (tag: string): string | undefined => {
+  const srcset = attr(tag, 'data-lazy-srcset') ?? attr(tag, 'data-srcset') ?? attr(tag, 'srcset');
+  const candidates = (srcset ?? '').split(',').map((part) => {
+    const [url, size] = part.trim().split(/\s+/);
+    return { url, width: Number.parseInt(size ?? '', 10) || 0 };
+  }).filter((item) => item.url && item.width <= 1600).sort((a, b) => b.width - a.width);
+  const src = candidates[0]?.url ?? attr(tag, 'data-lazy-src') ?? attr(tag, 'data-src') ?? attr(tag, 'src');
+  if (!src || !/^https:\/\//i.test(src) || SKIP_IMAGE.test(src)) return undefined;
+  const url = cleanText(src);
+  return candidates[0] ? url : url.replace(/-\d{2,4}x\d{2,4}(?=\.(?:jpe?g|png|webp)(?:\?|$))/i, '');
+};
+
+/** Rezeptbild aus dem Seiteninhalt, wenn og:image fehlt (z. B. WP-Recipe-Maker-Druckansicht). */
+const contentImage = (html: string): string | undefined => {
+  const recipeImage = html.match(/class=["'][^"']*recipe-image[^"']*["'][^>]*>[\s\S]{0,600}?(<img\b[^>]*>)/i)?.[1];
+  const fromRecipe = recipeImage ? bestImageSource(recipeImage) : undefined;
+  if (fromRecipe) return fromRecipe;
+  const scope = html.match(/<(article|main)\b[\s\S]*<\/\1>/i)?.[0] ?? html;
+  for (const [tag] of scope.matchAll(/<img\b[^>]*>/gi)) {
+    const width = Number.parseInt(attr(tag, 'width') ?? '', 10);
+    if (width && width < 200) continue;
+    const url = bestImageSource(tag);
+    if (url) return url;
+  }
+  return undefined;
+};
+
 const parseJson = (raw: string): Json | undefined => {
   const body = raw.trim().replace(/^<!--/, '').replace(/-->$/, '').replace(/^\/\/\s*<!\[CDATA\[/, '').replace(/\/\/\s*\]\]>$/, '').trim();
   try {
@@ -148,7 +179,7 @@ export const extractRecipeFromHtml = (html: string): PageRecipe | null => {
 
     return {
       title,
-      image: imageUrl(recipe.image) ?? imageUrl(metaContent(html, 'og:image') ?? null),
+      image: imageUrl(recipe.image) ?? imageUrl(metaContent(html, 'og:image') ?? null) ?? contentImage(html),
       content: content.slice(0, 20_000),
     };
   }
@@ -179,7 +210,7 @@ export const extractPageText = (html: string): PageRecipe | null => {
   const title = metaContent(html, 'og:title') ?? cleanText(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '');
   return {
     title,
-    image: imageUrl(metaContent(html, 'og:image') ?? null),
+    image: imageUrl(metaContent(html, 'og:image') ?? null) ?? contentImage(html),
     content: content.slice(0, 20_000),
   };
 };

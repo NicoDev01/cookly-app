@@ -196,18 +196,16 @@ export const addRecipesToShoppingList = mutation({
       .query("shoppingItems")
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .collect();
+    // Pro Zutat abgleichen, nicht pro Rezept: Steht schon eine einzelne Zutat auf der Liste
+    // (auf der Rezeptseite angetippt), kommen die übrigen trotzdem dazu.
     const existingKeys = new Set(items.map((item) => item.key));
-    const recipesOnList = new Set(items.flatMap((item) => {
-      const recipeId = item.recipeId ?? getRecipeIdFromShoppingKey(item.key);
-      return recipeId ? [recipeId] : [];
-    }));
 
     let recipesAdded = 0;
     let itemsAdded = 0;
     const now = Date.now();
     for (const recipeId of new Set(args.recipeIds)) {
-      if (recipesOnList.has(recipeId)) continue;
       const recipe = await assertRecipeAccessible(ctx, recipeId, userId);
+      const before = itemsAdded;
       for (const ingredient of recipe.ingredients) {
         const name = ingredient.name.trim();
         if (!name) continue;
@@ -227,7 +225,7 @@ export const addRecipesToShoppingList = mutation({
         });
         itemsAdded++;
       }
-      recipesAdded++;
+      if (itemsAdded > before) recipesAdded++;
     }
     return { recipesAdded, itemsAdded };
   },

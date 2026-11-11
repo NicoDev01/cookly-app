@@ -300,6 +300,12 @@
   bottom: var(--keyboard-height);
   transition: bottom var(--keyboard-transition);
 }
+/* Dialoge mit Abdunklung: Hintergrund bleibt vollflächig (sonst scheint die Seite hell an den runden
+ * Ecken der iOS-Tastatur durch), nur der Inhalt rückt über die Tastatur. */
+.kb-pad {
+  padding-bottom: var(--keyboard-height);
+  transition: padding-bottom var(--keyboard-transition);
+}
 /* Seiten ohne App-Shell (Login, Registrierung) scrollen das Dokument: Platz unter dem Inhalt schaffen. */
 html:not(.app-shell) body {
   padding-bottom: var(--keyboard-height);

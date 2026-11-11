@@ -105,7 +105,12 @@ export const getSummary = query({
       .filter((row) => entitlementIsValid(row.status, row.periodEnd));
     const providers = [...new Set(active.map((row) => row.provider))];
     if (!providers.length && user.stripeCustomerId && user.subscription !== "free") providers.push("stripe");
-    return { isPro: providers.length > 0, providers };
+    // Für die Statuszeile: Plan, Ende der laufenden Periode und ob sie sich verlängert (Store-Kündigung kennt nur die Entitlement-Zeile).
+    const latest = [...active].sort((a, b) => (b.periodEnd ?? 0) - (a.periodEnd ?? 0))[0];
+    const renewal = latest
+      ? { plan: latest.plan, periodEnd: latest.periodEnd ?? null, willRenew: active.some((row) => row.willRenew !== false && row.status === "active") }
+      : null;
+    return { isPro: providers.length > 0, providers, renewal };
   },
 });
 
@@ -137,7 +142,16 @@ export const processRevenueCatWebhook = internalMutation({
         .first();
       if (user) break;
     }
-    if (!user?.billingUserId) throw new Error("REVENUECAT_USER_NOT_FOUND");
+    if (!user?.billingUserId) {
+      // Konto gelöscht (oder nie angelegt): nichts zu buchen. Bestätigen statt 500, sonst wiederholt RevenueCat
+      // das Event stundenlang. Ein späteres Konto erhält das Abo per TRANSFER und REST-Abgleich.
+      await ctx.db.insert("revenueCatWebhookEvents", {
+        eventId: mapped.eventId,
+        eventType: mapped.eventType,
+        processedAt: Date.now(),
+      });
+      return { duplicate: false, ignored: true };
+    }
 
     await upsertEntitlement(ctx, {
       userId: user._id,

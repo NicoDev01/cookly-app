@@ -54,9 +54,8 @@ export const ProfilePage: React.FC = () => {
     navigate('/tabs/profile', { replace: true });
   }, [search, showToast, navigate]);
 
-  const subscriptionEndDate = currentUser?.usageStats?.subscriptionEndDate
-    ? new Date(currentUser.usageStats.subscriptionEndDate)
-    : null;
+  const endMs = billingSummary?.renewal?.periodEnd ?? currentUser?.usageStats?.subscriptionEndDate;
+  const subscriptionEndDate = endMs ? new Date(endMs) : null;
 
   const handleSignOut = async () => {
     resetAnalyticsIdentity();
@@ -142,6 +141,7 @@ export const ProfilePage: React.FC = () => {
       onUpgrade={() => navigate('/tabs/subscribe')}
       onManageSubscription={() => void handleManageSubscription()}
       canCancelHere={!Capacitor.isNativePlatform()}
+      renewal={billingSummary?.renewal}
       storeSubscription={!!billingSummary?.providers.some((provider) => provider === 'app_store' || provider === 'google_play')}
       onCancelSubscription={handleCancelSubscription}
       onSignOut={() => void handleSignOut()}

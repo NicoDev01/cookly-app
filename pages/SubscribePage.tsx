@@ -160,17 +160,18 @@ export default function SubscribePage() {
   const yearlySavings = billing.provider === "store"
     ? nativeSavings
     : pricing ? Math.floor((1 - pricing.pro_yearly.unitAmount / (pricing.pro_monthly.unitAmount * 12)) * 100) : null;
-  const endDate = currentUser?.usageStats?.subscriptionEndDate
-    ? new Date(currentUser.usageStats.subscriptionEndDate).toLocaleDateString("de-DE")
-    : null;
+  const renewal = billingSummary?.renewal;
+  const endMs = renewal?.periodEnd ?? currentUser?.usageStats?.subscriptionEndDate;
+  const endDate = endMs ? new Date(endMs).toLocaleDateString("de-DE", { day: "numeric", month: "long", year: "numeric" }) : null;
+  const planLabel = (renewal?.plan ?? currentUser?.subscription) === "pro_yearly" ? "Jahresabo" : "Monatsabo";
   const paymentFailed = currentUser?.subscriptionStatus === "past_due";
   const proStatus = paymentFailed
     ? "Zahlung fehlgeschlagen"
     : !endDate
-      ? null
-      : currentUser?.usageStats?.resetOnDowngrade
-        ? `Gekündigt, aktiv bis ${endDate}`
-        : `Verlängert sich am ${endDate}`;
+      ? planLabel
+      : currentUser?.usageStats?.resetOnDowngrade || renewal?.willRenew === false
+        ? `${planLabel} · gekündigt, aktiv bis ${endDate}`
+        : `${planLabel} · verlängert sich am ${endDate}`;
 
   return (
     <div className="min-h-screen bg-muted text-foreground font-sans pb-20">

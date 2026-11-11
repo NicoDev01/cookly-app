@@ -87,8 +87,9 @@ const WeeklyPage: React.FC = () => {
         }}
         toShopCount={toShop.length}
         onAddToShopping={() => {
-          addRecipesToShoppingList({ recipeIds: toShop })
-            .then(({ itemsAdded }) => showToast(`${itemsAdded} Zutaten auf der Einkaufsliste.`, 'success'))
+          // Alle Rezepte der Woche: der Server ergänzt nur fehlende Zutaten, auch bei teilweise übernommenen Rezepten.
+          addRecipesToShoppingList({ recipeIds: navIds })
+            .then(({ itemsAdded }) => showToast(itemsAdded ? `${itemsAdded} Zutaten auf der Einkaufsliste.` : 'Steht schon alles auf der Einkaufsliste.', itemsAdded ? 'success' : 'info'))
             .catch(fail('Add week to shopping list'));
         }}
         shoppingPath="/tabs/shopping"

@@ -5,6 +5,7 @@ import { OfflineBanner } from './OfflineBanner';
 import { ErrorBoundary } from './ErrorBoundary';
 import { useModal } from '../contexts/ModalContext';
 import { prefetchAddRecipeModal } from '../prefetch';
+import { usePreventPullDown } from '../hooks/usePreventPullDown';
 import { ModalLoader, PageLoader } from './PageLoader';
 
 // Lazy load pages
@@ -36,6 +37,21 @@ const renderTab = (route: TabRoute) => {
   if (route === '/tabs/shopping') return <ShoppingPage />;
   if (route === '/tabs/profile') return <ProfilePage />;
   return <SubscribePage />;
+};
+
+/** Scrollfläche eines Tabs; steht am oberen Rand fest wie eine native App (kein Herunterziehen). */
+const ScrollArea: React.FC<{ className?: string; tabPath?: string; children: React.ReactNode }> = ({ className = '', tabPath, children }) => {
+  const ref = React.useRef<HTMLDivElement>(null);
+  usePreventPullDown(ref);
+  return (
+    <div
+      ref={ref}
+      data-tab-scroll={tabPath}
+      className={`absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden overscroll-y-none touch-pan-y ${className}`}
+    >
+      {children}
+    </div>
+  );
 };
 
 // Wrapper component to provide params to cached CategoryRecipesPage
@@ -100,12 +116,9 @@ export const TabsLayout: React.FC = () => {
             {mountedTabs.map((tabPath) => (
               <Activity key={tabPath} mode={currentTab === tabPath ? 'visible' : 'hidden'}>
                 {/* Ohne Einblenden: display:none startet CSS-Animationen bei jedem Tab-Wechsel neu, das wirkte träge. */}
-                <div
-                  data-tab-scroll={tabPath}
-                  className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y"
-                >
+                <ScrollArea tabPath={tabPath}>
                   {renderTab(tabPath)}
-                </div>
+                </ScrollArea>
               </Activity>
             ))}
 
@@ -115,18 +128,18 @@ export const TabsLayout: React.FC = () => {
                 
                 return (
                   <Activity key={categoryPath} mode={isActive ? 'visible' : 'hidden'}>
-                    <div className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y">
+                    <ScrollArea>
                       <CategoryRecipesWrapper category={category} />
-                    </div>
+                    </ScrollArea>
                   </Activity>
                 );
             })}
 
             {/* OUTLET-ROUTEN: Transient (werden neu gemountet) */}
             {!isTabRoute && !isCategoryRoute && (
-              <div key={currentPath} className={`absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y ${seamless ? '' : 'page-enter'}`}>
+              <ScrollArea key={currentPath} className={seamless ? '' : 'page-enter'}>
                 <Outlet />
-              </div>
+              </ScrollArea>
             )}
           </Suspense>
         </div>

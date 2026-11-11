@@ -57,6 +57,42 @@ const Ingredients: React.FC<IngredientsProps> = ({ ingredients, highlightedIndex
     return new Set(shoppingItems.map((i) => i.key));
   }, [shoppingItems]);
 
+  // Name und Menge robust lesen (KI liefert gelegentlich unerwartete Formate).
+  const rows = ingredients.map((ing) => {
+    const name = typeof ing === 'object' && ing !== null
+      ? (typeof ing.name === 'string' ? ing.name : String(ing.name ?? ''))
+      : String(ing ?? '');
+    const amount = typeof ing === 'object' && ing !== null && typeof ing.amount === 'string' ? ing.amount : undefined;
+    const key = buildShoppingItemKey(name, amount, recipeId);
+    const onList = shoppingKeySet.has(key) || buildLegacyShoppingItemKeys(name, amount, recipeId).some((k) => shoppingKeySet.has(k));
+    return { name, amount, key, onList };
+  });
+  const missing = rows.filter((row, index) => row.name.trim() && !row.onList && rows.findIndex((r) => r.key === row.key) === index);
+  const selectedCount = rows.filter((row) => row.onList).length;
+
+  // „Alle“: fehlende Zutaten sofort anzeigen, der Server ergänzt nur, was noch fehlt.
+  const addAll = useMutation(api.shopping.addRecipesToShoppingList).withOptimisticUpdate((localStore) => {
+    const currentList = localStore.getQuery(api.shopping.getShoppingList);
+    if (!currentList) return;
+    let createdAt = currentList.reduce((latest, item) => Math.max(latest, item.createdAt), 0);
+    localStore.setQuery(api.shopping.getShoppingList, {}, [...currentList, ...missing.map((row) => {
+      createdAt += 1;
+      return {
+        _id: `optimistic-${row.key}` as Id<"shoppingItems">,
+        _creationTime: createdAt,
+        key: row.key,
+        name: row.name.trim(),
+        normalizedName: row.name.trim().toLowerCase(),
+        amount: row.amount,
+        checked: false,
+        recipeId,
+        recipeTitle,
+        createdAt,
+      };
+    })]);
+  });
+  const showSelectAll = !!recipeId && selectedCount > 0;
+
   // Helper to cycle through colors defined in tailwind config for visual variety
   const INGREDIENT_COLORS = [
     'bg-ingredient-1-bg',
@@ -77,21 +113,30 @@ const Ingredients: React.FC<IngredientsProps> = ({ ingredients, highlightedIndex
 
   return (
     <div className="mt-6">
-      <h2 className="text-xl font-bold mb-4 text-[#111718] dark:text-white">Zutaten</h2>
+      <div className="mb-4 flex min-h-8 items-center justify-between gap-3">
+        <h2 className="text-xl font-bold text-[#111718] dark:text-white">Zutaten</h2>
+        {/* Erscheint, sobald eine Zutat auf der Liste steht: der Rest mit einem Tipp. */}
+        {showSelectAll && (
+          <button
+            type="button"
+            disabled={!missing.length}
+            onClick={() => recipeId && void addAll({ recipeIds: [recipeId] })}
+            aria-label={missing.length ? `Alle ${missing.length} fehlenden Zutaten auf die Einkaufsliste` : 'Alle Zutaten stehen auf der Einkaufsliste'}
+            className={`flex h-8 items-center gap-1.5 rounded-full pl-2 pr-3 text-xs font-semibold transition-all duration-300 ease-out animate-in fade-in zoom-in-90 active:scale-95 ${
+              missing.length
+                ? 'bg-primary/10 text-primary shadow-neomorphism-pill dark:shadow-dark-neomorphism-pill'
+                : 'text-text-secondary-light dark:text-text-secondary-dark'
+            }`}
+          >
+            <span className={`material-symbols-outlined !text-[16px] leading-none transition-transform duration-300 ${missing.length ? '' : 'scale-110'}`}>
+              {missing.length ? 'done_all' : 'check_circle'}
+            </span>
+            {missing.length ? `Alle · +${missing.length}` : 'Alle drauf'}
+          </button>
+        )}
+      </div>
       <div className="flex flex-wrap gap-2.5">
-        {ingredients.map((ing, index) => {
-          // Defensive: ensure ing is an object with name property (AI might return unexpected format)
-          const ingName = typeof ing === 'object' && ing !== null 
-            ? (typeof ing.name === 'string' ? ing.name : String(ing.name ?? ''))
-            : String(ing ?? '');
-          const ingAmount = typeof ing === 'object' && ing !== null && typeof ing.amount === 'string' 
-            ? ing.amount 
-            : undefined;
-          
-          const itemKey = buildShoppingItemKey(ingName, ingAmount, recipeId);
-          const isInShoppingList = recipeId
-            ? shoppingKeySet.has(itemKey) || buildLegacyShoppingItemKeys(ingName, ingAmount, recipeId).some((key) => shoppingKeySet.has(key))
-            : shoppingKeySet.has(itemKey) || buildLegacyShoppingItemKeys(ingName, ingAmount).some((key) => shoppingKeySet.has(key));
+        {rows.map(({ name: ingName, amount: ingAmount, onList: isInShoppingList }, index) => {
           const isHighlighted = highlightedIndex === index;
 
           return (

@@ -125,6 +125,9 @@ export const scrapeWebsiteInternal = internalAction({
         timer.mark("authenticated");
         timer.mark("rate_limit_checked");
 
+        // Seite schon laden, während der Duplikat-Check läuft (spart ~0,4 s); readPageRecipe wirft nie.
+        const pagePromise = readPageRecipe(args.url);
+
         // Check if we already have this recipe to save costs and time
         const existing = await ctx.runQuery(internal.recipes.getBySourceUrlForUser, { userId: args.userId, url: args.url });
         if (existing) {
@@ -144,7 +147,7 @@ export const scrapeWebsiteInternal = internalAction({
         let markdown = "";
         let pageImageUrl = "";
 
-        const pageRecipe = await readPageRecipe(args.url);
+        const pageRecipe = await pagePromise;
         if (pageRecipe) {
             pageTitle = pageRecipe.title;
             markdown = pageRecipe.content;

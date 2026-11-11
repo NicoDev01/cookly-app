@@ -58,3 +58,14 @@ test('extractPageText liest Rezeptseiten ohne JSON-LD und ignoriert Seiten ohne 
   assert.doesNotMatch(page.content, /var x|Menü/);
   assert.equal(extractPageText(`<html><body><p>${filler} Bitte akzeptiere Cookies.</p></body></html>`), null);
 });
+
+test('extractPageText nimmt ohne og:image das Rezeptbild aus dem Inhalt in voller Größe', () => {
+  const filler = 'Ein cremiges Pastagericht mit Pilzen und Spinat, in 20 Minuten fertig und komplett pflanzlich. '.repeat(4);
+  const html = `<html><head><title>Pasta</title></head><body><img src="https://x.de/logo.png" width="300">
+    <div class="wprm-recipe-image wprm-block-image-rounded"><img width="250" src="https://x.de/wp-content/uploads/pasta-360x361.jpg"></div>
+    <p>${filler}</p><h3>Zutaten</h3><ul><li>250 g Pasta</li></ul><h3>Anleitung</h3><ol><li>Kochen.</li></ol></body></html>`;
+  assert.equal(extractPageText(html).image, 'https://x.de/wp-content/uploads/pasta.jpg');
+  const withSrcset = html.replace('src="https://x.de/wp-content/uploads/pasta-360x361.jpg"',
+    'src="https://x.de/a-300x300.jpg" srcset="https://x.de/a-300x300.jpg 300w, https://x.de/a-1024x1024.jpg 1024w, https://x.de/a.jpg 4000w"');
+  assert.equal(extractPageText(withSrcset).image, 'https://x.de/a-1024x1024.jpg');
+});

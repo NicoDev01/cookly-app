@@ -1,5 +1,5 @@
 import React from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useMutation } from "convex/react";
 import { useCachedQuery } from '../contexts/QueryCacheContext';
@@ -88,6 +88,16 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
     }
     return rawRecipes;
   }, [rawRecipes, isAll, sortOption]);
+
+  // Letztes Rezept gelöscht (hier oder auf der Rezeptseite): zurück zur Kategorienübersicht statt leerer Seite.
+  // Läuft nur, solange die Seite sichtbar ist (Activity pausiert Effekte im Hintergrund).
+  const navigate = useNavigate();
+  const hadRecipesRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!recipes) return;
+    if (recipes.length) hadRecipesRef.current = true;
+    else if (hadRecipesRef.current) navigate('/tabs/categories', { replace: true });
+  }, [recipes, navigate]);
 
   const recipeIds = React.useMemo(() => {
     if (!recipes) return [];
