@@ -89,6 +89,7 @@ export const OnboardingFlow: React.FC<Props> = ({ steps, initialStep, initialAns
   const [index, setIndex] = useState(() => Math.max(0, initialStep ? steps.indexOf(initialStep) : 0));
   const [name, setName] = useState(initialAnswers?.name ?? '');
   const [greeted, setGreeted] = useState(false);
+  const [greetedFromKeyboard, setGreetedFromKeyboard] = useState(false);
   const [sources, setSources] = useState<string[]>(initialAnswers?.sources ?? []);
   const [goals, setGoals] = useState<string[]>(initialAnswers?.goals ?? []);
   const [referral, setReferral] = useState(initialAnswers?.referral ?? '');
@@ -133,6 +134,9 @@ export const OnboardingFlow: React.FC<Props> = ({ steps, initialStep, initialAns
 
   const greet = () => {
     if (!trimmedName) return;
+    // Mit offener Tastatur bleibt die Frage im Tastatur-Layout, während sie ausblendet. Sonst wächst ihr Bild
+    // beim Einfahren der Tastatur kurz wieder auf, bevor die Begrüßung erscheint.
+    setGreetedFromKeyboard(document.documentElement.classList.contains('keyboard-open'));
     (document.activeElement as HTMLElement | null)?.blur();
     setGreeted(true);
   };
@@ -142,11 +146,10 @@ export const OnboardingFlow: React.FC<Props> = ({ steps, initialStep, initialAns
     set((list) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]));
   };
 
-  // Eine Antwort genügt: kurz die Auswahl zeigen, dann automatisch weiter.
+  // Nur auswählen; weiter geht es bewusst über den Button.
   const pickReferral = (id: string) => {
     void impact('light');
     setReferral(id);
-    window.setTimeout(() => setIndex((i) => (steps[i] === 'referral' ? Math.min(i + 1, steps.length - 1) : i)), 350);
   };
 
   const google = async () => {
@@ -218,7 +221,7 @@ export const OnboardingFlow: React.FC<Props> = ({ steps, initialStep, initialAns
       break;
     case 'name':
       body = (
-        <div className={`onb-swap${greeted ? ' done' : ''}`}>
+        <div className={`onb-swap${greeted ? ' done' : ''}${greeted && greetedFromKeyboard ? ' kb-frozen' : ''}`}>
           <div className="ask">
             <Ill src={ONB_IMG.hello} h={190} />
             <div className="onb-q">Wie dürfen wir dich nennen?</div>
@@ -328,9 +331,9 @@ export const OnboardingFlow: React.FC<Props> = ({ steps, initialStep, initialAns
           <div className="onb-free">
             <div className="hd">Kostenlos inklusive</div>
             <ul>
-              <li><span><b>{FREE_LIMITS.LINK_IMPORTS}</b> Importe aus Social Media & Web</span></li>
-              <li><span><b>{FREE_LIMITS.PHOTO_SCANS}</b> Rezepte per Foto</span></li>
-              <li><span><b>Unbegrenzt</b> eigene Rezepte anlegen</span></li>
+              <li><Check size={14} strokeWidth={3} className="onb-tick" /><span><b>{FREE_LIMITS.LINK_IMPORTS}</b> Importe aus Social Media & Web</span></li>
+              <li><Check size={14} strokeWidth={3} className="onb-tick" /><span><b>{FREE_LIMITS.PHOTO_SCANS}</b> Rezepte per Foto</span></li>
+              <li><Check size={14} strokeWidth={3} className="onb-tick" /><span><b>Unbegrenzt</b> eigene Rezepte anlegen</span></li>
             </ul>
           </div>
           {authError && <div className="onb-err">{authError}</div>}

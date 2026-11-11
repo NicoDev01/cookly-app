@@ -389,7 +389,7 @@ const ShoppingListView: React.FC<Props> = ({
 
         {items && items.length === 0 && (
           <div className="flex flex-col items-center px-6 pt-10 text-center animate-in fade-in">
-            <img src={ONB_IMG.setup} alt="" className="h-auto w-56 object-contain" />
+            <img src={ONB_IMG.hello} alt="" className="h-auto w-48 object-contain" />
             <h2 className="mt-4 text-2xl font-bold tracking-tight text-text-primary-light dark:text-text-primary-dark">
               Noch keine Zutaten in deiner <span className="italic text-primary">Einkaufsliste</span>
             </h2>

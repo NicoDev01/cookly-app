@@ -74,6 +74,9 @@ const AppNav: React.FC<{
   ];
 
   const routeIndex = navItems.findIndex(({ path }) => isActive(path));
+  // Sobald die Route gewechselt hat, zählt nur noch sie. Sonst markierte ein Link zurück zur Ausgangsseite
+  // (z. B. „Rezepte ansehen“ in leeren Favoriten nach Tipp von Kategorien) weiter den alten Tab.
+  if (tapped && tapped.from !== location.pathname) setTapped(null);
   const activeIndex = tapped && tapped.from === location.pathname ? tapped.index : routeIndex;
 
   // Pille unter den aktiven Tab legen. offset* statt getBoundingClientRect, weil touch-scale

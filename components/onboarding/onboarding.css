@@ -54,7 +54,8 @@
 .onb-swap .onb-ill img { transition: height var(--keyboard-transition), opacity var(--keyboard-transition); }
 .onb-swap > div { transition: opacity .35s ease, transform .45s ease, padding-top var(--keyboard-transition); }
 html.keyboard-open .onb-swap > div { padding-top: 4px; gap: 12px; }
-html.keyboard-open .onb-swap .onb-ill img { height: 0 !important; opacity: 0; }
+html.keyboard-open .onb-swap .onb-ill img, .onb-swap.kb-frozen .ask .onb-ill img { height: 0 !important; opacity: 0; }
+.onb-swap.kb-frozen .ask { padding-top: 4px; gap: 12px; }
 .onb-swap .greet { opacity: 0; transform: translateY(10px); pointer-events: none; }
 .onb-swap.done .ask { opacity: 0; transform: translateY(-10px); pointer-events: none; }
 .onb-swap.done .greet { opacity: 1; transform: none; pointer-events: auto; transition-delay: .25s; }
@@ -77,7 +78,7 @@ html.keyboard-open .onb-swap .onb-ill img { height: 0 !important; opacity: 0; }
 .onb-free .hd { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--o-cta); }
 .onb-free ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
 .onb-free li { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 500; }
-.onb-free li::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--o-cta); }
+.onb-free .onb-tick { flex: none; box-sizing: content-box; padding: 3px; border-radius: 50%; background: var(--o-cta); color: #fff; }
 .onb-free b { font-weight: 800; }
 
 /* Bereit */
