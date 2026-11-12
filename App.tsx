@@ -29,6 +29,7 @@ import { AnalyticsLifecycle } from './components/AnalyticsLifecycle';
 import { PushLifecycle } from './components/PushLifecycle';
 import { InAppCampaign } from './components/InAppCampaign';
 import { AdSlot } from './components/AdSlot';
+import { RequiredUpdateGate } from './components/RequiredUpdateGate';
 import { clearAnswers, loggedOutHome, markAccountOnDevice } from './components/onboarding/onboardingData';
 
 const CategoryRecipesPage = React.lazy(() => import('./pages/CategoryRecipesPage'));
@@ -366,6 +367,7 @@ const App: React.FC = () => {
               <AdSlot placement="home_feed" />
               <AppContent />
             </div>
+            <RequiredUpdateGate />
           </NotificationProvider>
         </ModalProvider>
       </QueryCacheProvider>

@@ -11,6 +11,7 @@
 import type * as accountDeletion from "../accountDeletion.js";
 import type * as admin from "../admin.js";
 import type * as analytics from "../analytics.js";
+import type * as appConfig from "../appConfig.js";
 import type * as appleAuth from "../appleAuth.js";
 import type * as auth from "../auth.js";
 import type * as billing from "../billing.js";
@@ -71,6 +72,7 @@ declare const fullApi: ApiFromModules<{
   accountDeletion: typeof accountDeletion;
   admin: typeof admin;
   analytics: typeof analytics;
+  appConfig: typeof appConfig;
   appleAuth: typeof appleAuth;
   auth: typeof auth;
   billing: typeof billing;
