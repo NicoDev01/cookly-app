@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import { api } from '../convex/_generated/api';
+import type { Id } from '../convex/_generated/dataModel';
 import type { Recipe } from '../types';
 import ImportingRecipe from '../components/import/ImportingRecipe';
 import ImportProgressCard from '../components/import/ImportProgressCard';
@@ -129,7 +130,8 @@ const ShareTargetPage: React.FC = () => {
     target && lastShare?.url === target.url && Date.now() - lastShare.at < REATTACH_WINDOW_MS ? { ...lastShare } : null,
   );
   const [attempt, setAttempt] = useState(0);
-  const [operationId, setOperationId] = useState<string | null>(resumed?.operationId ?? null);
+  // Mit fertigem Rezept wird nicht wieder angehängt (siehe unten), also auch nicht dessen Operation abonnieren.
+  const [operationId, setOperationId] = useState<string | null>(resumed?.recipeId ? null : resumed?.operationId ?? null);
   const [startedAt, setStartedAt] = useState(() => resumed?.startedAt ?? Date.now());
   const [requestId, setRequestId] = useState<string | undefined>(resumed?.requestId);
   const [failure, setFailure] = useState<ImportFailureState | null>(target ? null : INVALID_LINK);
@@ -189,9 +191,26 @@ const ShareTargetPage: React.FC = () => {
   }, [failure]);
 
   // Doppelter Intent, nachdem das Rezept schon offen war: ohne Zwischenbild zurück aufs Rezept.
+  // Wurde es inzwischen gelöscht, startet derselbe Link frisch, statt auf eine leere Rezeptseite zu führen.
   useEffect(() => {
-    if (resumed?.recipeId) navigate(`/recipe/${resumed.recipeId}`, { replace: true, state: { nav: { ids: [resumed.recipeId], index: 0 } } });
-  }, [resumed, navigate]);
+    const resumedRecipeId = resumed?.recipeId;
+    if (!resumedRecipeId) return;
+    let cancelled = false;
+    convex.query(api.recipes.get, { id: resumedRecipeId as Id<'recipes'> })
+      .catch(() => null)
+      .then((existing) => {
+        if (cancelled) return;
+        if (existing) {
+          navigate(`/recipe/${resumedRecipeId}`, { replace: true, state: { nav: { ids: [resumedRecipeId], index: 0 } } });
+          return;
+        }
+        lastShare = null;
+        setAttempt((value) => value + 1);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [resumed, navigate, convex]);
 
   // Abbruch vom Server: Dienstfehler, die schnell kamen, einmal still neu versuchen.
   useEffect(() => {
