@@ -63,7 +63,10 @@ export const ProfilePage: React.FC = () => {
     navigate('/sign-in', { replace: true });
   };
 
+  // Doppeltipp darf den Store nicht zweimal öffnen.
+  const managingRef = useRef(false);
   const handleManageSubscription = async () => {
+    if (managingRef.current) return;
     if (!billing.available) {
       showToast('In-App-Kauf ist in dieser App-Version noch nicht verfügbar.');
       return;
@@ -72,12 +75,15 @@ export const ProfilePage: React.FC = () => {
       showToast('Dieses Abo wurde im Web abgeschlossen und kann dort verwaltet werden.');
       return;
     }
+    managingRef.current = true;
     try {
       const redirectUrl = await billing.manage();
       if (redirectUrl) window.location.href = redirectUrl;
     } catch (error: unknown) {
       logger.error('Billing', 'Portal failed', error);
       showToast(getUserErrorMessage(error, 'billing'), 'error');
+    } finally {
+      managingRef.current = false;
     }
   };
 

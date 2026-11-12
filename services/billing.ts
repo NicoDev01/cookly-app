@@ -1,4 +1,4 @@
-import { Browser } from "@capacitor/browser";
+import { AppLauncher } from "@capacitor/app-launcher";
 import { Capacitor } from "@capacitor/core";
 import type { PurchasesPackage } from "@revenuecat/purchases-capacitor";
 
@@ -113,7 +113,10 @@ export function createBillingClient(billingUserId: string | undefined, web: WebA
       const { Purchases } = await nativePurchases(requireBillingUserId());
       const { customerInfo } = await Purchases.getCustomerInfo();
       if (!customerInfo.managementURL) throw new Error("STORE_SUBSCRIPTION_NOT_FOUND");
-      await Browser.open({ url: customerInfo.managementURL });
+      // Im System öffnen (App Store / Play Store), nicht im In-App-Browser: Dessen iOS-Plugin lehnt ab,
+      // solange noch ein Safari-View offen ist ("Unable to display URL", Sentry COOKLY-REACT-R).
+      const { completed } = await AppLauncher.openUrl({ url: customerInfo.managementURL });
+      if (!completed) throw new Error("STORE_SUBSCRIPTION_NOT_FOUND");
     },
     async restore() {
       const { Purchases } = await nativePurchases(requireBillingUserId());
