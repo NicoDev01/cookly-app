@@ -3,6 +3,11 @@
 
 ## [Unreleased]
 
+---
+
+
+## [1.5.1] - 13.11.2026 (Build 49)
+
 ### ✨ Neue Features
 - **Neues Plus-Menü** zum Hinzufügen: App teilen, Link einfügen, Foto scannen oder selbst schreiben,
   mit kurzer Anleitung zum Teilen aus Instagram, TikTok und Co.
