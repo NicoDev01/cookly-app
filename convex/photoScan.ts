@@ -8,6 +8,7 @@ import { GoogleGenAI } from "@google/genai";
 import { GEMINI_MODELS } from "./constants";
 import { GEMINI_IMAGE_TIMEOUT_MS, runWithGeminiModelFallback } from "../utils/geminiRetry";
 import {
+  AI_SCAN_MULTI_PAGE_HINT,
   AI_SCAN_PROMPT_FIXED,
   AI_SCAN_RESPONSE_JSON_SCHEMA,
   normalizeAiScanResult,
@@ -76,25 +77,30 @@ export const scanRecipePhotoInternal = internalAction({
   args: {
     userId: v.id("users"),
     storageId: v.id("_storage"),
+    /** Weitere Seiten desselben Rezepts, in Lesereihenfolge. Alle Seiten gehen in eine Gemini-Anfrage. */
+    extraStorageIds: v.optional(v.array(v.id("_storage"))),
     fallback: fallbackValidator,
   },
   returns: v.object({ doc: recipeScanDocValidator }),
   handler: async (ctx, args) => {
-    await ctx.runQuery(internal.storageAssets.getPendingPhotoScanForUser, { userId: args.userId, storageId: args.storageId });
+    const storageIds = [args.storageId, ...(args.extraStorageIds ?? [])];
+    for (const storageId of storageIds) {
+      await ctx.runQuery(internal.storageAssets.getPendingPhotoScanForUser, { userId: args.userId, storageId });
+    }
 
     if (!GEMINI_KEY) {
       throw new Error("GEMINI_API_KEY is missing in Convex Environment Variables");
     }
 
-    const imageBlob = await ctx.storage.get(args.storageId);
-    if (!imageBlob) throw new Error("Bild konnte nicht aus dem Speicher gelesen werden.");
-
-    const mimeType = imageBlob.type || "image/jpeg";
-    if (!mimeType.startsWith("image/")) {
-      throw new Error("Die hochgeladene Datei ist kein Bild.");
-    }
-
-    const base64Data = toBase64(await imageBlob.arrayBuffer());
+    const imageParts = await Promise.all(storageIds.map(async (storageId) => {
+      const imageBlob = await ctx.storage.get(storageId);
+      if (!imageBlob) throw new Error("Bild konnte nicht aus dem Speicher gelesen werden.");
+      const mimeType = imageBlob.type || "image/jpeg";
+      if (!mimeType.startsWith("image/")) {
+        throw new Error("Die hochgeladene Datei ist kein Bild.");
+      }
+      return { inlineData: { mimeType, data: toBase64(await imageBlob.arrayBuffer()) } };
+    }));
     const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
 
     const response = await runWithGeminiModelFallback(GEMINI_MODELS.recipeImageScan, (model) =>
@@ -102,8 +108,8 @@ export const scanRecipePhotoInternal = internalAction({
         model,
         contents: {
           parts: [
-            { inlineData: { mimeType, data: base64Data } },
-            { text: AI_SCAN_PROMPT_FIXED.trim() },
+            ...imageParts,
+            { text: (imageParts.length > 1 ? AI_SCAN_MULTI_PAGE_HINT : "") + AI_SCAN_PROMPT_FIXED.trim() },
           ],
         },
         config: {
@@ -118,7 +124,9 @@ export const scanRecipePhotoInternal = internalAction({
 
     const parsed = parseGeminiJson(response.text);
     const doc = normalizeAiScanResult(parsed, args.fallback);
-    await ctx.runMutation(internal.storageAssets.releasePendingAssetForUser, { userId: args.userId, storageId: args.storageId });
+    for (const storageId of storageIds) {
+      await ctx.runMutation(internal.storageAssets.releasePendingAssetForUser, { userId: args.userId, storageId });
+    }
 
     return { doc };
   },

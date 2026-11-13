@@ -299,7 +299,15 @@ const ShareTargetPage: React.FC = () => {
     navigate(`/recipe/${recipeId}`, { replace: true, state: { nav: { ids: [recipeId], index: 0 }, seamless: true, scrollTop } });
   }, [shouldNavigate, recipeId, navigate]);
 
+  // Link im Plus-Sheet eingefügt: Zurück bleibt in Cookly, statt wie nach einem Teilen die App zu verlassen.
+  const pasted = searchParams.get('source') === 'paste';
+
   const handleClose = useCallback(async () => {
+    if (pasted) {
+      if (window.history.length > 1) navigate(-1);
+      else navigate('/tabs/categories', { replace: true });
+      return;
+    }
     if (Capacitor.getPlatform() === 'android') {
       try {
         // Schließt die per SendIntent gestartete Activity: zurück in die App, aus der geteilt wurde.
@@ -312,7 +320,7 @@ const ShareTargetPage: React.FC = () => {
     // iOS bietet keinen Weg zurück in die Quell-App (nur den System-Link oben links).
     if (window.history.length > 1) window.history.back();
     else navigate('/', { replace: true });
-  }, [navigate]);
+  }, [navigate, pasted]);
 
   // Native Back Button Override: the global handler remains the single Capacitor listener.
   useEffect(() => {

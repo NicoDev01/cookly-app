@@ -218,13 +218,13 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
     <div className="kb-pad fixed inset-0 z-[100] flex items-end justify-center pointer-events-auto">
       {/* Backdrop: vollflächig, auch hinter der Tastatur */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm scrim-in"
         onClick={onClose}
       />
       <div className="kb-under bg-background-light dark:bg-background-dark" />
 
       {/* Slide-up Panel */}
-      <div className="relative w-full h-[92%] bg-background-light dark:bg-background-dark rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up pb-safe-offset">
+      <div className="relative w-full h-[92%] bg-background-light dark:bg-background-dark rounded-t-3xl shadow-2xl flex flex-col overflow-hidden sheet-in will-change-transform pb-safe-offset">
 
         {/* Drag Handle */}
         <div className="flex justify-center pt-3 pb-1">

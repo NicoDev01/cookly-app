@@ -3,6 +3,21 @@
 
 ## [Unreleased]
 
+### ✨ Neue Features
+- **Neues Plus-Menü** zum Hinzufügen: App teilen, Link einfügen, Foto scannen oder selbst schreiben,
+  mit kurzer Anleitung zum Teilen aus Instagram, TikTok und Co.
+- **Foto-Scan über mehrere Seiten** (bis zu 3 Fotos ergeben ein Rezept), optional mit Foto vom fertigen
+  Gericht als Rezeptbild; **mehrere Rezepte auf einmal** (jedes Foto ein Rezept).
+- Foto-Scans laufen **im Hintergrund** mit Fortschritt unten wie beim Link-Import; das Rezept wird auf dem
+  Server gespeichert und geht auch dann nicht verloren, wenn die App währenddessen geschlossen wird.
+
+### 🚀 Verbesserungen
+- Sheets lassen sich nach unten wegwischen; Haptik beim Öffnen, Umschalten, Start und Ergebnis.
+- Limit für Foto-Scans wird vor dem Hochladen geprüft.
+- Einheitliche, weichere Animationen für Sheets und Dialoge; Einblendungen laufen jetzt sichtbar statt hart.
+- Rezept-Formular neu gestaltet; eingefügte Listen werden in einzelne Zutaten und Schritte aufgeteilt.
+- Warten auf Importe per Live-Abo statt Abfrage alle 500 ms (weniger Convex-Aufrufe, schnellere Reaktion).
+
 ---
 
 

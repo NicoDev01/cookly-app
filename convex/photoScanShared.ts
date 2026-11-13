@@ -42,6 +42,14 @@ export const AI_SCAN_PROMPT_FIXED = `
   Antworte NUR mit dem JSON.
 `;
 
+/** Vor den Prompt, wenn mehrere Fotos kommen: alle Seiten ergeben genau ein Rezept. */
+export const AI_SCAN_MULTI_PAGE_HINT = `
+  Die Bilder sind aufeinanderfolgende Seiten EINES einzigen Rezepts (z. B. Zutatenliste auf der einen,
+  Zubereitung auf der anderen Seite), in Lesereihenfolge. Führe alle Seiten zu genau einem Rezept zusammen:
+  jede Zutat nur einmal, Schritte in der richtigen Reihenfolge, nichts doppelt.
+  Mit "dieses Rezeptbild" sind unten alle Seiten zusammen gemeint.
+`.trim() + "\n";
+
 const DIFFICULTIES = new Set(["Einfach", "Mittel", "Schwer"]);
 
 export const buildAiScanImageUrl = (keywords: string, seed?: number): string => {

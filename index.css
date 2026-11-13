@@ -190,49 +190,12 @@
     animation: fadeOut var(--motion-snappy) var(--motion-ease) forwards;
   }
 
-  /* Generic animate-in utilities for transitions */
-  .animate-in {
-    animation-name: fadeIn;
-    animation-fill-mode: forwards;
-  }
-  .fade-in {
-    animation-name: fadeIn;
-  }
-  .zoom-in {
-    animation-name: zoomIn;
-  }
-  .slide-in-from-bottom-8 {
-    animation-name: slideInFromBottom;
-  }
-
   @keyframes fadeIn {
     from {
       opacity: 0;
     }
     to {
       opacity: 1;
-    }
-  }
-
-  @keyframes zoomIn {
-    from {
-      opacity: 0;
-      transform: scale(0.95);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-
-  @keyframes slideInFromBottom {
-    from {
-      opacity: 0;
-      transform: translateY(2rem);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
     }
   }
 
@@ -319,12 +282,91 @@ html.keyboard-open .kb-hide {
   transition: height var(--keyboard-transition);
   pointer-events: none;
 }
+/* Sheets und Vollbild-Formulare (Plus-Button, Rezept schreiben): Kurve wie iOS-Sheets, rein über transform
+ * (GPU, kein Ruckeln). Ausblenden kürzer und beschleunigend, damit Schließen sofort reagiert. */
+.sheet-in {
+  animation: sheetIn 420ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.sheet-out {
+  animation: sheetOut 240ms cubic-bezier(0.32, 0, 0.67, 0) both;
+}
+.scrim-in {
+  animation: scrimIn 300ms ease-out both;
+}
+.scrim-out {
+  animation: scrimOut 240ms ease-in both;
+}
+/* Schrittwechsel im Sheet: neuer Inhalt kommt aus der Laufrichtung (vor/zurück). */
+.step-in {
+  animation: stepIn 300ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.step-in-back {
+  animation: stepInBack 300ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+/* Kleine Menüs: aus ihrem Ankerpunkt aufpoppen (transform-origin per Klasse setzen). */
+.pop-in {
+  animation: popIn 200ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes sheetIn {
+  from { transform: translate3d(0, 100%, 0); }
+  to { transform: translate3d(0, 0, 0); }
+}
+@keyframes sheetOut {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, 100%, 0); }
+}
+@keyframes scrimIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes scrimOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes stepIn {
+  from { opacity: 0; transform: translate3d(18px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes stepInBack {
+  from { opacity: 0; transform: translate3d(-18px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+/* Sheet-Unterkante: Home-Indicator-Abstand nur ohne Tastatur (die liegt dann darüber). */
+.sheet-pad {
+  padding-bottom: calc(var(--safe-area-inset-bottom, 0px) + 1.25rem);
+  transition: padding-bottom var(--keyboard-transition);
+}
+html.keyboard-open .sheet-pad {
+  padding-bottom: 1rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet-in,
+  .sheet-out,
+  .scrim-in,
+  .scrim-out,
+  .step-in,
+  .step-in-back,
+  .pop-in {
+    animation-duration: 1ms !important;
+  }
+}
+
 /* Seiten ohne App-Shell (Login, Registrierung) scrollen das Dokument: Platz unter dem Inhalt schaffen. */
 html:not(.app-shell) body {
   padding-bottom: var(--keyboard-height);
 }
 
 @layer base {
+  /* tailwindcss-animate (animate-in) läuft sonst mit „ease“; gleiche weiche Ausrollkurve wie die Sheets.
+     Im Base-Layer, damit ease-* Utilities sie weiterhin überschreiben. */
+  .animate-in {
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
   html,
   body {
     min-height: 100dvh;
@@ -713,11 +755,7 @@ html:not(.app-shell) body {
     .success-pulse,
     .shimmer,
     .skeleton::after,
-    .page-enter,
-    .animate-in,
-    .fade-in,
-    .zoom-in,
-    .slide-in-from-bottom-8 {
+    .page-enter {
       animation: none !important;
       opacity: 1;
       transform: none;

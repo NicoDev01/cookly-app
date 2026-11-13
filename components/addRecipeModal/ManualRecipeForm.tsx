@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import { ChevronDown, ImagePlus, Loader2, Minus, Pencil, Plus, Sparkles, Upload } from "lucide-react";
 import { Id } from "../../convex/_generated/dataModel";
 import ImageEditor from "./ImageEditor";
 import IconDropdown from "./IconDropdown";
@@ -45,7 +46,6 @@ type Props = {
   isGeneratingAiImage: boolean;
   aiImageGenerationStage: "idle" | "requesting" | "generating" | "loading";
   isSaving: boolean;
-  isAnalyzing: boolean;
 
   // ImageEditor Props
   isImageEditorOpen: boolean;
@@ -54,6 +54,33 @@ type Props = {
   handleImageEditorCancel: () => void;
 };
 
+const NEW_CATEGORY = "___NEW___";
+const CUSTOM_CATEGORY = "custom_value";
+const CTA = "#2f5d46";
+const MUTED = "#6b7a72";
+/** Graue Felder in weißen Karten; Fokus im Cookly-Grün. */
+const FIELD = "rounded-xl border-0 bg-background-light px-3.5 text-[15px] text-[#15241b] placeholder:text-[#9aa5a0] focus:outline-none focus:ring-2 focus:ring-[#2f5d46]";
+
+/** Mehrere Zeilen in ein Zutatenfeld eingefügt: je Zeile eine Zutat, führende Menge abgetrennt. */
+const splitIngredientLines = (text: string): Ingredient[] | null => {
+  const lines = text.split(/\r?\n/).map((line) => line.replace(/^[-•*]\s*/, "").trim()).filter(Boolean);
+  if (lines.length < 2) return null;
+  return lines.map((line) => {
+    const match = line.match(/^([\d.,/½¼¾]+\s*(?:g|kg|ml|l|EL|TL|Prise|Prisen|Dose|Dosen|Bund|Stk\.?|Stück|Becher|Pck\.?|Päckchen)?)\s+(.+)$/i);
+    return match ? { amount: match[1], name: match[2] } : { amount: "", name: line };
+  });
+};
+
+/** Mehrere Absätze oder nummerierte Zeilen in einen Schritt eingefügt: je Absatz ein Schritt. */
+const splitInstructionText = (text: string): Instruction[] | null => {
+  const parts = text.split(/\r?\n\s*\r?\n|\r?\n(?=\d+[.)]\s)/).map((part) => part.replace(/^\d+[.)]\s*/, "").trim()).filter(Boolean);
+  return parts.length < 2 ? null : parts.map((part) => ({ text: part }));
+};
+
+/**
+ * Formular für „Selbst schreiben“ und „Bearbeiten“: Reihenfolge wie bisher (Bild, Titel, Kategorie,
+ * Zeit/Portionen/Schwierigkeit, Zutaten, Zubereitung), im Cookly-Stil mit weißen Karten und runden Feldern.
+ */
 const ManualRecipeForm: React.FC<Props> = ({
   formData,
   setFormData,
@@ -73,7 +100,6 @@ const ManualRecipeForm: React.FC<Props> = ({
   isGeneratingAiImage,
   aiImageGenerationStage,
   isSaving,
-  isAnalyzing,
   isImageEditorOpen,
   setIsImageEditorOpen,
   handleImageEditorApply,
@@ -87,6 +113,7 @@ const ManualRecipeForm: React.FC<Props> = ({
         : aiImageGenerationStage === "loading"
           ? "Bild wird geladen..."
           : null;
+  const imageBusy = isUploadingRecipeImage || isSaving || isGeneratingAiImage;
 
   const updateIngredient = (index: number, field: "name" | "amount", value: string) => {
     const newIngredients = [...formData.ingredients];
@@ -104,6 +131,19 @@ const ManualRecipeForm: React.FC<Props> = ({
   const removeIngredient = (index: number) => {
     const newIngredients = formData.ingredients.filter((_, i) => i !== index);
     setFormData({ ...formData, ingredients: newIngredients });
+  };
+
+  const pasteIngredients = (index: number, e: React.ClipboardEvent<HTMLInputElement>) => {
+    const parsed = splitIngredientLines(e.clipboardData.getData("text"));
+    if (!parsed) return;
+    e.preventDefault();
+    const list = formData.ingredients;
+    // Leere Zeile ersetzen, sonst nach der aktuellen Zutat einfügen.
+    const replace = !list[index]?.name.trim() && !list[index]?.amount?.trim();
+    setFormData({
+      ...formData,
+      ingredients: [...list.slice(0, replace ? index : index + 1), ...parsed, ...list.slice(index + 1)],
+    });
   };
 
   const updateInstruction = (index: number, field: "text" | "icon", value: string) => {
@@ -124,6 +164,18 @@ const ManualRecipeForm: React.FC<Props> = ({
     setFormData({ ...formData, instructions: newInstructions });
   };
 
+  const pasteInstructions = (index: number, e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const parsed = splitInstructionText(e.clipboardData.getData("text"));
+    if (!parsed) return;
+    e.preventDefault();
+    const list = formData.instructions;
+    const replace = !list[index]?.text.trim();
+    setFormData({
+      ...formData,
+      instructions: [...list.slice(0, replace ? index : index + 1), ...parsed, ...list.slice(index + 1)],
+    });
+  };
+
   // Auto-resize textareas
   const textareaRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
 
@@ -139,173 +191,147 @@ const ManualRecipeForm: React.FC<Props> = ({
 
   return (
     <>
-      <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
-        <div className="pt-2">
+      <form className="space-y-3" onSubmit={(e) => e.preventDefault()}>
+        {/* Bild */}
+        <div className="relative aspect-video w-full rounded-3xl bg-white shadow-sm">
+          <img
+            src={recipeImagePreviewUrl ?? formData.image}
+            alt={formData.imageAlt || formData.title || "Rezeptbild"}
+            className="size-full rounded-3xl object-cover"
+          />
+          {isGeneratingAiImage && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-3xl bg-black/50 text-white backdrop-blur-[2px]">
+              <Loader2 size={26} className="animate-spin" />
+              <p className="text-xs font-semibold tracking-wide">{aiGenerationLabel ?? "Bild wird erzeugt..."}</p>
+            </div>
+          )}
+          {isUploadingRecipeImage && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-3xl bg-black/35 text-white">
+              <Loader2 size={26} className="animate-spin" />
+            </div>
+          )}
+          <div className="absolute inset-x-3 bottom-3 z-20 flex flex-wrap gap-2">
+            <div className="relative" ref={imageActionMenuRef}>
+              <button
+                type="button"
+                onClick={() => setIsImageActionMenuOpen(!isImageActionMenuOpen)}
+                disabled={imageBusy}
+                aria-expanded={isImageActionMenuOpen}
+                className="flex h-10 items-center gap-1.5 whitespace-nowrap rounded-full bg-white/95 px-4 text-[14px] font-bold text-[#15241b] shadow-md active:scale-95 disabled:opacity-60"
+              >
+                <ImagePlus size={17} /> Ändern
+              </button>
 
-          <div className="flex flex-col md:flex-row gap-4 items-start">
-            <div className="relative w-full md:w-56 aspect-video rounded-xl overflow-hidden bg-gray-100 dark:bg-white/5">
-              <img
-                src={recipeImagePreviewUrl ?? formData.image}
-                alt={formData.imageAlt || formData.title || "Rezeptbild"}
-                className="w-full h-full object-cover"
-              />
-              {isGeneratingAiImage && (
-                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/50 backdrop-blur-[2px] text-white">
-                  <span className="material-symbols-outlined animate-spin text-2xl">
-                    progress_activity
-                  </span>
-                  <p className="text-xs font-semibold tracking-wide">
-                    {aiGenerationLabel ?? "Bild wird erzeugt..."}
-                  </p>
-                  <div className="w-28 h-1.5 rounded-full bg-white/20 overflow-hidden">
-                    <div className="h-full w-1/2 bg-white animate-pulse" />
-                  </div>
+              {isImageActionMenuOpen && (
+                <div className="pop-in absolute bottom-12 left-0 z-30 w-56 origin-bottom-left overflow-hidden rounded-2xl bg-white p-1.5 shadow-2xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsImageActionMenuOpen(false);
+                      openRecipeImagePicker();
+                    }}
+                    disabled={imageBusy}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[15px] font-medium text-[#15241b] active:bg-black/5 disabled:opacity-60"
+                  >
+                    <Upload size={18} color={MUTED} /> Bild hochladen
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsImageActionMenuOpen(false);
+                      handleGenerateAiImage();
+                    }}
+                    disabled={imageBusy}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[15px] font-medium text-[#15241b] active:bg-black/5 disabled:opacity-60"
+                  >
+                    <Sparkles size={18} color={CTA} /> Bild erzeugen (KI)
+                  </button>
                 </div>
               )}
             </div>
-            <div className="flex-1 w-full">
-              <div className="flex flex-nowrap items-center gap-2">
-                <div className="relative" ref={imageActionMenuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setIsImageActionMenuOpen(!isImageActionMenuOpen)}
-                    disabled={isUploadingRecipeImage || isSaving || isAnalyzing || isGeneratingAiImage}
-                    className="px-3 sm:px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg text-xs sm:text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 whitespace-nowrap"
-                  >
-                    <span className="material-symbols-outlined text-base sm:text-lg">image</span>
-                    Ändern
-                  </button>
 
-                  {isImageActionMenuOpen && (
-                    <div className="absolute left-0 mt-2 w-56 overflow-hidden rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#1e3031] shadow-2xl z-20 animate-in fade-in zoom-in-95 duration-200">
-                      <div className="p-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsImageActionMenuOpen(false);
-                            openRecipeImagePicker();
-                          }}
-                          disabled={isUploadingRecipeImage || isSaving || isAnalyzing || isGeneratingAiImage}
-                          className="w-full px-3 py-2.5 text-left text-sm text-gray-800 dark:text-white hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-60 disabled:cursor-not-allowed rounded-lg flex items-center gap-3 transition-colors"
-                        >
-                          <span className="material-symbols-outlined text-lg text-gray-500">upload</span>
-                          Bild hochladen
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsImageActionMenuOpen(false);
-                            handleGenerateAiImage();
-                          }}
-                          disabled={isUploadingRecipeImage || isSaving || isAnalyzing || isGeneratingAiImage}
-                          className="w-full px-3 py-2.5 text-left text-sm text-gray-800 dark:text-white hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-60 disabled:cursor-not-allowed rounded-lg flex items-center gap-3 transition-colors"
-                        >
-                          <span className="material-symbols-outlined text-lg text-primary">auto_fix_high</span>
-                          Bild erzeugen (KI)
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {(recipeImagePreviewUrl || formData.image || recipeImageStorageId) && (
-                  <button
-                    type="button"
-                    onClick={() => setIsImageEditorOpen(true)}
-                    disabled={isUploadingRecipeImage || isSaving || isAnalyzing || isGeneratingAiImage}
-                    className="px-3 sm:px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg text-xs sm:text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 whitespace-nowrap"
-                  >
-                    <span className="material-symbols-outlined text-base sm:text-lg">edit</span>
-                    Bearbeiten
-                  </button>
-                )}
-              </div>
-
-              <input
-                type="file"
-                ref={recipeImageInputRef}
-                className="hidden"
-                accept="image/*"
-                onChange={handleRecipeImageSelect}
-              />
-
-              {isUploadingRecipeImage && (
-                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Bild wird hochgeladen...</p>
-              )}
-
-              {isGeneratingAiImage && (
-                <div className="mt-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2">
-                  <p className="text-xs font-medium text-primary">
-                    {aiGenerationLabel ?? "KI erstellt dein Bild..."}
-                  </p>
-                </div>
-              )}
-
-            </div>
+            {(recipeImagePreviewUrl || formData.image || recipeImageStorageId) && (
+              <button
+                type="button"
+                onClick={() => setIsImageEditorOpen(true)}
+                disabled={imageBusy}
+                className="flex h-10 items-center gap-1.5 whitespace-nowrap rounded-full bg-white/95 px-4 text-[14px] font-bold text-[#15241b] shadow-md active:scale-95 disabled:opacity-60"
+              >
+                <Pencil size={16} /> Bearbeiten
+              </button>
+            )}
           </div>
+
+          <input
+            type="file"
+            ref={recipeImageInputRef}
+            className="hidden"
+            accept="image/*"
+            onChange={handleRecipeImageSelect}
+          />
         </div>
 
         {/* Titel & Kategorie */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="recipe-title" className="block text-xs font-bold text-gray-500 uppercase mb-1">Titel</label>
-            <input
-              id="recipe-title"
-              name="title"
-              className="w-full bg-gray-50 dark:bg-black/20 border-0 rounded-lg p-3 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary"
-              placeholder="z.B. Spaghetti Bolognese"
-              value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              autoComplete="on"
-              autoCorrect="on"
-              autoCapitalize="sentences"
-              spellCheck={true}
-              inputMode="text"
-            />
-          </div>
-          <div>
-            <label htmlFor="recipe-category" className="block text-xs font-bold text-gray-500 uppercase mb-1">Kategorie</label>
-            {isNewCategoryMode ? (
-              <div className="flex gap-2">
-                <input
-                  id="recipe-category"
-                  name="category"
-                  autoFocus
-                  className="w-full bg-gray-50 dark:bg-black/20 border-0 rounded-lg p-3 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary"
-                  placeholder="Neue Kategorie..."
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  autoComplete="on"
-                  autoCorrect="on"
-                  autoCapitalize="sentences"
-                  spellCheck={true}
-                  inputMode="text"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsNewCategoryMode(false);
-                    if (!formData.category) setFormData({ ...formData, category: "Sonstiges" });
-                  }}
-                  className="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg text-sm font-medium"
-                >
-                  Abbrechen
-                </button>
-              </div>
-            ) : (
+        <Card>
+          <Label htmlFor="recipe-title">Titel</Label>
+          <input
+            id="recipe-title"
+            name="title"
+            className={`${FIELD} h-12 w-full font-semibold`}
+            placeholder="z.B. Spaghetti Bolognese"
+            value={formData.title}
+            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+            autoComplete="on"
+            autoCorrect="on"
+            autoCapitalize="sentences"
+            spellCheck={true}
+            inputMode="text"
+          />
+
+          <Label htmlFor="recipe-category" className="mt-4">Kategorie</Label>
+          {isNewCategoryMode ? (
+            <div className="flex gap-2">
+              <input
+                id="recipe-category"
+                name="category"
+                autoFocus
+                className={`${FIELD} h-12 min-w-0 flex-1 font-semibold`}
+                placeholder="Neue Kategorie..."
+                value={formData.category}
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                autoComplete="on"
+                autoCorrect="on"
+                autoCapitalize="sentences"
+                spellCheck={true}
+                inputMode="text"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setIsNewCategoryMode(false);
+                  if (!formData.category) setFormData({ ...formData, category: "Sonstiges" });
+                }}
+                className="h-12 flex-none rounded-xl bg-background-light px-4 text-[14px] font-bold"
+                style={{ color: MUTED }}
+              >
+                Abbrechen
+              </button>
+            </div>
+          ) : (
+            <div className="relative">
               <select
                 id="recipe-category"
                 name="category"
-                className="w-full bg-gray-50 dark:bg-black/20 border-0 rounded-lg p-3 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary appearance-none"
+                className={`${FIELD} h-12 w-full appearance-none pr-10 font-semibold`}
                 value={
                   existingCategories.includes(formData.category)
                     ? formData.category
                     : formData.category
-                      ? "custom_value"
+                      ? CUSTOM_CATEGORY
                       : ""
                 }
                 onChange={(e) => {
-                  if (e.target.value === "___NEW___") {
+                  if (e.target.value === NEW_CATEGORY) {
                     setIsNewCategoryMode(true);
                     setFormData({ ...formData, category: "" });
                   } else {
@@ -314,7 +340,7 @@ const ManualRecipeForm: React.FC<Props> = ({
                 }}
               >
                 {!existingCategories.includes(formData.category) && formData.category && (
-                  <option value="custom_value" disabled>
+                  <option value={CUSTOM_CATEGORY} disabled>
                     {formData.category}
                   </option>
                 )}
@@ -325,21 +351,24 @@ const ManualRecipeForm: React.FC<Props> = ({
                   </option>
                 ))}
                 <option disabled>──────────</option>
-                <option value="___NEW___">+ Neue Kategorie erstellen</option>
+                <option value={NEW_CATEGORY}>+ Neue Kategorie erstellen</option>
               </select>
-            )}
-          </div>
-        </div>
+              <ChevronDown size={18} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2" color={MUTED} />
+            </div>
+          )}
+        </Card>
 
         {/* Metadaten */}
-        <div className="grid grid-cols-3 gap-4">
+        <Card className="grid grid-cols-3 gap-2.5">
           <div>
-            <label htmlFor="recipe-time" className="block text-xs font-bold text-gray-500 uppercase mb-1">Zeit (Min)</label>
+            <Label htmlFor="recipe-time">Zeit (Min)</Label>
             <input
               id="recipe-time"
               name="prepTimeMinutes"
               type="number"
-              className="w-full bg-gray-50 dark:bg-black/20 border-0 rounded-lg p-3 text-gray-900 dark:text-white"
+              inputMode="numeric"
+              min={0}
+              className={`${FIELD} h-12 w-full text-center font-bold`}
               value={formData.prepTimeMinutes}
               onChange={(e) =>
                 setFormData({ ...formData, prepTimeMinutes: parseInt(e.target.value) || 0 })
@@ -347,43 +376,49 @@ const ManualRecipeForm: React.FC<Props> = ({
             />
           </div>
           <div>
-            <label htmlFor="recipe-portions" className="block text-xs font-bold text-gray-500 uppercase mb-1">Portionen</label>
+            <Label htmlFor="recipe-portions">Portionen</Label>
             <input
               id="recipe-portions"
               name="portions"
               type="number"
-              className="w-full bg-gray-50 dark:bg-black/20 border-0 rounded-lg p-3 text-gray-900 dark:text-white"
+              inputMode="numeric"
+              min={0}
+              className={`${FIELD} h-12 w-full text-center font-bold`}
               value={formData.portions}
               onChange={(e) => setFormData({ ...formData, portions: parseInt(e.target.value) || 0 })}
             />
           </div>
           <div>
-            <label htmlFor="recipe-difficulty" className="block text-xs font-bold text-gray-500 uppercase mb-1">Schwierigkeit</label>
-            <select
-              id="recipe-difficulty"
-              name="difficulty"
-              className="w-full bg-gray-50 dark:bg-black/20 border-0 rounded-lg p-3 text-gray-900 dark:text-white"
-                  value={formData.difficulty}
-                  onChange={(e) => setFormData({ ...formData, difficulty: e.target.value as ManualFormData["difficulty"] })}
-            >
-              <option>Einfach</option>
-              <option>Mittel</option>
-              <option>Schwer</option>
-            </select>
+            <Label htmlFor="recipe-difficulty">Schwierigkeit</Label>
+            <div className="relative">
+              <select
+                id="recipe-difficulty"
+                name="difficulty"
+                className={`${FIELD} h-12 w-full appearance-none pl-3 pr-7 font-bold`}
+                value={formData.difficulty}
+                onChange={(e) => setFormData({ ...formData, difficulty: e.target.value as ManualFormData["difficulty"] })}
+              >
+                <option>Einfach</option>
+                <option>Mittel</option>
+                <option>Schwer</option>
+              </select>
+              <ChevronDown size={16} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" color={MUTED} />
+            </div>
           </div>
-        </div>
+        </Card>
 
         {/* Zutaten */}
-        <div>
-          <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Zutaten</label>
+        <Card>
+          <Label>Zutaten</Label>
           <div className="space-y-2">
             {formData.ingredients.map((ing, idx) => (
-              <div key={idx} className="flex gap-2 items-center">
+              <div key={idx} className="flex items-center gap-2">
                 <input
                   id={`ing-amount-${idx}`}
                   name={`ing-amount-${idx}`}
                   placeholder="Menge"
-                  className="w-20 sm:w-24 flex-shrink-0 bg-gray-50 dark:bg-black/20 border-0 rounded-lg p-2 text-sm dark:text-white"
+                  aria-label={`Menge ${idx + 1}`}
+                  className={`${FIELD} h-11 w-[84px] flex-none font-semibold text-[#2f5d46]`}
                   value={ing.amount ?? ""}
                   onChange={(e) => updateIngredient(idx, "amount", e.target.value)}
                   autoComplete="on"
@@ -396,9 +431,11 @@ const ManualRecipeForm: React.FC<Props> = ({
                   id={`ing-name-${idx}`}
                   name={`ing-name-${idx}`}
                   placeholder="Zutat"
-                  className="flex-1 min-w-0 bg-gray-50 dark:bg-black/20 border-0 rounded-lg p-2 text-sm dark:text-white"
+                  aria-label={`Zutat ${idx + 1}`}
+                  className={`${FIELD} h-11 min-w-0 flex-1`}
                   value={ing.name}
                   onChange={(e) => updateIngredient(idx, "name", e.target.value)}
+                  onPaste={(e) => pasteIngredients(idx, e)}
                   autoComplete="on"
                   autoCorrect="on"
                   autoCapitalize="sentences"
@@ -406,40 +443,35 @@ const ManualRecipeForm: React.FC<Props> = ({
                   inputMode="text"
                 />
                 {formData.ingredients.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeIngredient(idx)}
-                    className="flex-shrink-0 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-1"
-                    title="Zutat entfernen"
-                  >
-                    <span className="material-symbols-outlined text-lg">remove_circle</span>
-                  </button>
+                  <RemoveButton label="Zutat entfernen" onClick={() => removeIngredient(idx)} />
                 )}
               </div>
             ))}
-            <button onClick={addIngredient} className="text-primary text-sm font-medium hover:underline">
-              + Zutat hinzufügen
-            </button>
           </div>
-        </div>
+          <AddButton onClick={addIngredient}>Zutat hinzufügen</AddButton>
+        </Card>
 
         {/* Instruktionen */}
-        <div>
-          <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Zubereitung</label>
-          <div className="space-y-2">
+        <Card>
+          <Label>Zubereitung</Label>
+          <div className="space-y-3">
             {formData.instructions.map((inst, idx) => (
-              <div key={idx} className="flex gap-2 items-start">
-                <span className="mt-2 text-xs font-bold text-gray-400">{idx + 1}.</span>
-                <div className="flex-1 flex flex-col gap-2">
+              <div key={idx} className="flex items-start gap-2.5">
+                <span className="mt-2.5 flex size-7 flex-none items-center justify-center rounded-full bg-[#2f5d46] text-[13px] font-black text-white">
+                  {idx + 1}
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col gap-2">
                   <textarea
                     id={`instruction-${idx}`}
                     name={`instruction-${idx}`}
                     ref={(el) => { textareaRefs.current[idx] = el; }}
-                    className="w-full bg-gray-50 dark:bg-black/20 border-0 rounded-lg p-2 text-sm dark:text-white resize-none overflow-hidden"
-                    style={{ minHeight: '40px' }}
+                    aria-label={`Schritt ${idx + 1}`}
+                    className={`${FIELD} w-full resize-none overflow-hidden py-3 leading-snug`}
+                    style={{ minHeight: '52px' }}
                     value={inst.text}
                     onChange={(e) => updateInstruction(idx, "text", e.target.value)}
                     onInput={(e) => adjustTextareaHeight(e.currentTarget)}
+                    onPaste={(e) => pasteInstructions(idx, e)}
                     placeholder="Anweisung..."
                     autoComplete="on"
                     autoCorrect="on"
@@ -447,7 +479,7 @@ const ManualRecipeForm: React.FC<Props> = ({
                     spellCheck={true}
                     inputMode="text"
                   />
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center">
                     <IconDropdown
                       value={inst.icon || ""}
                       onChange={(newIcon) => updateInstruction(idx, "icon", newIcon)}
@@ -455,22 +487,15 @@ const ManualRecipeForm: React.FC<Props> = ({
                   </div>
                 </div>
                 {formData.instructions.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeInstruction(idx)}
-                    className="flex-shrink-0 mt-2 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-1"
-                    title="Schritt entfernen"
-                  >
-                    <span className="material-symbols-outlined text-lg">remove_circle</span>
-                  </button>
+                  <span className="mt-2">
+                    <RemoveButton label="Schritt entfernen" onClick={() => removeInstruction(idx)} />
+                  </span>
                 )}
               </div>
             ))}
-            <button onClick={addInstruction} className="text-primary text-sm font-medium hover:underline">
-              + Schritt hinzufügen
-            </button>
           </div>
-        </div>
+          <AddButton onClick={addInstruction}>Schritt hinzufügen</AddButton>
+        </Card>
       </form>
 
       {/* ImageEditor Modal */}
@@ -484,5 +509,40 @@ const ManualRecipeForm: React.FC<Props> = ({
     </>
   );
 };
+
+const Card: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = "" }) => (
+  <section className={`rounded-3xl bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,.04)] ${className}`}>{children}</section>
+);
+
+const Label: React.FC<{ children: React.ReactNode; htmlFor?: string; className?: string }> = ({ children, htmlFor, className = "" }) => (
+  <label htmlFor={htmlFor} className={`mb-1.5 block text-[12px] font-bold uppercase tracking-[0.04em] ${className}`} style={{ color: MUTED }}>
+    {children}
+  </label>
+);
+
+const RemoveButton: React.FC<{ label: string; onClick: () => void }> = ({ label, onClick }) => (
+  <button
+    type="button"
+    aria-label={label}
+    title={label}
+    onClick={onClick}
+    className="flex size-8 flex-none items-center justify-center rounded-full bg-[#fdecea] text-[#c2412d] active:scale-95"
+  >
+    <Minus size={16} strokeWidth={2.6} />
+  </button>
+);
+
+const AddButton: React.FC<{ onClick: () => void; children: React.ReactNode }> = ({ onClick, children }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="mt-3 flex h-10 items-center gap-2 rounded-full bg-[#dcebe1] pl-1.5 pr-4 text-[14px] font-bold text-[#2f5d46] active:scale-[0.98]"
+  >
+    <span className="flex size-7 items-center justify-center rounded-full bg-[#2f5d46] text-white">
+      <Plus size={16} strokeWidth={2.6} />
+    </span>
+    {children}
+  </button>
+);
 
 export default ManualRecipeForm;

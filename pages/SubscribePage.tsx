@@ -216,7 +216,7 @@ export default function SubscribePage() {
         </div>
 
         {/* Premium Plan Selector Buttons */}
-        {!isPro && <div className="flex items-center justify-center gap-4 mb-20 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        {!isPro && <div className="flex items-center justify-center gap-4 mb-20 animate-in fade-in slide-in-from-bottom-2 duration-300">
           <Button
             onClick={() => setIsYearly(false)}
             variant={!isYearly ? "default" : "outline"}

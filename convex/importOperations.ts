@@ -9,6 +9,7 @@ import { adjustCategoryCount, ensureCategoryExists, insertRecipe } from "./recip
 import { storeAnalyticsEvent } from "./analytics";
 import { enqueueIntegration } from "./integrations";
 import { importErrorCode } from "./lib/importErrors";
+import { deleteTrackedAsset } from "./storageAssets";
 
 const provider = v.union(
   v.literal("instagram"),
@@ -26,6 +27,31 @@ const photoFallback = v.object({
   image: v.string(),
   imageAlt: v.string(),
 });
+const dishImage = v.object({
+  storageId: v.id("_storage"),
+  blurhash: v.optional(v.string()),
+  width: v.optional(v.number()),
+  height: v.optional(v.number()),
+  aspectRatio: v.optional(v.number()),
+});
+/** Marker für Foto-Scan-Rezepte (zählt wie bei recipes.create als photo_scans). */
+const AI_SCAN_SOURCE = "__AI_SCAN__";
+
+/** Maße des KI-Bildes stehen in seiner URL (…?width=1024&height=1024): kein Download nötig. */
+function imageSizeFromUrl(image: string | undefined) {
+  if (!image) return {};
+  try {
+    const params = new URL(image).searchParams;
+    const width = Number(params.get("width"));
+    const height = Number(params.get("height"));
+    if (!(width > 0 && height > 0)) return {};
+    return { imageWidth: width, imageHeight: height, imageAspectRatio: width / height };
+  } catch {
+    return {};
+  }
+}
+/** Ein Rezept aus bis zu 3 Fotos (z. B. Zutaten- und Zubereitungsseite): 1 Hauptseite + 2 weitere. */
+const MAX_EXTRA_PHOTO_PAGES = 2;
 const ACTIVE_TTL_MS = 15 * 60_000;
 const RESULT_TTL_MS = 24 * 60 * 60_000;
 
@@ -159,7 +185,13 @@ export const startImport = mutation({
     provider,
     url: v.optional(v.string()),
     sourceAssetId: v.optional(v.id("_storage")),
+    /** Weitere Seiten desselben Rezepts (nur photo_scan), in Lesereihenfolge nach sourceAssetId. */
+    extraAssetIds: v.optional(v.array(v.id("_storage"))),
     input: v.optional(photoFallback),
+    /** Nur photo_scan: Rezept direkt auf dem Server anlegen, auch wenn die App inzwischen geschlossen ist. */
+    saveRecipe: v.optional(v.boolean()),
+    /** Nur mit saveRecipe: hochgeladenes Gerichtsfoto (purpose recipe_image) als Rezeptbild. */
+    dishImage: v.optional(dishImage),
     runImmediately: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -183,11 +215,28 @@ export const startImport = mutation({
     if (sourceUrl && args.provider !== "photo_scan" && !supportsProvider(args.provider, sourceUrl)) {
       throw new Error("INVALID_IMPORT_URL");
     }
+    const extraAssetIds = args.extraAssetIds ?? [];
+    if (extraAssetIds.length && feature !== "photo_scans") throw new Error("PHOTO_PAGES_ONLY_FOR_SCAN");
+    if (extraAssetIds.length > MAX_EXTRA_PHOTO_PAGES) throw new Error("TOO_MANY_PHOTO_PAGES");
     if (feature === "photo_scans") {
-      const asset = await ctx.db.query("storageAssets")
-        .withIndex("by_storageId", (q) => q.eq("storageId", args.sourceAssetId!))
+      const pages = [args.sourceAssetId!, ...extraAssetIds];
+      if (new Set(pages).size !== pages.length) throw new Error("DUPLICATE_PHOTO_PAGE");
+      for (const storageId of pages) {
+        const asset = await ctx.db.query("storageAssets")
+          .withIndex("by_storageId", (q) => q.eq("storageId", storageId))
+          .first();
+        if (!asset || asset.userId !== userId || asset.purpose !== "photo_scan" || asset.state !== "pending") {
+          throw new Error("STORAGE_NOT_OWNED");
+        }
+      }
+    }
+    if ((args.saveRecipe || args.dishImage) && feature !== "photo_scans") throw new Error("PHOTO_SAVE_ONLY_FOR_SCAN");
+    if (args.dishImage) {
+      if (!args.saveRecipe) throw new Error("DISH_IMAGE_REQUIRES_SAVE");
+      const dish = await ctx.db.query("storageAssets")
+        .withIndex("by_storageId", (q) => q.eq("storageId", args.dishImage!.storageId))
         .first();
-      if (!asset || asset.userId !== userId || asset.purpose !== "photo_scan" || asset.state !== "pending") {
+      if (!dish || dish.userId !== userId || dish.purpose !== "recipe_image" || dish.state !== "pending") {
         throw new Error("STORAGE_NOT_OWNED");
       }
     }
@@ -240,6 +289,9 @@ export const startImport = mutation({
       canonicalUrlHash,
       sourceUrl,
       sourceAssetId: args.sourceAssetId,
+      extraSourceAssetIds: extraAssetIds.length ? extraAssetIds : undefined,
+      saveRecipe: args.saveRecipe || undefined,
+      dishImage: args.dishImage,
       input: args.input,
       status: "reserved",
       createdAt: now,
@@ -404,12 +456,54 @@ export const completePhoto = internalMutation({
     if (!user) throw new Error("NOT_AUTHENTICATED");
     await incrementUsage(ctx, user, "photo_scans");
     const now = Date.now();
+
+    if (operation.saveRecipe) {
+      // Rezept direkt anlegen: Der Scan geht nicht verloren, wenn die App währenddessen geschlossen wird.
+      const doc = args.resultDraft;
+      const dish = operation.dishImage;
+      const recipeId = await insertRecipe(ctx, args.userId, {
+        title: doc.title,
+        category: doc.category,
+        prepTimeMinutes: doc.prepTimeMinutes,
+        difficulty: doc.difficulty,
+        portions: doc.portions,
+        ingredients: doc.ingredients,
+        instructions: doc.instructions,
+        // Mit Gerichtsfoto ist das echte Foto das Rezeptbild, sonst das KI-Bild.
+        image: dish ? undefined : doc.image,
+        imageAlt: doc.imageAlt || doc.title,
+        ...(dish
+          ? { imageStorageId: dish.storageId, imageBlurhash: dish.blurhash, imageWidth: dish.width, imageHeight: dish.height, imageAspectRatio: dish.aspectRatio }
+          : imageSizeFromUrl(doc.image)),
+        sourceImageUrl: AI_SCAN_SOURCE,
+        importOperationId: operation.operationId,
+        isFavorite: false,
+      });
+      await adjustCategoryCount(ctx, doc.category, 1, args.userId);
+      await ensureCategoryExists(ctx, doc.category, args.userId);
+      await ctx.db.patch(operation._id, {
+        status: "succeeded",
+        resultRecipeId: recipeId,
+        input: undefined,
+        sourceAssetId: undefined,
+        extraSourceAssetIds: undefined,
+        dishImage: undefined,
+        committedAt: now,
+        updatedAt: now,
+        expiresAt: now + RESULT_TTL_MS,
+      });
+      await ctx.db.patch(user._id, { lastImportAt: now, updatedAt: now });
+      await trackImport(ctx, user, operation, "import_succeeded", { recipeId: String(recipeId), recipeCreated: true });
+      return;
+    }
+
     await ctx.db.patch(operation._id, {
       status: "succeeded",
       resultDraft: args.resultDraft,
       input: undefined,
       sourceUrl: undefined,
       sourceAssetId: undefined,
+      extraSourceAssetIds: undefined,
       committedAt: now,
       updatedAt: now,
       expiresAt: now + RESULT_TTL_MS,
@@ -427,7 +521,9 @@ export const fail = internalMutation({
       .unique();
     if (!operation || operation.status === "succeeded") return;
     const now = Date.now();
-    await ctx.db.patch(operation._id, { status: "failed", errorCode: args.errorCode, input: undefined, sourceUrl: undefined, sourceAssetId: undefined, updatedAt: now, expiresAt: now + RESULT_TTL_MS });
+    // Nicht verwendetes Gerichtsfoto sofort freigeben statt erst über den Aufräum-Cron.
+    if (operation.dishImage) await deleteTrackedAsset(ctx, args.userId, operation.dishImage.storageId).catch(() => undefined);
+    await ctx.db.patch(operation._id, { status: "failed", errorCode: args.errorCode, input: undefined, sourceUrl: undefined, sourceAssetId: undefined, extraSourceAssetIds: undefined, dishImage: undefined, updatedAt: now, expiresAt: now + RESULT_TTL_MS });
     const user = await ctx.db.get(args.userId);
     if (user) await trackImport(ctx, user, operation, "import_failed", { errorCode: args.errorCode });
   },
@@ -443,6 +539,7 @@ export const runImport = internalAction({
         const result = await ctx.runAction(internal.photoScan.scanRecipePhotoInternal, {
           userId: args.userId,
           storageId: operation.sourceAssetId!,
+          extraStorageIds: operation.extraSourceAssetIds,
           fallback: operation.input,
         });
         await ctx.runMutation(internal.importOperations.completePhoto, { ...args, resultDraft: result.doc });
@@ -475,7 +572,7 @@ export const cleanupExpired = internalMutation({
       for (const operation of operations) {
         if (status === "running" && operation.updatedAt > now - ACTIVE_TTL_MS) continue;
         if (["succeeded", "failed", "released"].includes(status)) await ctx.db.delete(operation._id);
-        else await ctx.db.patch(operation._id, { status: "released", input: undefined, sourceUrl: undefined, sourceAssetId: undefined, errorCode: "IMPORT_EXPIRED", updatedAt: now });
+        else await ctx.db.patch(operation._id, { status: "released", input: undefined, sourceUrl: undefined, sourceAssetId: undefined, extraSourceAssetIds: undefined, dishImage: undefined, errorCode: "IMPORT_EXPIRED", updatedAt: now });
         cleaned++;
       }
     }

@@ -1,6 +1,8 @@
 /** @type {import('tailwindcss').Config} */
 import forms from '@tailwindcss/forms';
 import containerQueries from '@tailwindcss/container-queries';
+// animate-in/fade-in/zoom-in-95/slide-in-from-*: Die App nutzt diese Klassen; ohne Plugin liefen sie ohne Dauer (sofort).
+import animate from 'tailwindcss-animate';
 
 export default {
   content: [
@@ -125,5 +127,6 @@ export default {
   plugins: [
     forms({ strategy: 'class' }),
     containerQueries,
+    animate,
   ],
 }

@@ -19,7 +19,7 @@ const VISIBLE_NAV_PREFIXES = [
   '/category/',
 ];
 
-const shouldShowNav = (pathname: string): boolean => {
+export const shouldShowNav = (pathname: string): boolean => {
   return VISIBLE_NAV_PREFIXES.some(prefix => pathname.startsWith(prefix));
 };
 

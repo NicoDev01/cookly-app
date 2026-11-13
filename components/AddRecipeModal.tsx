@@ -1,12 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useMutation, useQuery, useAction, useConvex } from "convex/react";
+import { useMutation, useQuery, useAction } from "convex/react";
+import { X } from 'lucide-react';
 import { api } from "../convex/_generated/api";
 import { Recipe } from '../types';
 import { Id } from "../convex/_generated/dataModel";
-import { useNavigate } from 'react-router-dom';
 import { sanitizeInstructionsIcons } from '../utils/iconUtils';
-import { AiScanPanel } from './addRecipeModal/AiScan.tsx';
 import {
   compressImage,
   uploadJpegToConvexStorage,
@@ -15,20 +14,22 @@ import {
   type ImageDimensions,
 } from './addRecipeModal/recipeImage';
 import { encodeImageToBlurhash } from '../utils/blurhash';
-import { getAiScanErrorMessage } from '../utils/geminiRetry';
 import { getUserErrorMessage } from '../utils/userErrors';
 import ManualRecipeForm, { type ManualFormData } from './addRecipeModal/ManualRecipeForm';
 import UpgradeModal from './UpgradeModal';
 import { useModal } from '../contexts/ModalContext';
 import { logger } from '../utils/logger';
-import { waitForImport } from '../utils/importOperationClient';
 import { createUuid } from '../utils/uuid';
 import { capture, withCorrelation } from '../services/analytics';
 import { createRecipeFormData, PLACEHOLDER_RECIPE_IMAGE } from './addRecipeModal/recipeForm';
+import { prefersReducedMotion, SHEET_OUT_MS } from './addRecipe/motion';
 
 interface AddRecipeModalProps {
   isOpen: boolean;
+  /** Nach dem Speichern (und ohne `onCancel` auch beim Abbrechen). */
   onClose: () => void;
+  /** Abbrechen/Schließen ohne Speichern, z. B. zurück zur Auswahl im Plus-Sheet. */
+  onCancel?: () => void;
   initialData?: Recipe | null; // Optional: Wenn gesetzt, sind wir im Edit-Mode
 }
 
@@ -40,49 +41,26 @@ const getErrorMessage = (err: unknown): string => {
   return String(err);
 };
 
-const parseStructuredError = (err: unknown): {
-  type?: string;
-  feature?: UpgradeFeature;
-  current?: number;
-  limit?: number;
-  message?: string;
-} | null => {
-  const message = getErrorMessage(err);
-  const start = message.indexOf('{');
-  const end = message.lastIndexOf('}');
-  if (start < 0 || end <= start) return null;
-
-  try {
-    return JSON.parse(message.slice(start, end + 1));
-  } catch {
-    return null;
-  }
-};
-
-const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initialData }) => {
-  const { addModalImportUrl, addModalInitialTab } = useModal();
-  const navigate = useNavigate();
-  const convex = useConvex();
+/**
+ * Rezept selbst schreiben oder bearbeiten (Foto-Scan und Link-Import laufen über components/addRecipe/AddRecipeSheet.tsx).
+ * Vollbild auf grauem App-Hintergrund, Felder in weißen Karten (components/addRecipeModal/ManualRecipeForm.tsx).
+ */
+const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, onCancel, initialData }) => {
+  const { addModalImportUrl } = useModal();
   const createRecipe = useMutation(api.recipes.create);
   const updateRecipe = useMutation(api.recipes.updateRecipe);
   const generateImageUploadUrl = useMutation(api.storageAssets.generateUploadUrl);
   const registerUploadedAsset = useMutation(api.storageAssets.registerUploadedAsset);
   const releasePendingAsset = useMutation(api.storageAssets.releasePendingAsset);
   const generateAndStoreAiImage = useAction(api.remoteImages.generateAndStoreAiImage);
-  const startImport = useMutation(api.importOperations.startImport);
   const categoryStats = useQuery(api.recipes.getCategories);
   const existingCategories = categoryStats?.categories?.map(c => c.name) || [];
-
-  useEffect(() => {
-    if (isOpen && !initialData) capture('first_action_started', { entryPoint: 'add_recipe' });
-  }, [isOpen, initialData]);
 
   // ============================================================
   // NEU: Proaktive Limit Checks
   // ============================================================
-  const canCreateManual = useQuery(api.users.canCreateManualRecipe);
-  const canImportLink = useQuery(api.users.canImportFromLink);
-  const canScanPhoto = useQuery(api.users.canScanPhoto);
+  const canCreateManual = useQuery(api.users.canCreateManualRecipe, initialData || addModalImportUrl ? 'skip' : {});
+  const canImportLink = useQuery(api.users.canImportFromLink, !initialData && addModalImportUrl ? {} : 'skip');
 
   const [showUpgradeModal, setShowUpgradeModal] = useState<{
     isOpen: boolean;
@@ -96,28 +74,11 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
     limit: 60,
   });
 
-  const [activeTab, setActiveTab] = useState<'ai' | 'manual'>('ai');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [photoImportOperationId, setPhotoImportOperationId] = useState<string | null>(null);
-
-  // AI Analysis Progress States
-  const [analysisStage, setAnalysisStage] = useState<'idle' | 'uploading' | 'analyzing' | 'retrying' | 'processing' | 'complete'>('idle');
-  const [analysisProgress, setAnalysisProgress] = useState(0);
-
   const [isUploadingRecipeImage, setIsUploadingRecipeImage] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isNewCategoryMode, setIsNewCategoryMode] = useState(false);
-  const [editAfterScan, setEditAfterScan] = useState(true);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const recipeImageInputRef = useRef<HTMLInputElement>(null);
-
-  const [isBulkAnalyzing, setIsBulkAnalyzing] = useState(false);
-  const [bulkTotal, setBulkTotal] = useState(0);
-  const [bulkProcessed, setBulkProcessed] = useState(0);
-  const [bulkErrors, setBulkErrors] = useState(0);
-  const cancelBulkRef = useRef(false);
-  const aiScanInFlightRef = useRef(false);
 
   const [isImageActionMenuOpen, setIsImageActionMenuOpen] = useState(false);
   const imageActionMenuRef = useRef<HTMLDivElement>(null);
@@ -142,12 +103,22 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
     aspectRatio?: number;
   } | null>(null);
 
+  // Ausblenden nach Abbrechen/Speichern: Formular gleitet nach unten, danach erst schließen.
+  const [closing, setClosing] = useState(false);
+  const closingRef = useRef(false);
+  const exitWith = (done: () => void) => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setClosing(true);
+    window.setTimeout(done, prefersReducedMotion() ? 0 : SHEET_OUT_MS);
+  };
+
   const handleClose = () => {
     if (recipeImageStorageId && recipeImageStorageId !== originalImageData?.storageId) {
       void releasePendingAsset({ storageId: recipeImageStorageId });
     }
     if (recipeImagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(recipeImagePreviewUrl);
-    onClose();
+    exitWith(onCancel ?? onClose);
   };
 
   useEffect(() => {
@@ -176,7 +147,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
   };
 
   const handleGenerateAiImage = async () => {
-    if (isUploadingRecipeImage || isSaving || isAnalyzing) return;
+    if (isUploadingRecipeImage || isSaving) return;
 
     setIsGeneratingAiImage(true);
     setAiImageGenerationStage('requesting');
@@ -281,326 +252,21 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         aspectRatio: initialData.imageAspectRatio,
       });
       setImageChanged(false);
-      setActiveTab('manual');
     } else {
       // Reset für "Neues Rezept"
       setFormData(createRecipeFormData(null, addModalImportUrl || ''));
       setRecipeImageStorageId(null);
-      setPhotoImportOperationId(null);
       setRecipeImagePreviewUrl(null);
       setRecipeImageBlurhash(null);
       setAiImageGenerationStage('idle');
       setRecipeImageMeta(null);
       setPendingImageBlob(null);
-      // If we have an import URL, switch to manual tab where the URL input is visible
-      // Otherwise use initialTab if provided, default to 'ai'
-      if (addModalImportUrl) {
-        setActiveTab('manual');
-      } else if (addModalInitialTab) {
-        setActiveTab(addModalInitialTab);
-      } else {
-        setActiveTab('ai');
-      }
-      setEditAfterScan(true);
-
       setImageChanged(false);
       setOriginalImageData(null);
-
-      setIsBulkAnalyzing(false);
-      setBulkTotal(0);
-      setBulkProcessed(0);
-      setBulkErrors(0);
-      cancelBulkRef.current = false;
     }
-  }, [initialData, isOpen, addModalImportUrl, addModalInitialTab]);
+  }, [initialData, isOpen, addModalImportUrl]);
 
   if (!isOpen) return null;
-
-  // --- KI LOGIK ---
-
-  const getAiScanFallback = () => ({
-    title: formData.title,
-    category: formData.category,
-    prepTimeMinutes: formData.prepTimeMinutes,
-    difficulty: formData.difficulty,
-    portions: formData.portions,
-    image: formData.image,
-    imageAlt: formData.imageAlt,
-  });
-
-  const uploadPhotoForScan = async (file: File): Promise<Id<"_storage">> => {
-    const compressed = await compressImage(file, 2048, 0.9, 'image/jpeg');
-    const uploadUrl = await generateImageUploadUrl({ purpose: 'photo_scan' });
-    const json = await uploadJpegToConvexStorage(uploadUrl, compressed);
-    const storageId = json.storageId as Id<"_storage">;
-    await registerUploadedAsset({ storageId, purpose: 'photo_scan' });
-    return storageId;
-  };
-
-  const scanPhoto = async (storageId: Id<"_storage">) => {
-    const operationId = createUuid();
-    const started = await startImport({
-      operationId,
-      provider: 'photo_scan',
-      sourceAssetId: storageId,
-      input: getAiScanFallback(),
-    });
-    const operation = await waitForImport(convex, started.operationId);
-    if (!operation.resultDraft) throw new Error('IMPORT_RESULT_MISSING');
-    return { operationId: started.operationId, doc: operation.resultDraft as ManualFormData };
-  };
-
-  const handleAiScanFailure = (err: unknown) => {
-    const errorData = parseStructuredError(err);
-
-    if (
-      errorData?.type === "LIMIT_REACHED" &&
-      errorData.feature &&
-      typeof errorData.current === "number" &&
-      typeof errorData.limit === "number"
-    ) {
-      setShowUpgradeModal({
-        isOpen: true,
-        feature: errorData.feature,
-        current: errorData.current,
-        limit: errorData.limit,
-      });
-      return;
-    }
-
-    if (errorData?.type === "RATE_LIMIT_EXCEEDED") {
-      setError("Zu viele Foto-Scans. Bitte warte einen Moment.");
-      return;
-    }
-
-    setError(getAiScanErrorMessage(err));
-  };
-
-  const handleSingleImageUpload = async (file: File) => {
-    setIsAnalyzing(true);
-    setAnalysisStage('uploading');
-    setAnalysisProgress(10);
-    setError(null);
-    let progressInterval: ReturnType<typeof setInterval> | undefined;
-
-    try {
-      // Phase 1: Upload preparation
-      const storageId = await uploadPhotoForScan(file);
-      setAnalysisProgress(20);
-
-      // Phase 2: Prepare AI analysis
-      setAnalysisStage('analyzing');
-      setAnalysisProgress(30);
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      // Phase 3: Analyze with progress simulation
-      setAnalysisProgress(50);
-
-      progressInterval = setInterval(() => {
-        setAnalysisProgress(prev => {
-          if (prev < 80) return prev + 5;
-          return prev;
-        });
-      }, 500);
-
-      const { doc, operationId } = await scanPhoto(storageId);
-      setPhotoImportOperationId(operationId);
-
-      clearInterval(progressInterval);
-      progressInterval = undefined;
-      setAnalysisStage('processing');
-      setAnalysisProgress(90);
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      setFormData((prev) => ({
-        ...prev,
-        // WICHTIG: Marker-Wert statt base64 verwenden
-        // base64 würde in sanitizeSourceImageUrlForSave ausgefiltert werden
-        // Der Marker signalisiert recipes.ts, dass es ein Foto-Scan ist (photo_scans Counter)
-        ...doc,
-        sourceImageUrl: '__AI_SCAN__',
-      }));
-      setImageChanged(!!doc.image);
-      if (doc.image) {
-        getImageDimensionsFromUrl(doc.image)
-          .then((meta) => setRecipeImageMeta(meta))
-          .catch((e) => {
-            logger.warn('AddRecipe', 'Could not read AI-scan preview dimensions', e);
-            setRecipeImageMeta(null);
-          });
-      } else {
-        setRecipeImageMeta(null);
-      }
-
-      setAnalysisStage('complete');
-      setAnalysisProgress(100);
-
-      if (editAfterScan) {
-        setActiveTab('manual');
-        setAnalysisStage('idle');
-        setAnalysisProgress(0);
-        return;
-      }
-
-      setIsSaving(true);
-      try {
-        let aiImageMeta: ImageDimensions | undefined;
-        if (doc.image) {
-          try {
-            aiImageMeta = await getImageDimensionsFromUrl(doc.image);
-          } catch (e) {
-            logger.warn('AddRecipe', 'Could not read AI-scan image dimensions', e);
-          }
-        }
-
-        const id = await createRecipe({
-          ...formData,
-          ...doc,
-          imageStorageId: undefined,
-          imageWidth: aiImageMeta?.width,
-          imageHeight: aiImageMeta?.height,
-          imageAspectRatio: aiImageMeta?.aspectRatio,
-          // WICHTIG: Der Marker signalisiert recipes.ts, dass es ein Foto-Scan ist.
-          sourceImageUrl: '__AI_SCAN__',
-          importOperationId: operationId,
-          isFavorite: false,
-        });
-        onClose();
-        navigate(`/recipe/${id}`);
-      } finally {
-        setIsSaving(false);
-        setAnalysisStage('idle');
-        setAnalysisProgress(0);
-      }
-    } catch (err: unknown) {
-      logger.error('AddRecipe', 'AI scan failed', err);
-      handleAiScanFailure(err);
-      setAnalysisStage('idle');
-      setAnalysisProgress(0);
-    } finally {
-      if (progressInterval) clearInterval(progressInterval);
-      setIsAnalyzing(false);
-    }
-  };
-
-  const handleBulkImageUpload = async (files: File[]) => {
-    setError(null);
-    setIsBulkAnalyzing(true);
-    setBulkTotal(files.length);
-    setBulkProcessed(0);
-    setBulkErrors(0);
-    cancelBulkRef.current = false;
-
-    try {
-      // Shared state for concurrent processing
-      const createdIds: Id<"recipes">[] = [];
-      let errorCount = 0;
-
-      const processFile = async (file: File) => {
-        if (cancelBulkRef.current) return;
-        try {
-          // 1. Upload compressed image and start server-side analysis
-          const storageId = await uploadPhotoForScan(file);
-          const { doc, operationId } = await scanPhoto(storageId);
-
-          if (cancelBulkRef.current) return;
-
-          let aiImageMeta: ImageDimensions | undefined;
-          if (doc.image) {
-            try {
-              aiImageMeta = await getImageDimensionsFromUrl(doc.image);
-            } catch (e) {
-              logger.warn('AddRecipe', 'Could not read bulk AI image dimensions', e);
-            }
-          }
-
-          // 2. Create Recipe
-          const id = await createRecipe({
-            title: doc.title,
-            category: doc.category,
-            image: doc.image,
-            imageStorageId: undefined,
-            imageBlurhash: undefined,
-            imageWidth: aiImageMeta?.width,
-            imageHeight: aiImageMeta?.height,
-            imageAspectRatio: aiImageMeta?.aspectRatio,
-            imageAlt: doc.imageAlt,
-            // WICHTIG: Marker-Wert statt base64 verwenden (base64 würde ausgefiltert)
-            sourceImageUrl: '__AI_SCAN__',
-            importOperationId: operationId,
-            prepTimeMinutes: doc.prepTimeMinutes,
-            difficulty: doc.difficulty,
-            portions: doc.portions,
-            isFavorite: false,
-            ingredients: doc.ingredients,
-            instructions: doc.instructions,
-          });
-
-          createdIds.push(id);
-        } catch (err) {
-          logger.error('AddRecipe', 'Bulk AI processing failed', err);
-          handleAiScanFailure(err);
-          errorCount++;
-          setBulkErrors(errorCount);
-        } finally {
-          setBulkProcessed((p) => p + 1);
-        }
-      };
-
-      for (const file of files) {
-        if (cancelBulkRef.current) break;
-        await processFile(file);
-      }
-
-      if (cancelBulkRef.current) {
-        return;
-      }
-
-      if (createdIds.length === 0) {
-        setError('Bulk-Upload abgeschlossen, aber es konnte kein Rezept erstellt werden.');
-        return;
-      }
-
-      const lastId = createdIds[createdIds.length - 1];
-      const msg = errorCount > 0
-        ? `Fertig! ${createdIds.length} von ${files.length} Rezepten wurden erstellt (${errorCount} Fehler).`
-        : `Perfekt! ${createdIds.length} Rezepte wurden erstellt.`;
-
-      onClose();
-      navigate(`/recipe/${lastId}`, {
-        state: {
-          flash: { message: msg, tone: errorCount > 0 ? 'info' : 'success' },
-        },
-      });
-    } finally {
-      setIsBulkAnalyzing(false);
-    }
-  };
-
-  const handleAiFileSelection = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const input = e.currentTarget;
-    if (aiScanInFlightRef.current || isBusy) {
-      input.value = '';
-      return;
-    }
-
-    const files: File[] = e.target.files ? Array.from(e.target.files) : [];
-    if (files.length === 0) return;
-
-    aiScanInFlightRef.current = true;
-    try {
-      if (files.length === 1) {
-        await handleSingleImageUpload(files[0]);
-        return;
-      }
-      await handleBulkImageUpload(files);
-    } finally {
-      aiScanInFlightRef.current = false;
-      input.value = '';
-    }
-  };
-
-  const isBusy = isAnalyzing || isSaving || isUploadingRecipeImage || isGeneratingAiImage || isBulkAnalyzing;
 
   const handleRecipeImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -718,10 +384,10 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
   const handleSave = async () => {
     setIsSaving(true);
     setError(null);
-    const correlationId = withCorrelation(photoImportOperationId ?? createUuid());
+    const correlationId = withCorrelation(createUuid());
     capture(initialData ? 'recipe_edited' : 'recipe_create_started', {
       correlationId,
-      source: addModalImportUrl ? 'link' : activeTab === 'ai' ? 'photo_scan' : 'manual',
+      source: addModalImportUrl ? 'link' : 'manual',
     });
 
     try {
@@ -735,9 +401,6 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
         if (addModalImportUrl) {
           // URL Import (z.B. Share Target, Instagram, Website)
           limitCheck = canImportLink;
-        } else if (activeTab === 'ai') {
-          // KI Foto-Scan (activeTab bestimmt den Typ, nicht sourceImageUrl)
-          limitCheck = canScanPhoto;
         } else {
           // Manuelles Rezept (keine URL, kein Foto-Scan)
           limitCheck = canCreateManual;
@@ -853,12 +516,11 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
           imageHeight: imageMetaToSave?.height,
           imageAspectRatio: imageMetaToSave?.aspectRatio,
           sourceImageUrl,
-          importOperationId: photoImportOperationId ?? undefined,
           isFavorite: false,
         });
         capture('recipe_saved', {
           correlationId,
-          source: addModalImportUrl ? 'link' : activeTab === 'ai' ? 'photo_scan' : 'manual',
+          source: addModalImportUrl ? 'link' : 'manual',
           category: formData.category,
         });
       }
@@ -866,7 +528,7 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
       if (recipeImagePreviewUrl && recipeImagePreviewUrl.startsWith('blob:')) {
         URL.revokeObjectURL(recipeImagePreviewUrl);
       }
-      onClose();
+      exitWith(onClose);
     } catch (err: unknown) {
       capture('recipe_create_failed', { correlationId, errorCode: 'SAVE_FAILED' });
       // ============================================================
@@ -919,130 +581,85 @@ const AddRecipeModal: React.FC<AddRecipeModalProps> = ({ isOpen, onClose, initia
     }
   };
 
-  // An body gehängt: In der Rezeptseite läge das Modal sonst in einem Container, der selbst schon mit der
-  // Tastatur schrumpft (doppelte Verkleinerung, Felder rutschen aus dem Bild). Abdunklung vollflächig, damit
-  // an den runden Tastatur-Ecken nichts Helles durchscheint; nur der Inhalt rückt per .kb-pad über die Tastatur.
+  // An body gehängt: In der Rezeptseite läge das Formular sonst in einem Container, der selbst schon mit der
+  // Tastatur schrumpft. Nur der Inhalt rückt per .kb-pad über die Tastatur; die Fußleiste blendet .kb-hide dann aus.
   return createPortal(
     <>
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm">
-    <div className="kb-pad h-full">
     <div
-      className="flex h-full items-center justify-center p-4"
-      style={{
-        paddingTop: 'calc(var(--safe-area-inset-top, 0px) + 1rem)',
-        paddingBottom: 'calc(var(--safe-area-inset-bottom, 0px) + 1rem)',
-      }}
+      className={`kb-pad fixed inset-0 z-[60] flex flex-col bg-background-light font-display text-[#15241b] will-change-transform ${closing ? 'sheet-out' : 'sheet-in'}`}
+      role="dialog"
+      aria-modal="true"
+      aria-label={initialData ? 'Rezept bearbeiten' : 'Rezept schreiben'}
     >
-      <div className="bg-white dark:bg-[#1e3031] w-full max-w-2xl rounded-2xl shadow-2xl max-h-full flex flex-col overflow-hidden">
-
-        {/* Header */}
-        <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-white dark:bg-[#1e3031]">
-          <h2 className="text-xl font-bold text-gray-800 dark:text-white">
-            {initialData ? 'Rezept bearbeiten' : 'Neues Rezept'}
+      <div className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col">
+        <header className="flex flex-none items-center gap-3 px-4 pb-3" style={{ paddingTop: 'calc(var(--safe-area-inset-top, 0px) + 0.75rem)' }}>
+          <h2 className="flex-1 text-[22px] font-extrabold tracking-[-0.015em]">
+            {initialData ? 'Rezept bearbeiten' : 'Rezept schreiben'}
           </h2>
           <button
-            onClick={() => {
-              cancelBulkRef.current = true;
-              handleClose();
-            }}
-            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
+            type="button"
+            onClick={handleClose}
+            aria-label="Schließen"
+            className="flex size-10 items-center justify-center rounded-full bg-white shadow-sm active:scale-95"
           >
-            <span className="material-symbols-outlined">close</span>
+            <X size={20} />
           </button>
-        </div>
+        </header>
 
-        {/* Tabs (nur bei neuem Rezept sinnvoll, aber wir lassen es der Konsistenz halber) */}
-        {!initialData && (
-          <div className="kb-hide flex border-b border-gray-200 dark:border-gray-800">
-            <button
-              onClick={() => setActiveTab('ai')}
-              className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab === 'ai' ? 'text-primary border-b-2 border-primary' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5'}`}
-            >
-              ✨ KI-Scan
-            </button>
-            <button
-              onClick={() => setActiveTab('manual')}
-              className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab === 'manual' ? 'text-primary border-b-2 border-primary' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5'}`}
-            >
-              ✍️ Manuell
-            </button>
-          </div>
-        )}
-
-        {/* Content Scrollable */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6">
           {error && (
-            <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">
+            <div className="mb-3 rounded-2xl bg-[#fdecea] px-4 py-3 text-[14px] font-medium text-[#b4472c]" role="alert">
               {error}
             </div>
           )}
 
-          {activeTab === 'ai' && !initialData ? (
-            <AiScanPanel
-              editAfterScan={editAfterScan}
-              setEditAfterScan={setEditAfterScan}
-              isBusy={isBusy}
-              isBulkAnalyzing={isBulkAnalyzing}
-              bulkTotal={bulkTotal}
-              bulkProcessed={bulkProcessed}
-              bulkErrors={bulkErrors}
-              isAnalyzing={isAnalyzing}
-              analysisStage={analysisStage}
-              analysisProgress={analysisProgress}
-              sourceImageUrl={formData.sourceImageUrl}
-              fileInputRef={fileInputRef}
-              onFileChange={handleAiFileSelection}
-            />
-          ) : (
-            <ManualRecipeForm
-              formData={formData}
-              setFormData={setFormData}
-              existingCategories={existingCategories}
-              isNewCategoryMode={isNewCategoryMode}
-              setIsNewCategoryMode={setIsNewCategoryMode}
-              recipeImagePreviewUrl={recipeImagePreviewUrl}
-              recipeImageStorageId={recipeImageStorageId}
-              recipeImageInputRef={recipeImageInputRef}
-              isImageActionMenuOpen={isImageActionMenuOpen}
-              setIsImageActionMenuOpen={setIsImageActionMenuOpen}
-              imageActionMenuRef={imageActionMenuRef}
-              openRecipeImagePicker={openRecipeImagePicker}
-              handleGenerateAiImage={() => { void handleGenerateAiImage(); }}
-              handleRecipeImageSelect={handleRecipeImageSelect}
-              isUploadingRecipeImage={isUploadingRecipeImage}
-              isGeneratingAiImage={isGeneratingAiImage}
-              aiImageGenerationStage={aiImageGenerationStage}
-              isSaving={isSaving}
-              isAnalyzing={isAnalyzing}
-              isImageEditorOpen={isImageEditorOpen}
-              setIsImageEditorOpen={setIsImageEditorOpen}
-              handleImageEditorApply={handleImageEditorApply}
-              handleImageEditorCancel={handleImageEditorCancel}
-            />
-          )}
+          <ManualRecipeForm
+            formData={formData}
+            setFormData={setFormData}
+            existingCategories={existingCategories}
+            isNewCategoryMode={isNewCategoryMode}
+            setIsNewCategoryMode={setIsNewCategoryMode}
+            recipeImagePreviewUrl={recipeImagePreviewUrl}
+            recipeImageStorageId={recipeImageStorageId}
+            recipeImageInputRef={recipeImageInputRef}
+            isImageActionMenuOpen={isImageActionMenuOpen}
+            setIsImageActionMenuOpen={setIsImageActionMenuOpen}
+            imageActionMenuRef={imageActionMenuRef}
+            openRecipeImagePicker={openRecipeImagePicker}
+            handleGenerateAiImage={() => { void handleGenerateAiImage(); }}
+            handleRecipeImageSelect={handleRecipeImageSelect}
+            isUploadingRecipeImage={isUploadingRecipeImage}
+            isGeneratingAiImage={isGeneratingAiImage}
+            aiImageGenerationStage={aiImageGenerationStage}
+            isSaving={isSaving}
+            isImageEditorOpen={isImageEditorOpen}
+            setIsImageEditorOpen={setIsImageEditorOpen}
+            handleImageEditorApply={handleImageEditorApply}
+            handleImageEditorCancel={handleImageEditorCancel}
+          />
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-800 flex justify-end gap-3">
+        <footer
+          className="kb-hide flex flex-none gap-3 border-t border-black/[0.05] bg-white px-4 pt-3"
+          style={{ paddingBottom: 'calc(var(--safe-area-inset-bottom, 0px) + 0.75rem)' }}
+        >
           <button
+            type="button"
             onClick={handleClose}
-            className="px-4 py-2 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-white/5 rounded-lg"
+            className="h-12 flex-1 rounded-full bg-background-light text-[15px] font-bold active:scale-[0.98]"
           >
             Abbrechen
           </button>
           <button
+            type="button"
             onClick={handleSave}
-            disabled={isSaving || isAnalyzing || isUploadingRecipeImage || !formData.title}
-            className="px-6 py-2 bg-primary text-white font-bold rounded-lg shadow-neomorphism-outset hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isSaving || isUploadingRecipeImage || isGeneratingAiImage || !formData.title.trim()}
+            className="h-12 flex-[1.4] rounded-full bg-[#2f5d46] text-[15px] font-bold text-white transition-colors active:scale-[0.98] disabled:bg-[#a9c2b3]"
           >
-            {isSaving ? 'Speichere...' : (initialData ? 'Änderungen speichern' : 'Rezept speichern')}
+            {isSaving ? 'Speichere …' : (initialData ? 'Änderungen speichern' : 'Rezept speichern')}
           </button>
-        </div>
-
+        </footer>
       </div>
-    </div>
-    </div>
     </div>
 
     {/* ============================================================

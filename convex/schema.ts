@@ -225,6 +225,18 @@ export default defineSchema({
     canonicalUrlHash: v.optional(v.string()),
     sourceUrl: v.optional(v.string()),
     sourceAssetId: v.optional(v.id("_storage")),
+    // Foto-Scan über mehrere Seiten eines Rezepts: weitere Seiten nach sourceAssetId, in Reihenfolge.
+    extraSourceAssetIds: v.optional(v.array(v.id("_storage"))),
+    // Foto-Scan: Server legt das Rezept selbst an (neue Clients); alte Clients speichern den Entwurf selbst.
+    saveRecipe: v.optional(v.boolean()),
+    // Foto vom fertigen Gericht als Rezeptbild (nur mit saveRecipe), bis zum Speichern ein pending Asset.
+    dishImage: v.optional(v.object({
+      storageId: v.id("_storage"),
+      blurhash: v.optional(v.string()),
+      width: v.optional(v.number()),
+      height: v.optional(v.number()),
+      aspectRatio: v.optional(v.number()),
+    })),
     input: v.optional(v.any()),
     status: v.union(
       v.literal("reserved"),

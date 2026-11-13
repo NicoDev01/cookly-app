@@ -37,7 +37,7 @@ import {
 const SCRAPE_PHASE_BUDGET_MS = 95_000;
 
 test("ein Folgeversuch startet nur, wenn er ins Client-Timeout passt", () => {
-  // waitForImport pollt 150 s. Sprengt die Scraping-Phase das, sieht der Nutzer einen
+  // waitForImport wartet 150 s. Sprengt die Scraping-Phase das, sieht der Nutzer einen
   // Timeout, obwohl der Server das Rezept noch schreibt.
   const transcriptionTimeout = 45_000;
 

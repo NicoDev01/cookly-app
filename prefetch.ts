@@ -9,7 +9,7 @@ export const prefetchWeeklyPage = () => import('./pages/WeeklyPage');
 export const prefetchShoppingPage = () => import('./pages/ShoppingPage');
 export const prefetchProfilePage = () => import('./pages/ProfilePage');
 
-export const prefetchAddRecipeModal = () => import('./components/AddRecipeModal');
+export const prefetchAddRecipeModal = () => import('./components/addRecipe/AddRecipeSheet');
 
 // Image prefetching for instant visual feedback
 const PREFETCH_IMAGE_LIMIT = 6;

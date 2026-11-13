@@ -25,15 +25,38 @@ export const AUTO_RETRY_MAX_ELAPSED_MS = 60_000;
 export const shouldAutoRetryImport = (errorType: unknown, elapsedMs: number) =>
   errorType === "API_UNAVAILABLE" && elapsedMs < AUTO_RETRY_MAX_ELAPSED_MS;
 
-export async function waitForImport(client: ConvexReactClient, operationId: string, timeoutMs = IMPORT_WAIT_TIMEOUT_MS) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const operation = await client.query(api.importOperations.get, { operationId }) as ImportOperationResult | null;
-    if (operation?.status === "succeeded") return operation;
-    if (operation?.status === "failed" || operation?.status === "released") {
-      throw new Error(JSON.stringify({ type: operation.errorCode ?? "IMPORT_FAILED" }));
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw new Error(JSON.stringify({ type: "IMPORT_TIMEOUT" }));
+/**
+ * Wartet per Abo auf das Ende des Imports: Convex schickt jede Statusänderung sofort, statt dass der
+ * Client alle 500 ms eine Abfrage startet (ein Abo statt ~30 Funktionsaufrufen pro Scan).
+ * Nach Netzabbruch oder App-Pause verbindet sich das Abo selbst neu und liefert den aktuellen Stand.
+ */
+export function waitForImport(client: ConvexReactClient, operationId: string, timeoutMs = IMPORT_WAIT_TIMEOUT_MS) {
+  return new Promise<ImportOperationResult>((resolve, reject) => {
+    const watch = client.watchQuery(api.importOperations.get, { operationId });
+    let settled = false;
+    let unsubscribe: () => void = () => undefined;
+    const finish = (settle: () => void) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      unsubscribe();
+      settle();
+    };
+    const timer = window.setTimeout(() => finish(() => reject(new Error(JSON.stringify({ type: "IMPORT_TIMEOUT" })))), timeoutMs);
+    const check = () => {
+      let operation: ImportOperationResult | null | undefined;
+      try {
+        operation = watch.localQueryResult() as ImportOperationResult | null | undefined;
+      } catch (error) {
+        finish(() => reject(error));
+        return;
+      }
+      if (operation?.status === "succeeded") finish(() => resolve(operation));
+      else if (operation?.status === "failed" || operation?.status === "released") {
+        finish(() => reject(new Error(JSON.stringify({ type: operation.errorCode ?? "IMPORT_FAILED" }))));
+      }
+    };
+    unsubscribe = watch.onUpdate(check);
+    check();
+  });
 }

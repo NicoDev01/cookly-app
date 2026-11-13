@@ -58,7 +58,7 @@ const cardClass = 'block w-full bg-card-light dark:bg-card-dark rounded-xl shado
 const softButton =
   'flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-card-light dark:bg-card-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all touch-btn text-body font-semibold';
 const sheetPanel =
-  'w-full max-w-md bg-card-light dark:bg-card-dark rounded-t-[2rem] p-6 pb-safe animate-in slide-in-from-bottom duration-400 shadow-neo-light-convex dark:shadow-neo-dark-convex';
+  'w-full max-w-md bg-card-light dark:bg-card-dark rounded-t-[2rem] p-6 pb-safe sheet-in shadow-neo-light-convex dark:shadow-neo-dark-convex';
 const sheetSecondary =
   'w-full h-14 text-lg font-bold rounded-xl bg-card-light dark:bg-card-dark shadow-neo-light-convex dark:shadow-neo-dark-convex active:shadow-neo-light-concave dark:active:shadow-neo-dark-concave transition-all text-text-primary-light dark:text-text-primary-dark';
 
@@ -160,8 +160,8 @@ const ProfileView: React.FC<Props> = ({
           </h1>
         </div>
 
-        <div className="space-y-10 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-100">
-          <div className="max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">
+        <div className="space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-300 fill-mode-backwards">
+          <div className="max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-2 duration-300 delay-75 fill-mode-backwards">
             {isPro ? (
               <div className="space-y-4">
                 {/* Abo-Stand; bei fehlgeschlagener Zahlung rot, damit niemand Pro unbemerkt verliert */}
@@ -233,7 +233,7 @@ const ProfileView: React.FC<Props> = ({
             )}
           </div>
 
-          <div className="flex flex-col items-center gap-3 max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300">
+          <div className="flex flex-col items-center gap-3 max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-2 duration-300 delay-100 fill-mode-backwards">
             <button type="button" onClick={onSignOut} className={cn(softButton, 'w-64 text-text-primary-light dark:text-text-primary-dark hover:text-primary')}>
               <span className="material-symbols-outlined">logout</span>
               Abmelden
@@ -271,7 +271,7 @@ const ProfileView: React.FC<Props> = ({
             </button>
           </div>
 
-          <div className="pt-8 pb-6 text-center animate-in fade-in slide-in-from-bottom-4 duration-500 delay-400">
+          <div className="pt-8 pb-6 text-center animate-in fade-in slide-in-from-bottom-2 duration-300 delay-150 fill-mode-backwards">
             {/* mailto: nicht über ExternalLink, das öffnet nativ den In-App-Browser. */}
             <a href={supportHref} className="text-xs font-bold text-primary active:underline underline-offset-4">
               Support kontaktieren
@@ -291,7 +291,7 @@ const ProfileView: React.FC<Props> = ({
       </div>
 
       {showCancelModal && createPortal(
-        <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/60 backdrop-blur-sm scrim-in">
           <div className={sheetPanel}>
             <div className="w-12 h-1.5 bg-text-secondary-light/30 dark:bg-text-secondary-dark/30 rounded-full mx-auto mb-6" />
             <div className="bg-destructive/10 p-4 rounded-xl w-fit mb-6 mx-auto">

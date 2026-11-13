@@ -9,6 +9,8 @@ import { useModal } from '../contexts/ModalContext';
 import { prefetchAddRecipeModal } from '../prefetch';
 import { usePreventPullDown } from '../hooks/usePreventPullDown';
 import { ModalLoader, PageLoader } from './PageLoader';
+// Direkt geladen: Der Host muss beim Start eines Foto-Scans sofort bereitstehen (kein sichtbarer Inhalt bis dahin).
+import PhotoScanHost from './addRecipe/PhotoScanHost';
 
 // Lazy load pages
 const CategoriesPage = React.lazy(() => import('../pages/CategoriesPage'));
@@ -19,7 +21,7 @@ const ProfilePage = React.lazy(() => import('../pages/ProfilePage'));
 const SubscribePage = React.lazy(() => import('../pages/SubscribePage'));
 const CategoryRecipesPage = React.lazy(() => import('../pages/CategoryRecipesPage'));
 
-const AddRecipeModal = React.lazy(() => import('./AddRecipeModal'));
+const AddRecipeSheet = React.lazy(() => import('./addRecipe/AddRecipeSheet'));
 
 const TAB_ROUTES = [
   '/tabs/categories',
@@ -156,13 +158,13 @@ export const TabsLayout: React.FC = () => {
         {/* Navigation - Fixed overlay on bottom */}
         {!isAnyModalOpen && <AppNav onAddRecipe={handleAddRecipe} />}
 
+        {/* Foto-Scans laufen hier weiter, auch wenn das Sheet zu ist oder die Seite wechselt. */}
+        <PhotoScanHost />
+
         {/* Add Recipe Modal */}
         {isAddModalOpen && (
-          <Suspense fallback={<ModalLoader label="Rezeptformular lädt..." />}>
-            <AddRecipeModal
-              isOpen={isAddModalOpen}
-              onClose={closeAddModal}
-            />
+          <Suspense fallback={<ModalLoader label="Lädt..." />}>
+            <AddRecipeSheet onClose={closeAddModal} />
           </Suspense>
         )}
       </div>

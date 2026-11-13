@@ -71,8 +71,15 @@ const ImportProgressCard: React.FC<{
   instant?: boolean;
   /** Schlüssel des Imports, damit der Prozentwert einen Neu-Mount übersteht. */
   progressKey?: string;
-}> = ({ step, title, expectedMs, done, slow, category, leaving, instant, progressKey }) => {
-  const percent = useStepPercent(step, expectedMs, done, progressKey);
+  /** Eigener Fortschritt (0–100), z. B. Foto-Scan mehrerer Rezepte; ersetzt die Schätzung aus `step`. */
+  percent?: number;
+  /** Überschrift im fertigen Zustand (Standard: „Rezept ist fertig!“). */
+  doneTitle?: string;
+  /** Abstand nach unten, z. B. über der Tab-Leiste. */
+  bottom?: string;
+}> = ({ step, title, expectedMs, done, slow, category, leaving, instant, progressKey, percent: percentOverride, doneTitle, bottom }) => {
+  const estimated = useStepPercent(step, expectedMs, done || percentOverride !== undefined, progressKey);
+  const percent = done ? 100 : percentOverride ?? estimated;
   const subtitle = done
     ? category ? `Gespeichert in „${category}“.` : 'Gespeichert in deinem Kochbuch.'
     : slow
@@ -82,7 +89,7 @@ const ImportProgressCard: React.FC<{
   return createPortal(
     <div
       className={`imp-card pointer-events-none fixed inset-x-3 z-[60] mx-auto max-w-md ${instant ? 'imp-card--instant' : ''} ${leaving ? 'imp-card--leave' : ''}`}
-      style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 1rem)' }}
+      style={{ bottom: bottom ?? 'calc(env(safe-area-inset-bottom, 0px) + 1rem)' }}
       role="status"
       aria-live="polite"
     >
@@ -95,7 +102,7 @@ const ImportProgressCard: React.FC<{
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[18px] font-extrabold leading-tight tracking-tight text-[#111718]">
-              <FadeSwap text={done ? 'Rezept ist fertig!' : title} />
+              <FadeSwap text={done ? doneTitle ?? 'Rezept ist fertig!' : title} />
             </p>
             <p className="mt-0.5 text-[13px] font-medium leading-[17px] text-gray-500">
               <FadeSwap text={subtitle} />

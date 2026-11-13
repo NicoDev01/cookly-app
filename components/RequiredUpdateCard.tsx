@@ -17,7 +17,7 @@ export const RequiredUpdateCard: React.FC<{ platform: 'ios' | 'android'; busy?: 
   onUpdate,
 }) => (
   <div
-    className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/40 font-display backdrop-blur-[3px] animate-in fade-in"
+    className="fixed inset-0 z-[20000] flex items-end justify-center bg-black/40 font-display backdrop-blur-[3px] scrim-in"
     role="alertdialog"
     aria-modal="true"
     aria-labelledby="required-update-title"
@@ -25,7 +25,7 @@ export const RequiredUpdateCard: React.FC<{ platform: 'ios' | 'android'; busy?: 
   >
     <style>{FLOAT_CSS}</style>
     <div
-      className="relative w-full max-w-lg rounded-t-[36px] bg-white px-7 pt-28 text-center shadow-2xl animate-in slide-in-from-bottom duration-500 dark:bg-background-dark"
+      className="relative w-full max-w-lg rounded-t-[36px] bg-white px-7 pt-28 text-center shadow-2xl sheet-in dark:bg-background-dark"
       style={{ paddingBottom: 'calc(var(--safe-area-inset-bottom, 0px) + 2rem)' }}
     >
       <div aria-hidden className="absolute inset-x-0 top-0 h-32 overflow-hidden rounded-t-[36px]">

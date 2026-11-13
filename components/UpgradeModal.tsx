@@ -49,12 +49,12 @@ export default function UpgradeModal({
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-md animate-in fade-in duration-500"
+        className="absolute inset-0 bg-black/40 backdrop-blur-md scrim-in"
         onClick={onClose}
       />
 
       {/* Modal Container */}
-      <div className="relative bg-white/90 dark:bg-card-dark/95 backdrop-blur-xl rounded-[2.5rem] p-8 max-w-sm w-full shadow-[0_32px_64px_-16px_rgba(0,0,0,0.3)] border border-white/20 dark:border-white/5 animate-in fade-in zoom-in slide-in-from-bottom-8 duration-500">
+      <div className="relative bg-white/90 dark:bg-card-dark/95 backdrop-blur-xl rounded-[2.5rem] p-8 max-w-sm w-full shadow-[0_32px_64px_-16px_rgba(0,0,0,0.3)] border border-white/20 dark:border-white/5 animate-in fade-in zoom-in-95 slide-in-from-bottom-4 duration-300">
 
         {/* Glow Effect */}
         <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-48 h-48 bg-primary/20 blur-[80px] pointer-events-none" />
