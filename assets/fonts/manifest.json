@@ -110,6 +110,7 @@
   ],
   "ignored": [
     "daily",
+    "ios",
     "large",
     "nicht_erlaubt"
   ]
