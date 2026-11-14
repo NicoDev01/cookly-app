@@ -29,8 +29,9 @@ export const cleanText = (value: string) =>
     .replace(/<br\s*\/?>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+\d*);/gi, (match, code: string) => {
-      if (/^#x/i.test(code)) return String.fromCodePoint(parseInt(code.slice(2), 16));
-      if (code.startsWith('#')) return String.fromCodePoint(parseInt(code.slice(1), 10));
+      const point = /^#x/i.test(code) ? parseInt(code.slice(2), 16) : code.startsWith('#') ? parseInt(code.slice(1), 10) : NaN;
+      // Kaputte Nummern wie &#99999999; würden fromCodePoint werfen und den ganzen Import abbrechen.
+      if (code.startsWith('#')) return point > 0 && point <= 0x10ffff ? String.fromCodePoint(point) : ' ';
       return ENTITIES[code] ?? ENTITIES[code.toLowerCase()] ?? match;
     })
     .replace(/\s+/g, ' ')
@@ -61,22 +62,32 @@ const collectNodes = (value: Json | undefined, out: JsonObject[] = [], depth = 0
   return out;
 };
 
-/** Schritte aus Text, HowToStep oder HowToSection (mit Überschrift). */
-const instructionLines = (value: Json | undefined, depth = 0): string[] => {
+export type SchemaStep = { text: string; section?: string };
+
+/** Schritte aus Text, HowToStep oder HowToSection (Überschrift wandert in `section`). */
+const instructionSteps = (value: Json | undefined, section?: string, depth = 0): SchemaStep[] => {
   if (depth > 4) return [];
   if (typeof value === 'string') {
-    return value.split(/\r?\n+/).map(cleanText).filter(Boolean);
+    return value.split(/\r?\n+/).map(cleanText).filter(Boolean).map((line) => ({ text: line, section }));
   }
   return asArray(value).flatMap((item) => {
-    if (typeof item === 'string') return instructionLines(item, depth + 1);
+    if (typeof item === 'string') return instructionSteps(item, section, depth + 1);
     if (!isObject(item)) return [];
     if (hasType(item, 'HowToSection') || item.itemListElement) {
-      const steps = instructionLines(item.itemListElement, depth + 1);
-      const name = text(item.name);
-      return name && steps.length ? [`**${name}**`, ...steps] : steps;
+      return instructionSteps(item.itemListElement, text(item.name) || section, depth + 1);
     }
     const line = text(item.text ?? item.name);
-    return line ? [line] : [];
+    return line ? [{ text: line, section }] : [];
+  });
+};
+
+/** Markdown-Zeilen: Abschnittsüberschrift als **…**, sobald sie wechselt. */
+const instructionLines = (steps: SchemaStep[]): string[] => {
+  let current: string | undefined;
+  return steps.flatMap((step) => {
+    const header = step.section && step.section !== current ? [`**${step.section}**`] : [];
+    current = step.section;
+    return [...header, step.text];
   });
 };
 
@@ -145,45 +156,102 @@ const numberSteps = (lines: string[]) => {
   return lines.map((line) => (line.startsWith('**') ? line : `${++n}. ${line.replace(/^\d+[.)]\s*/, '')}`));
 };
 
-export const extractRecipeFromHtml = (html: string): PageRecipe | null => {
+/** Rohfelder des schema.org-Rezepts, bereinigt, aber noch nicht auf Cookly abgebildet. */
+export type SchemaRecipe = {
+  title: string;
+  /** Bild aus dem Rezept, sonst og:image, sonst erstes großes Inhaltsbild. */
+  image?: string;
+  description: string;
+  author: string;
+  ingredients: string[];
+  steps: SchemaStep[];
+  yields: string[];
+  prepTime: string;
+  cookTime: string;
+  totalTime: string;
+  categories: string[];
+  cuisines: string[];
+  keywords: string[];
+  diets: string[];
+  /** Sprache aus inLanguage oder <html lang>, z. B. "de-DE". Leer, wenn unbekannt. */
+  language: string;
+  /** Seitentitel (og:title oder <title>), um eingebettete Fremd-Rezepte zu erkennen. */
+  pageTitle: string;
+};
+
+const list = (value: Json | undefined): string[] =>
+  asArray(value)
+    .flatMap((item) => (typeof item === 'string' ? item.split(',') : [text(item)]))
+    .map(cleanText)
+    .filter(Boolean);
+
+export const extractSchemaRecipe = (html: string): SchemaRecipe | null => {
   const scripts = html.matchAll(/<script[^>]*type=["']?application\/ld\+json["']?[^>]*>([\s\S]*?)<\/script>/gi);
   for (const [, raw] of scripts) {
-    const recipe = collectNodes(parseJson(raw)).find((node) => hasType(node, 'Recipe'));
+    const nodes = collectNodes(parseJson(raw));
+    const recipe = nodes.find((node) => hasType(node, 'Recipe'));
     if (!recipe) continue;
 
     const title = text(recipe.name) || metaContent(html, 'og:title') || '';
     const ingredients = asArray(recipe.recipeIngredient ?? recipe.ingredients).map(text).filter(Boolean);
-    const steps = instructionLines(recipe.recipeInstructions);
+    const steps = instructionSteps(recipe.recipeInstructions);
     if (!title || !ingredients.length || !steps.length) continue;
-
-    const facts = [
-      ['Beschreibung', text(recipe.description)],
-      ['Portionen', text(recipe.recipeYield)],
-      ['Zubereitungszeit', text(recipe.prepTime)],
-      ['Kochzeit', text(recipe.cookTime)],
-      ['Gesamtzeit', text(recipe.totalTime)],
-      ['Kategorie', text(recipe.recipeCategory)],
-      ['Küche', text(recipe.recipeCuisine)],
-    ].filter(([, value]) => value);
-
-    const content = [
-      `# ${title}`,
-      ...facts.map(([label, value]) => `${label}: ${value}`),
-      '',
-      '## Zutaten',
-      ...ingredients.map((line) => `- ${line}`),
-      '',
-      '## Zubereitung',
-      ...numberSteps(steps),
-    ].join('\n');
+    // Verweise wie {"@id": "…#author"} zeigen auf einen anderen Knoten im selben @graph.
+    const byId = (value: Json | undefined) =>
+      isObject(value) && typeof value['@id'] === 'string' && Object.keys(value).length === 1
+        ? nodes.find((node) => node !== value && node['@id'] === value['@id']) ?? value
+        : value;
 
     return {
       title,
       image: imageUrl(recipe.image) ?? imageUrl(metaContent(html, 'og:image') ?? null) ?? contentImage(html),
-      content: content.slice(0, 20_000),
+      description: text(recipe.description),
+      author: asArray(recipe.author).map((item) => text(byId(item))).find(Boolean) ?? '',
+      ingredients,
+      steps,
+      yields: asArray(recipe.recipeYield).map(text).filter(Boolean),
+      prepTime: text(recipe.prepTime),
+      cookTime: text(recipe.cookTime),
+      totalTime: text(recipe.totalTime),
+      categories: list(recipe.recipeCategory),
+      cuisines: list(recipe.recipeCuisine),
+      keywords: list(recipe.keywords),
+      diets: list(recipe.suitableForDiet),
+      language: text(recipe.inLanguage) || cleanText(html.match(/<html\b[^>]*\slang=["']([^"']+)["']/i)?.[1] ?? ''),
+      pageTitle: metaContent(html, 'og:title') ?? cleanText(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? ''),
     };
   }
   return null;
+};
+
+/** Kurzer Markdown-Text aus dem Schema-Rezept als Eingabe für Gemini. */
+const schemaMarkdown = (recipe: SchemaRecipe) => {
+  const facts = [
+    ['Beschreibung', recipe.description],
+    ['Portionen', recipe.yields.join(', ')],
+    ['Zubereitungszeit', recipe.prepTime],
+    ['Kochzeit', recipe.cookTime],
+    ['Gesamtzeit', recipe.totalTime],
+    ['Kategorie', recipe.categories.join(', ')],
+    ['Küche', recipe.cuisines.join(', ')],
+  ].filter(([, value]) => value);
+
+  return [
+    `# ${recipe.title}`,
+    ...facts.map(([label, value]) => `${label}: ${value}`),
+    '',
+    '## Zutaten',
+    ...recipe.ingredients.map((line) => `- ${line}`),
+    '',
+    '## Zubereitung',
+    ...numberSteps(instructionLines(recipe.steps)),
+  ].join('\n');
+};
+
+export const extractRecipeFromHtml = (html: string): (PageRecipe & { schema: SchemaRecipe }) | null => {
+  const schema = extractSchemaRecipe(html);
+  if (!schema) return null;
+  return { title: schema.title, image: schema.image, content: schemaMarkdown(schema).slice(0, 20_000), schema };
 };
 
 const RECIPE_HINTS = [/zutaten|ingredients|ingrédients|ingredienti/i, /zubereitung|anleitung|instructions|directions|method|schritt|préparation|preparazione/i];

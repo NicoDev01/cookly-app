@@ -10,18 +10,26 @@ import { createImportTimer } from "./importTiming";
 import { runLegacyImport } from "./legacyImport";
 import { GEMINI_TEXT_TIMEOUT_MS, isRetryableGeminiError, runWithGeminiModelFallback } from "../utils/geminiRetry";
 import { extractPageText, extractRecipeFromHtml, type PageRecipe } from "../utils/recipeJsonLd";
+import { buildFastRecipe, type FastPathResult } from "../utils/recipeFastPath";
 import { fetchRemotePage } from "./remoteImages";
 
 const JINA_API_KEY = process.env.JINA_API_KEY;
 /** Direktabruf der Seite: typisch < 1 s. Danach Jina als Fallback (4–12 s gemessen, Nov. 2026). */
 const PAGE_FETCH_TIMEOUT_MS = 5_000;
 
-/** Rezept aus dem JSON-LD der Seite, oder null (gesperrt, kein Rezept-Markup, Timeout). */
-const readPageRecipe = async (url: string): Promise<(PageRecipe & { source: "jsonld" | "text" }) | null> => {
+type PageResult = PageRecipe & { source: "jsonld" | "text"; fast?: FastPathResult };
+
+/**
+ * Rezept aus dem JSON-LD der Seite samt Schnellweg-Prüfung, sonst lesbarer Seitentext, oder null
+ * (gesperrt, kein Rezept-Markup, Timeout). Passt das JSON-LD nicht zur Seite (eingebettetes Fremd-Rezept),
+ * zählt nur der Seitentext.
+ */
+const readPageRecipe = async (url: string): Promise<PageResult | null> => {
     try {
         const { html } = await fetchRemotePage(url, PAGE_FETCH_TIMEOUT_MS);
         const recipe = extractRecipeFromHtml(html);
-        if (recipe) return { ...recipe, source: "jsonld" };
+        const fast = recipe ? buildFastRecipe(recipe.schema) : undefined;
+        if (recipe && !fast?.issues.includes("title_mismatch")) return { ...recipe, source: "jsonld", fast };
         const page = extractPageText(html);
         return page ? { ...page, source: "text" } : null;
     } catch (error) {
@@ -148,6 +156,16 @@ export const scrapeWebsiteInternal = internalAction({
         let pageImageUrl = "";
 
         const pageRecipe = await pagePromise;
+        const fast = pageRecipe?.fast;
+        if (pageRecipe) timer.mark("fast_path_checked", { issues: fast?.issues.join(",") || "none" });
+
+        // Schnellweg: vollständiges, deutsches schema.org-Rezept mit klarer Kategorie braucht kein Gemini.
+        if (fast?.recipe && fast.issues.length === 0) {
+            const payload = buildPayload(fast.recipe, pageRecipe?.image, args.url);
+            timer.summary({ result: "created", path: "jsonld_fast" });
+            return { payload };
+        }
+
         if (pageRecipe) {
             pageTitle = pageRecipe.title;
             markdown = pageRecipe.content;
@@ -273,6 +291,11 @@ export const scrapeWebsiteInternal = internalAction({
         } catch (geminiError) {
             console.error("Gemini error:", geminiError);
             timer.mark("gemini_failed");
+            // Lieber das regelbasierte Rezept (evtl. Kategorie "Sonstiges", nicht übersetzt) als ein Fehler.
+            if (fast?.recipe) {
+                timer.summary({ result: "created", path: "jsonld_fallback", issues: fast.issues.join(",") });
+                return { payload: buildPayload(fast.recipe, pageImageUrl, args.url) };
+            }
             throw new Error(JSON.stringify({
                 type: isRetryableGeminiError(geminiError) ? "API_UNAVAILABLE" : "NO_RECIPE_CONTENT",
                 service: "gemini",
@@ -284,33 +307,37 @@ export const scrapeWebsiteInternal = internalAction({
             }));
         }
 
-        // 4. Select initial image URL fast; storage proxying happens async after import
-        const stopwords = ["nach", "mit", "aus", "vom", "von", "zu", "für", "in", "an", "auf", "bei", "durch", "original", "originalrezept", "rezept", "klassisch", "traditionell", "einfach", "schnell", "lecker"];
-        const titleWords = (recipeData.title || "Delicious Food")
-            .toLowerCase()
-            .split(/\s+/)
-            .filter((word: string) => !stopwords.includes(word) && word.length > 2)
-            .slice(0, 3)
-            .join(" ");
-        const safeTitle = encodeURIComponent(titleWords || "Delicious Food");
-        const pollinationsUrl = `https://image.pollinations.ai/prompt/realistic%20food%20photography%20${safeTitle}?width=1024&height=1024&model=klein&nologo=true`;
-        const finalImageUrl = pageImageUrl || pollinationsUrl;
-        timer.mark("image_url_selected", { usedPageImage: !!pageImageUrl });
-
-        const payload = {
-                title: recipeData.title || "Rezept von Website",
-                category: recipeData.category || "Sonstiges",
-                prepTimeMinutes: recipeData.prepTimeMinutes || 30,
-                difficulty: recipeData.difficulty || "Mittel",
-                portions: recipeData.portions || 4,
-                ingredients: recipeData.ingredients || [],
-                instructions: recipeData.instructions || [],
-                image: finalImageUrl,
-                sourceImageUrl: finalImageUrl,
-                sourceUrl: args.url,
-                imageAlt: recipeData.title,
-                isFavorite: false,
-        } as const;
-        return { payload };
+        timer.summary({ result: "created", path: "gemini", source: pageRecipe?.source ?? "jina", issues: fast?.issues.join(",") });
+        return { payload: buildPayload(recipeData, pageImageUrl, args.url) };
     },
 });
+
+const IMAGE_STOPWORDS = ["nach", "mit", "aus", "vom", "von", "zu", "für", "in", "an", "auf", "bei", "durch", "original", "originalrezept", "rezept", "klassisch", "traditionell", "einfach", "schnell", "lecker"];
+
+/** Rezept-Payload für `completeLink`. Ohne Seitenbild ein generiertes Bild; das Speichern im Storage läuft danach asynchron. */
+function buildPayload(recipe: Omit<ExtractedRecipe, "imageKeywords">, pageImageUrl: string | undefined, sourceUrl: string) {
+    const titleWords = (recipe.title || "Delicious Food")
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((word: string) => !IMAGE_STOPWORDS.includes(word) && word.length > 2)
+        .slice(0, 3)
+        .join(" ");
+    const safeTitle = encodeURIComponent(titleWords || "Delicious Food");
+    const pollinationsUrl = `https://image.pollinations.ai/prompt/realistic%20food%20photography%20${safeTitle}?width=1024&height=1024&model=klein&nologo=true`;
+    const finalImageUrl = pageImageUrl || pollinationsUrl;
+
+    return {
+        title: recipe.title || "Rezept von Website",
+        category: recipe.category || "Sonstiges",
+        prepTimeMinutes: recipe.prepTimeMinutes || 30,
+        difficulty: recipe.difficulty || "Mittel",
+        portions: recipe.portions || 4,
+        ingredients: recipe.ingredients || [],
+        instructions: recipe.instructions || [],
+        image: finalImageUrl,
+        sourceImageUrl: finalImageUrl,
+        sourceUrl,
+        imageAlt: recipe.title,
+        isFavorite: false,
+    } as const;
+}
