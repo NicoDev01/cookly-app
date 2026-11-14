@@ -1,10 +1,13 @@
 import React from 'react';
-import { useMutation, useQuery } from 'convex/react';
+import { useMutation } from 'convex/react';
 import { CheckCheck, X } from 'lucide-react';
 import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
 import { Ingredient } from '../types';
 import { buildLegacyShoppingItemKeys, buildShoppingItemKey } from '../utils/shoppingListView';
+import { usePersistedQuery } from '../hooks/usePersistedQuery';
+import { isOffline, useOfflineAwareMutation, useOnlineOnly } from '../hooks/useOfflineWrites';
+import { overlayShoppingList } from '../services/offlineOutbox';
 
 interface IngredientsProps {
   ingredients: Ingredient[];
@@ -14,7 +17,10 @@ interface IngredientsProps {
 }
 
 const Ingredients: React.FC<IngredientsProps> = ({ ingredients, highlightedIndex, recipeId, recipeTitle }) => {
-  const shoppingItems = useQuery(api.shopping.getShoppingList);
+  // Gleiche Liste wie der Einkaufstab: auch offline aus dem Cache, mit offline Entferntem darübergelegt.
+  const shoppingItems = usePersistedQuery(api.shopping.getShoppingList, {}, 'shopping-list', overlayShoppingList);
+  // Hinzufügen ist nicht idempotent: offline gesperrt. Entfernen geht über die Outbox.
+  const onlineOnly = useOnlineOnly();
   const toggleShoppingItem = useMutation(api.shopping.toggleShoppingItemByDetails).withOptimisticUpdate((localStore, args) => {
     const { name, amount } = args;
     const currentList = localStore.getQuery(api.shopping.getShoppingList);
@@ -94,17 +100,27 @@ const Ingredients: React.FC<IngredientsProps> = ({ ingredients, highlightedIndex
   });
   // „Alle abwählen“: alle Einträge dieses Rezepts wieder von der Liste nehmen (auch alte Schlüsselformate).
   const recipeKeys = new Set(rows.flatMap((row) => [row.key, ...buildLegacyShoppingItemKeys(row.name, row.amount, recipeId)]));
-  const removeAll = useMutation(api.shopping.removeShoppingItems).withOptimisticUpdate((localStore, { ids }) => {
+  const removeAll = useOfflineAwareMutation('shopping.remove', useMutation(api.shopping.removeShoppingItems).withOptimisticUpdate((localStore, { ids }) => {
     const currentList = localStore.getQuery(api.shopping.getShoppingList);
     if (!currentList) return;
     const removed = new Set<string>(ids);
     localStore.setQuery(api.shopping.getShoppingList, {}, currentList.filter((item) => !removed.has(item._id) && !(item._id.startsWith('optimistic-') && recipeKeys.has(item.key))));
-  });
+  }));
   const deselectAll = () => {
     const ids = (shoppingItems ?? [])
       .filter((item) => recipeKeys.has(item.key) && !item._id.startsWith('optimistic-'))
       .map((item) => item._id);
-    void removeAll({ ids });
+    void removeAll({ ids }).catch(() => undefined);
+  };
+  // Offline lässt sich eine Zutat nur von der Liste nehmen (Outbox); Hinzufügen braucht den Server.
+  const toggleIngredient = (name: string, amount: string | undefined, onList: boolean) => {
+    if (onList && isOffline()) {
+      const keys = new Set([buildShoppingItemKey(name, amount, recipeId), ...buildLegacyShoppingItemKeys(name, amount, recipeId)]);
+      const ids = (shoppingItems ?? []).filter((item) => keys.has(item.key) && !item._id.startsWith('optimistic-')).map((item) => item._id);
+      void removeAll({ ids }).catch(() => undefined);
+      return;
+    }
+    onlineOnly(() => void toggleShoppingItem({ name, amount, recipeId }));
   };
   const showSelectAll = !!recipeId && selectedCount > 0;
   const allSelected = missing.length === 0;
@@ -136,7 +152,7 @@ const Ingredients: React.FC<IngredientsProps> = ({ ingredients, highlightedIndex
         {showSelectAll && (
           <button
             type="button"
-            onClick={() => (allSelected ? deselectAll() : recipeId && void addAll({ recipeIds: [recipeId] }))}
+            onClick={() => (allSelected ? deselectAll() : recipeId && onlineOnly(() => void addAll({ recipeIds: [recipeId] })))}
             aria-label={allSelected ? 'Alle Zutaten von der Einkaufsliste nehmen' : 'Alle Zutaten auf die Einkaufsliste'}
             className="relative flex items-center gap-1 whitespace-nowrap rounded-full border border-solid border-gray-300 px-2.5 py-1 text-xs text-gray-500 transition animate-in fade-in duration-200 after:absolute after:-inset-2 after:content-[''] active:scale-95 hover:text-[#111718] dark:border-white/25 dark:text-gray-400 dark:hover:text-white"
           >
@@ -152,7 +168,7 @@ const Ingredients: React.FC<IngredientsProps> = ({ ingredients, highlightedIndex
           return (
             <div 
               key={`${ingName}-${index}`}
-              onClick={() => toggleShoppingItem({ name: ingName, amount: ingAmount, recipeId })}
+              onClick={() => toggleIngredient(ingName, ingAmount, isInShoppingList)}
               className={`
                 relative group cursor-pointer select-none transition-all duration-300 ease-out active:scale-95
                 px-3 py-[5px] rounded-full text-sm font-medium 

@@ -15,6 +15,8 @@ import { initDeepLinkHandler, removeDeepLinkHandler } from './services/deepLinkH
 import { useBackButton } from './hooks/useBackButton';
 import { useHistoryTracking } from './hooks/useBackNavigation';
 import { clearOfflineCache, getCachedUser, hasStoredAuthToken, rememberUser } from './services/offlineCache';
+import { useOutboxSync } from './hooks/useOfflineWrites';
+import { useCurrentWeekCache } from './hooks/useCurrentWeekCache';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ModalProvider, useModal } from './contexts/ModalContext';
 import { QueryCacheProvider } from './contexts/QueryCacheContext';
@@ -116,6 +118,10 @@ const ProtectedLayout: React.FC = () => {
   useEffect(() => {
     if (currentUser) rememberUser(currentUser);
   }, [currentUser]);
+  // Offline Gemerktes nachreichen, erst wenn der Server diesen Nutzer bestätigt hat (rememberUser lief davor).
+  useOutboxSync(currentUser?._id);
+  // Wochenplan offline verfügbar halten, ohne dass der Tab offen sein muss.
+  useCurrentWeekCache(isAuthenticated && !!currentUser);
 
   // Bestehendes Konto mit abgeschlossenem Onboarding: liegengebliebene Gast-Antworten verwerfen.
   const onboardingCompleted = currentUser?.onboardingCompleted;

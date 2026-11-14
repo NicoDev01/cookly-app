@@ -247,9 +247,12 @@ const LinkStep: React.FC<{ onBack: () => void; onImport: (url: string) => void }
 
   const paste = async () => {
     try {
-      const text = await navigator.clipboard.readText();
-      if (text.trim()) {
-        setValue(text.trim());
+      const text = (await navigator.clipboard.readText()).trim();
+      if (text) {
+        // Gültiger Link: gleich importieren, ohne extra „Importieren“-Tap. Sonst einsetzen, der Hinweis erklärt den Fehler.
+        const pastedTarget = detectImportTarget(text);
+        if (pastedTarget) onImport(pastedTarget.url);
+        else setValue(text);
         return;
       }
       showToast('In der Zwischenablage ist kein Text.', 'error');

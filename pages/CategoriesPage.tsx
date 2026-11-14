@@ -3,7 +3,7 @@ import { useQuery } from "convex/react";
 import { usePersistedQuery } from '../hooks/usePersistedQuery';
 import { api } from "../convex/_generated/api";
 import type { FunctionReturnType } from "convex/server";
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useLocation } from 'react-router-dom';
 import SafeImage from '../components/SafeImage';
 import EmptyState from '../components/EmptyState';
 import { prefetchCategoryRecipesPage, prefetchRecipePage } from '../prefetch';
@@ -84,6 +84,9 @@ const CategoryPreviewImage: React.FC<{
 const CategoriesPage: React.FC = () => {
   const { openAddModal } = useModal();
   const [searchParams, setSearchParams] = useSearchParams();
+  // Auf der Rezeptseite liegt diese Seite sichtbar darunter (Zurück-Wischgeste): dann nie die Adresse lesen oder schreiben,
+  // sie gehört dem Rezept (sonst gehen dessen Navigationszustand und Karussell-Liste verloren).
+  const isActiveRoute = useLocation().pathname === '/tabs/categories';
   // Suchbegriff steht in der URL (?q=), damit er nach dem Zurück aus einem Rezept noch da ist.
   const [searchQuery, setSearchQuery] = React.useState(() => readSearchParam(searchParams));
   const searchInputRef = React.useRef<HTMLInputElement>(null);
@@ -103,13 +106,14 @@ const CategoriesPage: React.FC = () => {
   // Eigene Schreibvorgänge erkennt man daran, dass sie dem entprellten Begriff entsprechen.
   const urlQuery = readSearchParam(searchParams);
   const [seenUrlQuery, setSeenUrlQuery] = useState(urlQuery);
-  if (urlQuery !== seenUrlQuery) {
+  if (isActiveRoute && urlQuery !== seenUrlQuery) {
     setSeenUrlQuery(urlQuery);
     if (urlQuery !== debouncedSearch) setSearchQuery(urlQuery);
   }
 
   // Entprellten Begriff in die URL schreiben (replace: kein Verlaufseintrag pro Wort). Alte ?ingredients= fällt weg.
   React.useEffect(() => {
+    if (!isActiveRoute) return;
     setSearchParams(prev => {
       if ((prev.get("q") ?? "") === debouncedSearch && !prev.has("ingredients")) return prev;
       const next = new URLSearchParams(prev);
@@ -118,7 +122,7 @@ const CategoriesPage: React.FC = () => {
       next.delete("ingredients");
       return next;
     }, { replace: true });
-  }, [debouncedSearch, setSearchParams]);
+  }, [debouncedSearch, setSearchParams, isActiveRoute]);
 
   // Titel und Zutaten werden auf dem Server durchsucht; zurück kommen nur Vorschauen.
   const searchResult = useQuery(

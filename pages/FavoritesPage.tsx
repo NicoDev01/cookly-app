@@ -6,6 +6,8 @@ import FavoritesView, { type FavoriteRecipe } from '../components/favorites/Favo
 import { ModalLoader } from '../components/PageLoader';
 import { useNotification } from '../contexts/NotificationContext';
 import { usePersistedQuery } from '../hooks/usePersistedQuery';
+import { isOffline, OFFLINE_MESSAGE, useOfflineAwareMutation } from '../hooks/useOfflineWrites';
+import { overlayFavoritesList } from '../services/offlineOutbox';
 import { logger } from '../utils/logger';
 import { getUserErrorMessage } from '../utils/userErrors';
 import { plannedLabels } from '../utils/favoritesView';
@@ -24,7 +26,8 @@ const patchFavorites = (store: OptimisticLocalStore, fn: (list: FavoritesValue) 
 const FavoritesPage: React.FC = () => {
   const { showToast } = useNotification();
   // Beim Tab-Wechsel das letzte Ergebnis zeigen statt kurz nichts (kein Flackern).
-  const favorites = usePersistedQuery(api.recipes.listPreviews, FAVORITES_ARGS, 'favorites');
+  // Offline Entfernte (services/offlineOutbox) sofort ausblenden.
+  const favorites = usePersistedQuery(api.recipes.listPreviews, FAVORITES_ARGS, 'favorites', overlayFavoritesList);
   const [planFor, setPlanFor] = useState<FavoriteRecipe | null>(null);
 
   // Aktuelle Woche für den Hinweis „schon eingeplant“; die Abfrage liefert nur schlanke Vorschauen.
@@ -45,10 +48,10 @@ const FavoritesPage: React.FC = () => {
     [week, todayString],
   );
 
-  // Optimistisch: Entfernen wirkt sofort.
-  const setFavorite = useMutation(api.recipes.setFavorite).withOptimisticUpdate((store, args) =>
+  // Optimistisch: Entfernen wirkt sofort, offline über die Outbox.
+  const setFavorite = useOfflineAwareMutation('recipe.setFavorite', useMutation(api.recipes.setFavorite).withOptimisticUpdate((store, args) =>
     patchFavorites(store, (list) => (args.isFavorite ? list : list.filter((r) => r._id !== args.id))),
-  );
+  ));
   const addToShopping = useMutation(api.shopping.addRecipesToShoppingList);
 
   const fail = (action: string) => (err: unknown) => {
@@ -63,7 +66,14 @@ const FavoritesPage: React.FC = () => {
         plannedLabels={planned}
         onUnfavorite={(recipe) => void setFavorite({ id: recipe._id, isFavorite: false }).catch(fail('Unfavorite'))}
         onPlan={setPlanFor}
-        onAddToShopping={async (recipe) => (await addToShopping({ recipeIds: [recipe._id] })).recipesAdded > 0}
+        onAddToShopping={async (recipe) => {
+          // Nicht idempotent: offline gesperrt.
+          if (isOffline()) {
+            showToast(OFFLINE_MESSAGE, 'info');
+            return null;
+          }
+          return (await addToShopping({ recipeIds: [recipe._id] })).recipesAdded > 0;
+        }}
         storageKey="cookly.favorites"
         emptyPath="/tabs/categories"
         searchAllPath="/tabs/categories"

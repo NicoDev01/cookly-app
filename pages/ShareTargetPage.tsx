@@ -27,10 +27,12 @@ import { detectImportTarget } from '../utils/importTarget';
 const SLOW_NOTICE_AFTER_MS = 15_000;
 
 // Einblenden des fertigen Rezepts: Zutaten und Schritte gestaffelt, dann „fertig“ kurz stehen lassen.
-const INGREDIENTS_AT_MS = 280;
-const INGREDIENT_STAGGER_MS = 70;
-const STEP_STAGGER_MS = 140;
-const DONE_HOLD_MS = 1_400;
+// Langsame Importe nutzen die ruhige Timeline (sie überbrückt Wartezeit), schnelle die kompakte (< 1,2 s bis „fertig“).
+type RevealPace = { ingredientsAt: number; ingredientStagger: number; stepGap: number; stepStagger: number; doneGap: number; doneHold: number };
+const FULL_REVEAL: RevealPace = { ingredientsAt: 280, ingredientStagger: 70, stepGap: 120, stepStagger: 140, doneGap: 300, doneHold: 1_400 };
+const COMPACT_REVEAL: RevealPace = { ingredientsAt: 200, ingredientStagger: 25, stepGap: 80, stepStagger: 50, doneGap: 200, doneHold: 500 };
+/** Kommt das Ergebnis schneller, läuft die kompakte Timeline. */
+const FAST_IMPORT_MS = 4_000;
 /** So lange wartet der Wechsel zur Rezeptseite höchstens auf das endgültige Bild. */
 const HERO_WAIT_MAX_MS = 3_000;
 
@@ -54,10 +56,11 @@ let lastShare: LastShare | null = null;
 const staggerCount = (elapsed: number, at: number, stagger: number, max: number) =>
   elapsed < at ? 0 : Math.min(max, Math.floor((elapsed - at) / stagger) + 1);
 
-const revealTimeline = (recipe: Recipe) => {
-  const stepsAt = INGREDIENTS_AT_MS + recipe.ingredients.length * INGREDIENT_STAGGER_MS + 120;
-  const doneAt = stepsAt + Math.max(0, recipe.instructions.length - 1) * STEP_STAGGER_MS + 300;
-  return { stepsAt, doneAt, leaveAt: doneAt + DONE_HOLD_MS, navigateAt: doneAt + DONE_HOLD_MS + IMPORT_CARD_EXIT_MS };
+const revealTimeline = (recipe: Recipe, pace: RevealPace) => {
+  const stepsAt = pace.ingredientsAt + recipe.ingredients.length * pace.ingredientStagger + pace.stepGap;
+  const doneAt = stepsAt + Math.max(0, recipe.instructions.length - 1) * pace.stepStagger + pace.doneGap;
+  const leaveAt = doneAt + pace.doneHold;
+  return { pace, stepsAt, doneAt, leaveAt, navigateAt: leaveAt + IMPORT_CARD_EXIT_MS };
 };
 
 const INVALID_LINK: ImportFailureState = {
@@ -137,6 +140,8 @@ const ShareTargetPage: React.FC = () => {
   const [failure, setFailure] = useState<ImportFailureState | null>(target ? null : INVALID_LINK);
   const [slow, setSlow] = useState(false);
   const [revealStartedAt, setRevealStartedAt] = useState<number | null>(null);
+  // Einmal beim Eintreffen des Ergebnisses gewählt, damit die Animation nicht mittendrin umschaltet.
+  const [revealPace, setRevealPace] = useState<RevealPace>(FULL_REVEAL);
   const autoRetriedRef = useRef(false);
   const notifiedRef = useRef(false);
 
@@ -260,13 +265,16 @@ const ShareTargetPage: React.FC = () => {
       setFailure(failureFromError(new Error(JSON.stringify({ type: 'IMPORT_RESULT_MISSING' }))));
       return;
     }
-    if (revealStartedAt === null) setRevealStartedAt(performance.now());
+    if (revealStartedAt === null) {
+      setRevealPace(Date.now() - startedAt < FAST_IMPORT_MS ? COMPACT_REVEAL : FULL_REVEAL);
+      setRevealStartedAt(performance.now());
+    }
     if (!notifiedRef.current && !resumed?.notified) {
       notifiedRef.current = true;
       if (lastShare) lastShare.notified = true;
       void notifyImportSuccess(recipeId);
     }
-  }, [recipeId, recipe, failure, revealStartedAt, resumed, notifyImportSuccess]);
+  }, [recipeId, recipe, failure, revealStartedAt, startedAt, resumed, notifyImportSuccess]);
 
   // Endgültiges Bild vorladen (nach dem Speichern ersetzt der Server es durch die Storage-Kopie):
   // Erst wenn es dekodiert ist, wechselt die Import-Ansicht darauf und dann zur Rezeptseite, damit dort nichts springt.
@@ -284,7 +292,7 @@ const ShareTargetPage: React.FC = () => {
   }, [finalHero]);
   const heroReady = !finalHero || loadedHero === finalHero;
 
-  const reveal = recipe ? revealTimeline(recipe) : null;
+  const reveal = recipe ? revealTimeline(recipe, revealPace) : null;
   const revealElapsed = useElapsed(reveal && !failure ? revealStartedAt : null);
   const shouldNavigate = !!reveal && revealStartedAt !== null && revealElapsed >= reveal.navigateAt
     && (heroReady || revealElapsed >= reveal.navigateAt + HERO_WAIT_MAX_MS);
@@ -374,8 +382,8 @@ const ShareTargetPage: React.FC = () => {
         image={image}
         imageInstant={!!preview && image !== preview}
         recipe={reveal ? recipe ?? null : null}
-        ingredientCount={reveal && recipe ? staggerCount(revealElapsed, INGREDIENTS_AT_MS, INGREDIENT_STAGGER_MS, recipe.ingredients.length) : 0}
-        stepCount={reveal && recipe ? staggerCount(revealElapsed, reveal.stepsAt, STEP_STAGGER_MS, recipe.instructions.length) : 0}
+        ingredientCount={reveal && recipe ? staggerCount(revealElapsed, reveal.pace.ingredientsAt, reveal.pace.ingredientStagger, recipe.ingredients.length) : 0}
+        stepCount={reveal && recipe ? staggerCount(revealElapsed, reveal.stepsAt, reveal.pace.stepStagger, recipe.instructions.length) : 0}
         onBack={handleClose}
       />
       <ImportProgressCard

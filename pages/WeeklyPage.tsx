@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { usePersistedQuery } from '../hooks/usePersistedQuery';
+import { useOnlineOnly } from '../hooks/useOfflineWrites';
 import { api } from '../convex/_generated/api';
 import MealPlanModal from '../components/MealPlanModal';
 import WeeklyPlanView, { type WeekMeal } from '../components/weekly/WeeklyPlanView';
@@ -53,6 +54,7 @@ const WeeklyPage: React.FC = () => {
   });
   const copyWeek = useMutation(api.weekly.copyWeek);
   const addRecipesToShoppingList = useMutation(api.shopping.addRecipesToShoppingList);
+  const onlineOnly = useOnlineOnly();
 
   const fail = (action: string) => (err: unknown) => {
     logger.error('Weekly', `${action} failed`, err);
@@ -89,9 +91,12 @@ const WeeklyPage: React.FC = () => {
         toShopCount={toShop.length}
         onAddToShopping={() => {
           // Alle Rezepte der Woche: der Server ergänzt nur fehlende Zutaten, auch bei teilweise übernommenen Rezepten.
-          addRecipesToShoppingList({ recipeIds: navIds })
-            .then(({ itemsAdded }) => showToast(itemsAdded ? `${itemsAdded} Zutaten auf der Einkaufsliste.` : 'Steht schon alles auf der Einkaufsliste.', itemsAdded ? 'success' : 'info'))
-            .catch(fail('Add week to shopping list'));
+          // Nicht idempotent: offline gesperrt.
+          onlineOnly(() => {
+            addRecipesToShoppingList({ recipeIds: navIds })
+              .then(({ itemsAdded }) => showToast(itemsAdded ? `${itemsAdded} Zutaten auf der Einkaufsliste.` : 'Steht schon alles auf der Einkaufsliste.', itemsAdded ? 'success' : 'info'))
+              .catch(fail('Add week to shopping list'));
+          });
         }}
         shoppingPath="/tabs/shopping"
         recipeLink={(recipeId) => ({

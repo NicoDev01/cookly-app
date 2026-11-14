@@ -15,6 +15,7 @@ import { sizedImageUrl } from "../utils/imageUrl";
 import { useLoadedImageSrc } from "../hooks/useLoadedImageSrc";
 import { api } from "../convex/_generated/api";
 import { ModalLoader } from "./PageLoader";
+import { useOfflineAwareMutation, useOnlineOnly, useOutbox } from "../hooks/useOfflineWrites";
 
 // Lazy load modals - they are only needed when user interacts with them
 const MealPlanModal = lazy(() => import("./MealPlanModal"));
@@ -109,19 +110,19 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
   const [heartBounce, setHeartBounce] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const toggleFavorite = useMutation(
-    api.recipes.toggleFavorite,
-  ).withOptimisticUpdate((localStore, args) => {
-    const { id } = args;
-    const currentRecipe = localStore.getQuery(api.recipes.get, { id });
-    if (currentRecipe) {
-      localStore.setQuery(
-        api.recipes.get,
-        { id },
-        { ...currentRecipe, isFavorite: !currentRecipe.isFavorite },
-      );
-    }
-  });
+  // Feste Ja/Nein-Wirkung statt Toggle: offline gemerkt (services/offlineOutbox), später genau einmal wirksam.
+  const outbox = useOutbox();
+  const isFavorite = outbox.favorites[recipe._id] ?? recipe.isFavorite;
+  const setFavorite = useOfflineAwareMutation(
+    'recipe.setFavorite',
+    useMutation(api.recipes.setFavorite).withOptimisticUpdate((localStore, args) => {
+      const currentRecipe = localStore.getQuery(api.recipes.get, { id: args.id });
+      if (currentRecipe) {
+        localStore.setQuery(api.recipes.get, { id: args.id }, { ...currentRecipe, isFavorite: args.isFavorite });
+      }
+    }),
+  );
+  const onlineOnly = useOnlineOnly();
 
   // Memoize favorite handler to prevent re-renders of IconButton
   const handleToggleFavorite = useCallback(
@@ -134,15 +135,15 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
       setTimeout(() => setHeartBounce(false), 1000);
 
       try {
-        await toggleFavorite({ id: recipe._id });
-        if (!recipe.isFavorite && navigator.vibrate) {
+        await setFavorite({ id: recipe._id, isFavorite: !isFavorite });
+        if (!isFavorite && navigator.vibrate) {
           navigator.vibrate(50);
         }
       } catch (error) {
-        logger.error('Recipe', 'Toggle favorite failed', error);
+        logger.error('Recipe', 'Set favorite failed', error);
       }
     },
-    [recipe._id, toggleFavorite, recipe.isFavorite],
+    [recipe._id, setFavorite, isFavorite],
   );
 
   // Memoize plan modal handler
@@ -156,10 +157,11 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
   }, []);
 
   // Memoize edit handler
+  // Bearbeiten ist nicht idempotent: offline gesperrt.
   const handleEdit = useCallback(() => {
     setIsMenuOpen(false);
-    onEdit();
-  }, [onEdit]);
+    onlineOnly(onEdit);
+  }, [onEdit, onlineOnly]);
 
   // Memoize delete handler
   const handleDeleteClick = useCallback(() => {
@@ -206,16 +208,16 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
               <IconButton
                 icon="favorite"
                 onClick={handleToggleFavorite}
-                isFilled={recipe.isFavorite}
+                isFilled={isFavorite}
                 animateBounce={heartBounce}
                 ariaLabel={
-                  recipe.isFavorite
+                  isFavorite
                     ? "Aus Favoriten entfernen"
                     : "Zu Favoriten hinzufügen"
                 }
-                ariaPressed={recipe.isFavorite}
+                ariaPressed={isFavorite}
                 title={
-                  recipe.isFavorite
+                  isFavorite
                     ? "Aus Favoriten entfernen"
                     : "Zu Favoriten hinzufügen"
                 }

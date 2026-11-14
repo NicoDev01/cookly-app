@@ -48,7 +48,8 @@ type Props = {
   mode: ShoppingMode;
   onModeChange: (mode: ShoppingMode) => void;
   onSetChecked: (ids: string[], checked: boolean) => void;
-  onQuickAdd: (name: string, amount?: string) => void;
+  /** `false`: nicht ausgeführt (offline), Eingabe bleibt stehen. */
+  onQuickAdd: (name: string, amount?: string) => boolean | void;
   onUpdate: (id: string, name: string, amount?: string) => void;
   onRemove: (items: ShoppingListViewItem[]) => void;
   emptyPath: string;
@@ -219,7 +220,7 @@ const ShoppingListView: React.FC<Props> = ({
     const existing = rows.find((r) => r.key === key);
     if (existing && !parsed.amount) {
       if (existing.checked) onSetChecked(existing.ids, false);
-    } else onQuickAdd(parsed.name, parsed.amount);
+    } else if (onQuickAdd(parsed.name, parsed.amount) === false) return;
     setDraft('');
     flash(key);
     void impact('light');

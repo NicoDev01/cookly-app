@@ -42,7 +42,8 @@ type Props = {
   onUnfavorite: (recipe: FavoriteRecipe) => void;
   onPlan: (recipe: FavoriteRecipe) => void;
   /** true = hinzugefügt, false = stand schon auf der Liste */
-  onAddToShopping: (recipe: FavoriteRecipe) => Promise<boolean>;
+  /** `null`: nicht ausgeführt (offline), die Seite hat schon Bescheid gegeben. */
+  onAddToShopping: (recipe: FavoriteRecipe) => Promise<boolean | null>;
   /** Präfix für gemerkte Ansicht und Sortierung, damit das Labor die App nicht umstellt. */
   storageKey: string;
   emptyPath: string;
@@ -248,6 +249,7 @@ const FavoritesView: React.FC<Props> = ({
     setMenu(null);
     try {
       const added = await onAddToShopping(recipe);
+      if (added === null) return;
       showToast(added ? 'Zutaten stehen auf der Einkaufsliste' : 'Steht schon auf der Einkaufsliste', added ? 'success' : 'info');
     } catch {
       showToast('Das hat nicht geklappt. Bitte versuch es noch einmal.', 'error');

@@ -224,3 +224,14 @@ test("instruction highlighting builds keywords once and scans each text once", a
   assert.match(instructions, /text\.matchAll\(matcher\)/);
   assert.doesNotMatch(instructions, /uniqueKeywords\.forEach/);
 });
+
+test("fast imports reveal compactly and pasting a valid link imports right away", async () => {
+  const shareTarget = await source("pages/ShareTargetPage.tsx");
+  const sheet = await source("components/addRecipe/AddRecipeSheet.tsx");
+
+  // Pace is chosen once when the result arrives, from the time since the import started.
+  assert.match(shareTarget, /setRevealPace\(Date\.now\(\) - startedAt < FAST_IMPORT_MS \? COMPACT_REVEAL : FULL_REVEAL\)/);
+  assert.match(shareTarget, /COMPACT_REVEAL: RevealPace = \{[^}]*ingredientStagger: 25[^}]*stepStagger: 50[^}]*doneHold: 500/);
+  assert.match(shareTarget, /FULL_REVEAL: RevealPace = \{[^}]*ingredientStagger: 70[^}]*stepStagger: 140[^}]*doneHold: 1_400/);
+  assert.match(sheet, /const pastedTarget = detectImportTarget\(text\);\s*if \(pastedTarget\) onImport\(pastedTarget\.url\);/);
+});

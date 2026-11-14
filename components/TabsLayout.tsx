@@ -47,7 +47,7 @@ const renderTab = (route: TabRoute) => {
 };
 
 /** Scrollfläche eines Tabs; steht am oberen Rand fest wie eine native App (kein Herunterziehen). */
-const ScrollArea: React.FC<{ className?: string; tabPath?: string; onNode?: (node: HTMLDivElement | null) => void; children: React.ReactNode }> = ({ className = '', tabPath, onNode, children }) => {
+const ScrollArea: React.FC<{ className?: string; tabPath?: string; inert?: boolean; onNode?: (node: HTMLDivElement | null) => void; children: React.ReactNode }> = ({ className = '', tabPath, inert, onNode, children }) => {
   const ref = React.useRef<HTMLDivElement>(null);
   usePreventPullDown(ref);
   const setRef = React.useCallback((node: HTMLDivElement | null) => {
@@ -58,6 +58,7 @@ const ScrollArea: React.FC<{ className?: string; tabPath?: string; onNode?: (nod
     <div
       ref={setRef}
       data-tab-scroll={tabPath}
+      inert={inert}
       className={`absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden overscroll-y-none touch-pan-y ${className}`}
     >
       {children}
@@ -124,9 +125,9 @@ export const TabsLayout: React.FC = () => {
   const isCategoryRoute = !!currentCategory;
 
   // Zurück-Wischgeste auf der Rezeptseite (nur iOS: Android hat eine eigene System-Geste vom Rand).
-  // Während des Wischens wird die Herkunftsseite darunter sichtbar, sofern sie schon gemountet ist.
+  // Die Herkunftsseite (Tab oder Kategorie, kleine Vorschau-Listen) bleibt auf der Rezeptseite sichtbar und
+  // gerendert darunter liegen, verdeckt und nicht bedienbar. So muss beim Wischen nichts erst aufgebaut werden.
   const handleBack = useBackNavigation();
-  const [peeking, setPeeking] = useState(false);
   const pageRef = React.useRef<HTMLDivElement>(null);
   const underRef = React.useRef<HTMLDivElement>(null);
   const setPage = React.useCallback((node: HTMLDivElement | null) => { pageRef.current = node; }, []);
@@ -136,9 +137,9 @@ export const TabsLayout: React.FC = () => {
   const backCategoryMatch = backTarget.match(/^\/category\/(.+)$/);
   const backCategory = backCategoryMatch ? decodeURIComponent(backCategoryMatch[1]) : null;
   const swipeBackEnabled = currentPath.startsWith('/recipe/') && Capacitor.getPlatform() !== 'android';
-  useEdgeSwipeBack(pageRef, underRef, { enabled: swipeBackEnabled, pageKey: currentPath, onPeek: setPeeking, onBack: handleBack });
-  const peekTab = swipeBackEnabled && peeking ? backTab : undefined;
-  const peekCategory = swipeBackEnabled && peeking ? backCategory : null;
+  useEdgeSwipeBack(pageRef, underRef, { enabled: swipeBackEnabled, pageKey: currentPath, onBack: handleBack });
+  const underTab = swipeBackEnabled ? backTab : undefined;
+  const underCategory = swipeBackEnabled ? backCategory : null;
 
   return (
     <ErrorBoundary>
@@ -149,9 +150,15 @@ export const TabsLayout: React.FC = () => {
         <div className="flex-1 relative w-full overflow-hidden">
           <Suspense fallback={<PageLoader />}>
             {mountedTabs.map((tabPath) => (
-              <Activity key={tabPath} mode={currentTab === tabPath || peekTab === tabPath ? 'visible' : 'hidden'}>
+              <Activity key={tabPath} mode={currentTab === tabPath || underTab === tabPath ? 'visible' : 'hidden'}>
                 {/* Ohne Einblenden: display:none startet CSS-Animationen bei jedem Tab-Wechsel neu, das wirkte träge. */}
-                <ScrollArea tabPath={tabPath} onNode={peekTab === tabPath ? setUnder : undefined}>
+                {/* isolate: z-Indizes der Seite darunter bleiben unter der Rezeptseite. */}
+                <ScrollArea
+                  tabPath={tabPath}
+                  inert={underTab === tabPath}
+                  className={underTab === tabPath ? 'isolate' : ''}
+                  onNode={underTab === tabPath ? setUnder : undefined}
+                >
                   {renderTab(tabPath)}
                 </ScrollArea>
               </Activity>
@@ -162,8 +169,12 @@ export const TabsLayout: React.FC = () => {
                 const isActive = currentCategory === category;
                 
                 return (
-                  <Activity key={categoryPath} mode={isActive || peekCategory === category ? 'visible' : 'hidden'}>
-                    <ScrollArea onNode={peekCategory === category ? setUnder : undefined}>
+                  <Activity key={categoryPath} mode={isActive || underCategory === category ? 'visible' : 'hidden'}>
+                    <ScrollArea
+                      inert={underCategory === category}
+                      className={underCategory === category ? 'isolate' : ''}
+                      onNode={underCategory === category ? setUnder : undefined}
+                    >
                       <CategoryRecipesWrapper category={category} />
                     </ScrollArea>
                   </Activity>
@@ -175,7 +186,7 @@ export const TabsLayout: React.FC = () => {
               <ScrollArea
                 key={currentPath}
                 onNode={setPage}
-                className={`${seamless ? '' : 'page-enter'} ${peeking ? 'z-10 bg-background-light dark:bg-background-dark' : ''}`}
+                className={`${seamless ? '' : 'page-enter'} ${swipeBackEnabled ? 'bg-background-light dark:bg-background-dark' : ''}`}
               >
                 <Outlet />
               </ScrollArea>

@@ -43,9 +43,9 @@ test('navigation retains visited views without keeping inactive subscriptions al
   const tabs = read('components/TabsLayout.tsx');
 
   assert.match(tabs, /<Activity/, 'visited views should preserve their UI state');
-  // Sichtbar nur der aktive Tab, kurzzeitig auch die Herkunftsseite während der Zurück-Wischgeste.
-  assert.match(tabs, /mode=\{currentTab === tabPath \|\| peekTab === tabPath \? 'visible' : 'hidden'\}/, 'inactive tabs should suspend effects and subscriptions');
-  assert.match(tabs, /const peekTab = swipeBackEnabled && peeking \?/, 'the swipe-back peek must only show the origin while dragging');
+  // Sichtbar nur der aktive Tab, auf der Rezeptseite zusätzlich ihre Herkunftsseite (für die Zurück-Wischgeste).
+  assert.match(tabs, /mode=\{currentTab === tabPath \|\| underTab === tabPath \? 'visible' : 'hidden'\}/, 'inactive tabs should suspend effects and subscriptions');
+  assert.match(tabs, /const underTab = swipeBackEnabled \? backTab : undefined/, 'only the swipe-back origin of a recipe page may stay visible');
   assert.match(tabs, /slice\(-3\)/, 'category state retention must stay bounded');
   assert.doesNotMatch(tabs, /Promise\.all\(\[\s*import\('\.\.\/pages\//, 'all route chunks must not preload on startup');
 });

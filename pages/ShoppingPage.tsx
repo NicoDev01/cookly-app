@@ -6,6 +6,8 @@ import type { Id } from '../convex/_generated/dataModel';
 import ShoppingListView, { type ShoppingMode } from '../components/shopping/ShoppingListView';
 import { useNotification } from '../contexts/NotificationContext';
 import { usePersistedQuery } from '../hooks/usePersistedQuery';
+import { useOfflineAwareMutation, useOnlineOnly } from '../hooks/useOfflineWrites';
+import { overlayShoppingList } from '../services/offlineOutbox';
 import { logger } from '../utils/logger';
 import { getUserErrorMessage } from '../utils/userErrors';
 import { buildShoppingItemKey, type ShoppingListViewItem } from '../utils/shoppingListView';
@@ -30,17 +32,20 @@ const ShoppingPage: React.FC = () => {
   const { showToast } = useNotification();
   const [mode, setMode] = useState<ShoppingMode>(readMode);
   // Beim Tab-Wechsel die letzte Liste zeigen statt kurz die leere Ansicht.
-  const items = usePersistedQuery(api.shopping.getShoppingList, {}, 'shopping-list');
+  // Offline Abgehaktes/Entferntes liegt in der Outbox und wird darübergelegt.
+  const items = usePersistedQuery(api.shopping.getShoppingList, {}, 'shopping-list', overlayShoppingList);
   // Rezeptbilder nur in der Rezept-Ansicht; „Abteilungen“ kommt ohne aus.
   const recipes = useQuery(api.shopping.getShoppingRecipes, mode === 'recipes' && items && items.length > 0 ? {} : 'skip');
 
   // Optimistisch, damit Abhaken, Hinzufügen und Entfernen ohne Warten auf den Server sichtbar werden.
-  const setChecked = useMutation(api.shopping.setShoppingItemsChecked).withOptimisticUpdate((store, args) =>
+  // Abhaken und Entfernen gehen auch offline (Outbox), Hinzufügen und Bearbeiten nur online.
+  const setChecked = useOfflineAwareMutation('shopping.setChecked', useMutation(api.shopping.setShoppingItemsChecked).withOptimisticUpdate((store, args) =>
     patchList(store, (list) => list.map((i) => (args.ids.includes(i._id) ? { ...i, checked: args.checked } : i))),
-  );
-  const removeItems = useMutation(api.shopping.removeShoppingItems).withOptimisticUpdate((store, args) =>
+  ));
+  const removeItems = useOfflineAwareMutation('shopping.remove', useMutation(api.shopping.removeShoppingItems).withOptimisticUpdate((store, args) =>
     patchList(store, (list) => list.filter((i) => !args.ids.includes(i._id))),
-  );
+  ));
+  const onlineOnly = useOnlineOnly();
   const updateItem = useMutation(api.shopping.updateShoppingItem).withOptimisticUpdate((store, args) =>
     patchList(store, (list) => list.map((i) => (i._id === args.id ? { ...i, name: args.name, amount: args.amount } : i))),
   );
@@ -86,8 +91,8 @@ const ShoppingPage: React.FC = () => {
       mode={mode}
       onModeChange={changeMode}
       onSetChecked={(ids, checked) => void setChecked({ ids: ids as Id<'shoppingItems'>[], checked }).catch(fail('check'))}
-      onQuickAdd={(name, amount) => void quickAdd({ name, amount }).catch(fail('add'))}
-      onUpdate={(id, name, amount) => void updateItem({ id: id as Id<'shoppingItems'>, name, amount }).catch(fail('update'))}
+      onQuickAdd={(name, amount) => onlineOnly(() => void quickAdd({ name, amount }).catch(fail('add')))}
+      onUpdate={(id, name, amount) => onlineOnly(() => void updateItem({ id: id as Id<'shoppingItems'>, name, amount }).catch(fail('update')))}
       onRemove={(list) => void removeItems({ ids: list.map((i) => i._id as Id<'shoppingItems'>) }).catch(fail('remove'))}
       emptyPath="/tabs/categories"
       recentsKey="cookly.shopping.recents"

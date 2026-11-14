@@ -1,5 +1,5 @@
 import React from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useConvex, useMutation } from "convex/react";
 import { useCachedQuery } from '../contexts/QueryCacheContext';
@@ -38,7 +38,15 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
   const handleBack = useBackNavigation();
   
   const isAll = category === 'all';
-  const decodedCategory = category && !isAll ? decodeURIComponent(category) : undefined;
+  // Aus dem Pfad kommt der Name kodiert (TabsLayout), aus useParams schon dekodiert; ein „%“ im Namen darf nicht werfen.
+  const decodedCategory = React.useMemo(() => {
+    if (!category || isAll) return undefined;
+    try {
+      return decodeURIComponent(category);
+    } catch {
+      return category;
+    }
+  }, [category, isAll]);
 
   const [sortOption, setSortOption] = React.useState<'alphabetical' | 'recent'>(() => {
     const saved = localStorage.getItem('recipeSortOption');
@@ -68,7 +76,8 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
   }, [isAll, decodedCategory]);
 
   // PERFORMANCE: Use cached query for instant navigation (eliminates spinner)
-  const cacheKey = isAll ? 'category-all-recipes' : `category-${category}`;
+  // Dekodierter Name: Link aus der Übersicht und neu aufgebaute Route ergeben denselben Schlüssel (sonst offline leer).
+  const cacheKey = isAll ? 'category-all-recipes' : `category-${decodedCategory}`;
   const { data: rawRecipes, isRefreshing } = useCachedQuery<RecipeListItem[]>(
     api.recipes.listPreviews,
     listArgs,
@@ -94,6 +103,8 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
   // Seite kann beim Wiederöffnen kurz eine veraltete leere Liste zeigen; deshalb erst beim Server nachfragen und
   // den Merker beim Weiterleiten zurücksetzen, sonst sperrt die Weiterleitung die Kategorie dauerhaft.
   const navigate = useNavigate();
+  // Unter der Rezeptseite (Zurück-Wischgeste) nie navigieren: die Adresse gehört dann dem Rezept.
+  const isActiveRoute = useLocation().pathname.startsWith('/category/');
   const convex = useConvex();
   const hadRecipesRef = React.useRef(false);
   React.useEffect(() => {
@@ -102,7 +113,7 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
       hadRecipesRef.current = true;
       return;
     }
-    if (!hadRecipesRef.current || isRefreshing || listArgs === 'skip') return;
+    if (!hadRecipesRef.current || isRefreshing || listArgs === 'skip' || !isActiveRoute) return;
     let cancelled = false;
     convex.query(api.recipes.listPreviews, listArgs).then((fresh) => {
       if (cancelled || fresh.length) return;
@@ -112,7 +123,7 @@ const CategoryRecipesPage: React.FC<CategoryRecipesPageProps> = ({ category: pro
     return () => {
       cancelled = true;
     };
-  }, [recipes, isRefreshing, listArgs, convex, navigate]);
+  }, [recipes, isRefreshing, listArgs, convex, navigate, isActiveRoute]);
 
   const recipeIds = React.useMemo(() => {
     if (!recipes) return [];
