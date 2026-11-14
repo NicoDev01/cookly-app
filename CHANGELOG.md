@@ -6,6 +6,20 @@
 ---
 
 
+## [1.5.1] - 14.11.2026 (Build 50, TestFlight)
+
+### 🚀 Verbesserungen
+- **Website-Import in unter einer Sekunde** bei Seiten mit sauberem schema.org-Rezept (z. B. Chefkoch);
+  Gemini nur noch bei fremder Sprache, unklarer Kategorie oder unsauberen Daten.
+- **Instagram, TikTok, Facebook** starten ohne Node-Kaltstart.
+- **Offline und Kaltstart:** zuletzt geladene Kategorien, Listen, Rezepte, Einkaufsliste und Wochenplan
+  stehen sofort da, auch ohne Netz; der Server gewinnt, sobald er antwortet.
+- **Zurück** geht echt zurück statt neue Seiten zu stapeln; **iOS-Wischgeste** vom linken Rand auf der Rezeptseite.
+- Wochenplan-Sheets lassen sich nach unten wegwischen; Splash verschwindet nach dem ersten Bild statt nach 300 ms.
+
+---
+
+
 ## [1.5.1] - 13.11.2026 (Build 49)
 
 ### ✨ Neue Features
