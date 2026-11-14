@@ -6,6 +6,22 @@
 ---
 
 
+## [1.5.1] - 14.11.2026 (Build 51, TestFlight)
+
+### 🚀 Verbesserungen
+- **TikTok-Import in rund 3 Sekunden** statt 25–30: Beschreibung, Untertitel und Titelbild direkt von der
+  Videoseite; bei zu wenig Text wie bisher über Apify inklusive Transkription.
+- **Geteilter Import-Cache:** Hat schon jemand denselben Link importiert, steht das Rezept in Sekundenbruchteilen da
+  (nur öffentliche Rezeptdaten, jedes Konto bekommt sein eigenes Rezept und Bild).
+- **Offline abhaken, entfernen und favorisieren:** wirkt sofort und wird nachgereicht, sobald wieder Netz da ist;
+  Hinzufügen und Bearbeiten sind offline mit Hinweis gesperrt.
+- Schnelle Importe blenden das Rezept kürzer ein; **Einfügen** eines gültigen Links startet den Import sofort.
+
+### 🐛 Fixes
+- Wischgeste vom linken Rand bewegt nicht mehr das Rezept-Karussell mit und läuft ohne Ruckeln.
+- Offline: zweite Kategorie und Wochenplan laden aus dem Gerätespeicher.
+
+
 ## [1.5.1] - 14.11.2026 (Build 50, TestFlight)
 
 ### 🚀 Verbesserungen
