@@ -12,6 +12,7 @@ import { GEMINI_TEXT_TIMEOUT_MS, isRetryableGeminiError, runWithGeminiModelFallb
 import { extractPageText, extractRecipeFromHtml, type PageRecipe } from "../utils/recipeJsonLd";
 import { buildFastRecipe, type FastPathResult } from "../utils/recipeFastPath";
 import { fetchRemotePage } from "./remoteImages";
+import { websiteCacheKey } from "./lib/importCacheKey";
 
 const JINA_API_KEY = process.env.JINA_API_KEY;
 /** Direktabruf der Seite: typisch < 1 s. Danach Jina als Fallback (4–12 s gemessen, Nov. 2026). */
@@ -163,7 +164,7 @@ export const scrapeWebsiteInternal = internalAction({
         if (fast?.recipe && fast.issues.length === 0) {
             const payload = buildPayload(fast.recipe, pageRecipe?.image, args.url);
             timer.summary({ result: "created", path: "jsonld_fast" });
-            return { payload };
+            return { payload, ...cacheInfo(args.url) };
         }
 
         if (pageRecipe) {
@@ -308,9 +309,15 @@ export const scrapeWebsiteInternal = internalAction({
         }
 
         timer.summary({ result: "created", path: "gemini", source: pageRecipe?.source ?? "jina", issues: fast?.issues.join(",") });
-        return { payload: buildPayload(recipeData, pageImageUrl, args.url) };
+        return { payload: buildPayload(recipeData, pageImageUrl, args.url), ...cacheInfo(args.url) };
     },
 });
+
+/** Vollwertige Ergebnisse (schema.org vollständig oder Gemini) dürfen in den geteilten Cache, Notlösungen nicht. */
+function cacheInfo(url: string) {
+    const key = websiteCacheKey(url);
+    return key ? { cache: { key, hit: false } } : {};
+}
 
 const IMAGE_STOPWORDS = ["nach", "mit", "aus", "vom", "von", "zu", "für", "in", "an", "auf", "bei", "durch", "original", "originalrezept", "rezept", "klassisch", "traditionell", "einfach", "schnell", "lecker"];
 

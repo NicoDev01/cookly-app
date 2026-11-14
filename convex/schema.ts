@@ -211,6 +211,32 @@ export default defineSchema({
   .index("by_state_expiresAt", ["state", "expiresAt"])
   .index("by_recipe", ["recipeId"]),
 
+  // Geteilter Import-Cache: nur öffentlich extrahierte Rezeptfelder je Quelle, ohne Nutzerbezug.
+  // Nie vom Client lesbar (nur internal-Funktionen in importCache.ts); ein Treffer legt immer ein eigenes Rezept an.
+  importCache: defineTable({
+    key: v.string(),
+    provider: v.string(),
+    version: v.number(),
+    recipe: v.object({
+      title: v.string(),
+      category: v.string(),
+      prepTimeMinutes: v.number(),
+      difficulty: v.union(v.literal("Einfach"), v.literal("Mittel"), v.literal("Schwer")),
+      portions: v.number(),
+      ingredients: v.array(v.object({ name: v.string(), amount: v.optional(v.string()) })),
+      instructions: v.array(v.object({ text: v.string(), icon: v.optional(v.string()) })),
+    }),
+    sourceImageUrl: v.optional(v.string()),
+    // Eigene Kopie des Bilds (Social-CDN-Links laufen ab); gehört dem Cache, nie einem Nutzer.
+    imageStorageId: v.optional(v.id("_storage")),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    hitCount: v.number(),
+    lastHitAt: v.optional(v.number()),
+  })
+    .index("by_key", ["key"])
+    .index("by_expiresAt", ["expiresAt"]),
+
   importOperations: defineTable({
     userId: v.id("users"),
     operationId: v.string(),

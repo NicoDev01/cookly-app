@@ -25,6 +25,8 @@ import {
 import { GEMINI_TEXT_TIMEOUT_MS, isRetryableGeminiError, runWithGeminiModelFallback } from "../utils/geminiRetry";
 import { runApifyActorUntilDone } from "./lib/apifyRun";
 import { runAttemptPlan } from "./lib/attemptPlan";
+import { cachedImportResult, type ImportCacheInfo } from "./importCache";
+import { socialCacheKey } from "./lib/importCacheKey";
 
 const GEMINI_RETRY_DELAYS_MS = [1_500, 4_000] as const;
 
@@ -100,13 +102,19 @@ export type SocialPlatform = {
   /** Zusätzlicher Text zum Post, z. B. TikTok-Untertitel. Nur für den besten Kandidaten. */
   collectExtraTexts?(post: Record<string, unknown>): Promise<string[]>;
 
+  /**
+   * Schneller Weg ohne Apify (z. B. öffentliche TikTok-Videoseite). Liefert er einen Kandidaten mit genug Text
+   * (`shouldRetry` false), entfällt die Scraping-Phase. Sonst oder bei Fehlern (null) läuft der normale Apify-Plan.
+   */
+  fastCandidate?(context: { url: string; targetKey: string }): Promise<ScrapedCandidate | null>;
+
   buildPrompt(text: string): string;
   buildRecoveryPrompt(text: string): string;
 };
 
 export type SocialImportResult =
   | { recipeId: Id<"recipes"> }
-  | { staleRecipeId?: Id<"recipes">; payload: Record<string, unknown>; scrapeStats?: ScrapeStats };
+  | { staleRecipeId?: Id<"recipes">; payload: Record<string, unknown>; scrapeStats?: ScrapeStats; cache?: ImportCacheInfo };
 
 const toStructuredError = (payload: Record<string, unknown>): Error => new Error(JSON.stringify(payload));
 
@@ -303,10 +311,48 @@ export async function runSocialImport(
   }
   timer.mark("dedupe_miss");
 
-  // --- Apify: Versuche nacheinander (oder abgesichert parallel), bis das Ergebnis reicht --
+  // --- Geteilter Cache: denselben Beitrag hat schon jemand importiert ----------------------
+  const cacheKey = socialCacheKey(platform.id, targetKey);
+  const cached = await cachedImportResult(ctx, cacheKey, normalizedUrl);
+  if (cached) {
+    timer.mark("import_cache_hit");
+    timer.summary({ result: "created", path: "cache" });
+    return { ...cached, staleRecipeId: staleExistingId ?? undefined };
+  }
+
   const context = { url: normalizedUrl, targetKey };
-  const attempts = platform.attempts(context);
   const shouldRetry = platform.shouldRetry ?? ((candidate: ScrapedCandidate | null) => !candidate);
+
+  // --- Schneller Weg: reicht sein Text, entfällt Apify komplett --------------------------
+  if (platform.fastCandidate && targetKey) {
+    const fastStartedAt = Date.now();
+    let fast: ScrapedCandidate | null = null;
+    try {
+      fast = await platform.fastCandidate(context);
+    } catch (error) {
+      timer.mark("fast_path_failed", { error: error instanceof Error ? error.message.slice(0, 200) : String(error) });
+    }
+    const usable = !!fast && !shouldRetry(fast, context);
+    timer.mark("fast_path_done", {
+      durationMs: Date.now() - fastStartedAt,
+      found: !!fast,
+      usable,
+      captionLength: fast?.caption.length ?? 0,
+      extraTextCount: fast?.extraTexts.length ?? 0,
+    });
+    if (fast && usable) {
+      return extractAndBuild(ctx, platform, args, timer, {
+        candidate: fast,
+        normalizedUrl,
+        targetKey,
+        staleExistingId,
+        stats: { scrapeMs: Date.now() - fastStartedAt, attemptsStarted: 0, hedged: false, winner: "page" },
+      });
+    }
+  }
+
+  // --- Apify: Versuche nacheinander (oder abgesichert parallel), bis das Ergebnis reicht --
+  const attempts = platform.attempts(context);
   let lastError: unknown = null;
   let unavailableCode: string | null = null;
 
@@ -382,6 +428,23 @@ export async function runSocialImport(
     candidateKey: candidate.key,
   });
 
+  return extractAndBuild(ctx, platform, args, timer, { candidate, normalizedUrl, targetKey, staleExistingId, stats });
+}
+
+/** Gemini auf den gewählten Kandidaten, letzter Dedupe-Check, Payload. */
+async function extractAndBuild(
+  ctx: ActionCtx,
+  platform: SocialPlatform,
+  args: { userId: Id<"users">; url: string; operationId?: string },
+  timer: ReturnType<typeof createImportTimer>,
+  { candidate, normalizedUrl, targetKey, staleExistingId, stats }: {
+    candidate: ScrapedCandidate;
+    normalizedUrl: string;
+    targetKey: string;
+    staleExistingId: Id<"recipes"> | null;
+    stats: ScrapeStats;
+  },
+): Promise<SocialImportResult> {
   const caption = candidate.caption.trim();
   const geminiInputText = buildGeminiInput(
     caption,
@@ -425,9 +488,11 @@ export async function runSocialImport(
 
   timer.summary({ result: "created" });
 
+  const cacheKey = socialCacheKey(platform.id, targetKey);
   return {
     staleRecipeId: staleExistingId ?? undefined,
     scrapeStats: stats,
+    ...(cacheKey && { cache: { key: cacheKey, hit: false } }),
     payload: {
       title: recipeData.title,
       category: recipeData.category,

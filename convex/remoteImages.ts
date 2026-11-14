@@ -269,6 +269,8 @@ async function proxyRecipeImage(
   ctx: ActionCtx,
   userId: Id<"users">,
   recipe: ProxyRecipe,
+  /** Bild aus dem Import-Cache: als eigene Kopie für den Nutzer speichern statt neu laden. */
+  cachedImageStorageId?: Id<"_storage">,
 ): Promise<ProxyResult> {
   const timer = createImportTimer("image_proxy", { recipeId: recipe._id });
   timer.mark("recipe_loaded");
@@ -288,13 +290,20 @@ async function proxyRecipeImage(
   let storageId: Id<"_storage"> | undefined;
   let registered = false;
   try {
-    const image = await fetchValidatedRemoteImage({
-      url: sourceImageUrl,
-      provider: getProvider(recipe.sourceUrl, sourceImageUrl),
-      timeoutMs: 12_000,
-    });
-    timer.mark("source_fetched");
-    storageId = await ctx.storage.store(toBlob(image));
+    const cached = cachedImageStorageId ? await ctx.storage.get(cachedImageStorageId).catch(() => null) : null;
+    if (cached) {
+      // Eigene Kopie: Läuft der Cache-Eintrag ab, bleibt das Bild des Nutzers erhalten.
+      storageId = await ctx.storage.store(cached);
+      timer.mark("copied_from_import_cache");
+    } else {
+      const image = await fetchValidatedRemoteImage({
+        url: sourceImageUrl,
+        provider: getProvider(recipe.sourceUrl, sourceImageUrl),
+        timeoutMs: 12_000,
+      });
+      timer.mark("source_fetched");
+      storageId = await ctx.storage.store(toBlob(image));
+    }
     timer.mark("stored_in_convex");
     await ctx.runMutation(internal.storageAssets.registerServerAssetForUser, {
       storageId,
@@ -352,14 +361,33 @@ export const proxyExternalImage = action({
 });
 
 export const proxyImportedImage = internalAction({
-  args: { userId: v.id("users"), recipeId: v.id("recipes") },
+  args: { userId: v.id("users"), recipeId: v.id("recipes"), cachedImageStorageId: v.optional(v.id("_storage")) },
   handler: async (ctx, args): Promise<ProxyResult> => {
     const recipe = await ctx.runQuery(internal.recipes.getForUser, {
       userId: args.userId,
       id: args.recipeId,
     });
     if (!recipe) throw new Error("Recipe not found or access denied");
-    return await proxyRecipeImage(ctx, args.userId, recipe);
+    return await proxyRecipeImage(ctx, args.userId, recipe, args.cachedImageStorageId);
+  },
+});
+
+/** Bild eines neuen Import-Cache-Eintrags in Cache-eigenen Storage laden (siehe importCache.ts). */
+export const storeImportCacheImage = internalAction({
+  args: { key: v.string(), createdAt: v.number(), sourceUrl: v.optional(v.string()), imageUrl: v.string() },
+  handler: async (ctx, args) => {
+    try {
+      const image = await fetchValidatedRemoteImage({
+        url: args.imageUrl,
+        provider: getProvider(args.sourceUrl, args.imageUrl),
+        timeoutMs: 12_000,
+      });
+      const storageId = await ctx.storage.store(toBlob(image));
+      await ctx.runMutation(internal.importCache.attachImage, { key: args.key, createdAt: args.createdAt, storageId });
+    } catch (error) {
+      // Ohne Bild bleibt der Eintrag nutzbar; Treffer laden dann vom Original-Link.
+      console.warn("[importCache] image not stored", { errorCode: remoteImageErrorCode(error) });
+    }
   },
 });
 

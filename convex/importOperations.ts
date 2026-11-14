@@ -2,7 +2,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalAction, internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { internalAction, internalMutation, mutation, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { FREE_LIMITS } from "./constants";
 import { consumeProviderBudget, consumeRateLimit, type ProviderBudget, type RateLimitBucket } from "./rateLimiter";
 import { adjustCategoryCount, ensureCategoryExists, insertRecipe } from "./recipes";
@@ -10,6 +10,8 @@ import { storeAnalyticsEvent } from "./analytics";
 import { enqueueIntegration } from "./integrations";
 import { importErrorCode } from "./lib/importErrors";
 import { deleteTrackedAsset } from "./storageAssets";
+import { cachedImportResult } from "./importCache";
+import { websiteCacheKey } from "./lib/importCacheKey";
 
 const provider = v.union(
   v.literal("instagram"),
@@ -369,6 +371,12 @@ export const completeLink = internalMutation({
       hedged: v.boolean(),
       winner: v.optional(v.string()),
     })),
+    /** Geteilter Import-Cache (importCache.ts): Treffer oder speicherbares Ergebnis. */
+    cache: v.optional(v.object({
+      key: v.string(),
+      hit: v.boolean(),
+      imageStorageId: v.optional(v.id("_storage")),
+    })),
   },
   handler: async (ctx, args) => {
     const operation = await ctx.db.query("importOperations")
@@ -435,10 +443,22 @@ export const completeLink = internalMutation({
         winner: args.scrapeStats.winner,
       }),
     });
+    const cacheHit = !args.recipeId && args.payload && args.cache?.hit ? args.cache : undefined;
     await ctx.scheduler.runAfter(0, internal.remoteImages.proxyImportedImage, {
       userId: args.userId,
       recipeId,
+      ...(cacheHit?.imageStorageId && { cachedImageStorageId: cacheHit.imageStorageId }),
     });
+    if (cacheHit) {
+      await ctx.scheduler.runAfter(0, internal.importCache.recordHit, { key: cacheHit.key });
+    } else if (!args.recipeId && args.payload && args.cache) {
+      // Ergebnis frisch aus der Extraktion, noch unbearbeitet: für andere Nutzer merken.
+      await ctx.scheduler.runAfter(0, internal.importCache.store, {
+        key: args.cache.key,
+        provider: operation.provider,
+        payload: args.payload,
+      });
+    }
     return recipeId;
   },
 });
@@ -529,6 +549,14 @@ export const fail = internalMutation({
   },
 });
 
+/** Website-Treffer im geteilten Cache, mit demselben Duplikat-Check wie scrapeWebsiteInternal. */
+async function cachedWebsiteImport(ctx: ActionCtx, userId: Id<"users">, url: string) {
+  const hit = await cachedImportResult(ctx, websiteCacheKey(url), url);
+  if (!hit) return null;
+  const existing = await ctx.runQuery(internal.recipes.getBySourceUrlForUser, { userId, url });
+  return existing ? { recipeId: existing._id } : hit;
+}
+
 export const runImport = internalAction({
   args: { userId: v.id("users"), operationId: v.string() },
   handler: async (ctx, args) => {
@@ -550,9 +578,15 @@ export const runImport = internalAction({
         facebook: internal.facebook.scrapePostInternal,
         tiktok: internal.tiktok.scrapePostInternal,
       } as const;
-      const target = linkImporters[operation.provider as keyof typeof linkImporters]
-        ?? internal.website.scrapeWebsiteInternal;
-      const result = await ctx.runAction(target, { userId: args.userId, url: operation.sourceUrl!, operationId: args.operationId });
+      const socialTarget = linkImporters[operation.provider as keyof typeof linkImporters];
+      // Websites: Cache vor dem Start der Node-Action prüfen, ein Treffer spart auch deren Kaltstart.
+      // Social-Imports prüfen ihn selbst nach dem Auflösen von Kurzlinks (socialImport.ts).
+      const cached = socialTarget ? null : await cachedWebsiteImport(ctx, args.userId, operation.sourceUrl!);
+      const result = cached ?? await ctx.runAction(socialTarget ?? internal.website.scrapeWebsiteInternal, {
+        userId: args.userId,
+        url: operation.sourceUrl!,
+        operationId: args.operationId,
+      });
       await ctx.runMutation(internal.importOperations.completeLink, { ...args, ...result });
     } catch (error) {
       await ctx.runMutation(internal.importOperations.fail, { ...args, errorCode: importErrorCode(error) });

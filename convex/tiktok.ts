@@ -7,12 +7,13 @@ import {
   extractTiktokVideoId,
   isSupportedTiktokUrl,
   needsTiktokRedirectResolution,
+  parseTiktokVideoPage,
   rankSubtitleLinks,
   vttToPlainText,
 } from "./lib/tiktokContent";
 import { buildExtractionPrompt, buildRecoveryPrompt, type PromptOptions } from "./socialImportPrompts";
 import { runSocialImport, type ApifyAttempt, type SocialPlatform } from "./socialImport";
-import { getNestedValue } from "./socialImportShared";
+import { getNestedValue, type ScrapedCandidate } from "./socialImportShared";
 
 const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 
@@ -33,6 +34,56 @@ const THIN_TEXT_THRESHOLD = 220;
  */
 const transcriptionFallbackEnabled = (): boolean =>
   (process.env.TIKTOK_TRANSCRIBE_FALLBACK ?? "true").toLowerCase() !== "false";
+
+/**
+ * Schneller Weg über die öffentliche Videoseite (gemessen 2026-11-14 aus Convex: 0,7–1,2 s statt 16–25 s mit Apify).
+ * Liefert dieselben Daten wie der erste Apify-Versuch: Beschreibung, TikToks eigene Untertitel, Titelbild.
+ * Per Convex-Env-Variable abschaltbar; bei jedem Fehler oder zu wenig Text läuft Apify wie bisher.
+ */
+const pageFastPathEnabled = (): boolean =>
+  (process.env.TIKTOK_PAGE_FAST_PATH ?? "true").toLowerCase() !== "false";
+const PAGE_TIMEOUT_MS = 4_000;
+const PAGE_SUBTITLE_TIMEOUT_MS = 4_000;
+const PAGE_USER_AGENT =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+
+const fetchPageSubtitle = async (url: string): Promise<string> => {
+  try {
+    // Signierte TikTok-CDN-URL: ohne Apify-Token (der gehört nur zu api.apify.com).
+    const response = await fetch(url, { signal: AbortSignal.timeout(PAGE_SUBTITLE_TIMEOUT_MS) });
+    if (!response.ok) return "";
+    return vttToPlainText(await response.text());
+  } catch {
+    return "";
+  }
+};
+
+const fastCandidateFromPage = async ({ url, targetKey }: { url: string; targetKey: string }): Promise<ScrapedCandidate | null> => {
+  if (!pageFastPathEnabled()) return null;
+  const parsed = new URL(url);
+  // Nur die kanonische Videoseite auf www.tiktok.com abrufen (normalizeTiktokUrl hat Kurzlinks schon aufgelöst).
+  if (parsed.protocol !== "https:" || parsed.hostname !== "www.tiktok.com" || extractTiktokVideoId(parsed.pathname) !== targetKey) return null;
+
+  const response = await fetch(parsed.toString(), {
+    redirect: "follow",
+    signal: AbortSignal.timeout(PAGE_TIMEOUT_MS),
+    headers: { "User-Agent": PAGE_USER_AGENT, "Accept-Language": "de-DE,de;q=0.9,en;q=0.5" },
+  });
+  if (!response.ok) return null;
+  const page = parseTiktokVideoPage(await response.text(), targetKey);
+  if (!page) return null;
+
+  const extraTexts = (await Promise.all(page.subtitles.map(({ url: subtitleUrl }) => fetchPageSubtitle(subtitleUrl)))).filter(Boolean);
+  return {
+    post: { id: page.videoId, text: page.description },
+    caption: page.description,
+    extraTexts,
+    imageUrl: page.coverUrl,
+    canonicalUrl: url,
+    key: page.videoId,
+    score: 0,
+  };
+};
 
 const normalizeTiktokUrl = async (rawUrl: string): Promise<string> => {
   const canonical = canonicalizeTiktokUrl(rawUrl);
@@ -139,6 +190,8 @@ export const tiktokPlatform: SocialPlatform = {
     const texts = await Promise.all(links.map(({ url }) => fetchSubtitleText(url)));
     return texts.filter(Boolean);
   },
+
+  fastCandidate: fastCandidateFromPage,
 
   buildPrompt: (text) => buildExtractionPrompt(PROMPT_OPTIONS, text),
   buildRecoveryPrompt: (text) => buildRecoveryPrompt(PROMPT_OPTIONS, text),

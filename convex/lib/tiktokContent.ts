@@ -116,3 +116,67 @@ export const vttToPlainText = (vtt: string): string => {
 
   return out.join(" ").replace(/\s+/g, " ").trim();
 };
+
+/** Hosts, von denen TikTok Untertitel und Titelbilder ausliefert. Nur diese werden abgerufen. */
+const TIKTOK_CDN_SUFFIXES = ["tiktokcdn.com", "tiktokcdn-eu.com", "tiktokcdn-us.com"];
+
+export const isTiktokCdnUrl = (rawUrl: string): boolean => {
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase();
+    return parsed.protocol === "https:" && TIKTOK_CDN_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+  } catch {
+    return false;
+  }
+};
+
+export type TiktokPageData = {
+  videoId: string;
+  description: string;
+  coverUrl: string;
+  /** Untertitel-Links wie bei `rankSubtitleLinks`: ASR vor Übersetzung, Deutsch zuerst. */
+  subtitles: Array<{ url: string; language: string }>;
+};
+
+/**
+ * Liest Beschreibung, Titelbild und Untertitel-Links aus der öffentlichen Videoseite
+ * (`__UNIVERSAL_DATA_FOR_REHYDRATION__`). Liefert null, wenn die Seite anders aussieht als erwartet
+ * (Bot-Schutz, Login-Wall, Layoutwechsel) oder zu einem anderen Video gehört; dann übernimmt Apify.
+ */
+export const parseTiktokVideoPage = (html: string, expectedVideoId: string): TiktokPageData | null => {
+  const match = html.match(/<script[^>]*id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!match || !expectedVideoId) return null;
+  let scope: Record<string, unknown> | null;
+  try {
+    scope = toRecord(toRecord(JSON.parse(match[1]))?.__DEFAULT_SCOPE__);
+  } catch {
+    return null;
+  }
+  if (!scope) return null;
+
+  // Mobile Seite: "webapp.reflow.video.detail", Desktop: "webapp.video-detail".
+  const detail = toRecord(scope["webapp.reflow.video.detail"]) ?? toRecord(scope["webapp.video-detail"]);
+  const item = toRecord(toRecord(detail?.itemInfo)?.itemStruct);
+  if (!item || String(item.id ?? "") !== expectedVideoId) return null;
+
+  const video = toRecord(item.video);
+  const description = typeof item.desc === "string" ? item.desc.trim() : "";
+  const coverUrl = [video?.originCover, video?.cover, video?.zoomCover]
+    .find((value): value is string => typeof value === "string" && isTiktokCdnUrl(value)) ?? "";
+
+  const subtitles = (Array.isArray(video?.subtitleInfos) ? video.subtitleInfos : [])
+    .map((entry) => {
+      const record = toRecord(entry);
+      const url = typeof record?.Url === "string" ? record.Url : "";
+      if (!isTiktokCdnUrl(url) || (record?.Format && record.Format !== "webvtt")) return null;
+      const language = typeof record?.LanguageCodeName === "string" ? record.LanguageCodeName : "";
+      const isGerman = /^(deu|ger)/i.test(language);
+      return { url, language, rank: (record?.Source === "ASR" ? 2 : 0) + (isGerman ? 1 : 0) };
+    })
+    .filter((entry): entry is { url: string; language: string; rank: number } => entry !== null)
+    .sort((a, b) => b.rank - a.rank)
+    .slice(0, MAX_SUBTITLE_TRACKS)
+    .map(({ url, language }) => ({ url, language }));
+
+  return { videoId: expectedVideoId, description, coverUrl, subtitles };
+};
