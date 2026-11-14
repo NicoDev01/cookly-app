@@ -5,7 +5,7 @@ import { api } from '../convex/_generated/api';
 import FavoritesView, { type FavoriteRecipe } from '../components/favorites/FavoritesView';
 import { ModalLoader } from '../components/PageLoader';
 import { useNotification } from '../contexts/NotificationContext';
-import { useStableQuery } from '../hooks/useStableQuery';
+import { usePersistedQuery } from '../hooks/usePersistedQuery';
 import { logger } from '../utils/logger';
 import { getUserErrorMessage } from '../utils/userErrors';
 import { plannedLabels } from '../utils/favoritesView';
@@ -24,7 +24,7 @@ const patchFavorites = (store: OptimisticLocalStore, fn: (list: FavoritesValue) 
 const FavoritesPage: React.FC = () => {
   const { showToast } = useNotification();
   // Beim Tab-Wechsel das letzte Ergebnis zeigen statt kurz nichts (kein Flackern).
-  const favorites = useStableQuery(api.recipes.listPreviews, FAVORITES_ARGS);
+  const favorites = usePersistedQuery(api.recipes.listPreviews, FAVORITES_ARGS, 'favorites');
   const [planFor, setPlanFor] = useState<FavoriteRecipe | null>(null);
 
   // Aktuelle Woche für den Hinweis „schon eingeplant“; die Abfrage liefert nur schlanke Vorschauen.

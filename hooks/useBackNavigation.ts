@@ -1,62 +1,26 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { getBackTarget } from '../services/backNavigation';
+import { backTargetFor, navigateBack, recordHistoryEntry, type BackNavState } from '../services/backNavigation';
 
-type NavState = {
-  from?: 'favorites' | 'weekly';
-  fromCategory?: string;
-};
+const historyIndex = () => (window.history.state as { idx?: number } | null)?.idx;
+
+/** Merkt sich den Pfad jedes Verlaufseintrags; einmal innerhalb des Routers mounten. */
+export function useHistoryTracking() {
+  const location = useLocation();
+  useEffect(() => {
+    recordHistoryEntry(historyIndex(), location.pathname);
+  }, [location.key, location.pathname]);
+}
 
 /**
- * Reusable Hook für konsistente Back-Button Logik in UI-Komponenten
- *
- * Navigation Hierarchy:
- * - Tab-Seiten → Kategorien
- * - Subscribe → Profil
- * - RecipePage → Berücksichtigt Herkunft:
- *   - from: 'favorites' → /tabs/favorites
- *   - from: 'weekly' → /tabs/weekly
- *   - fromCategory: 'all' → /category/all
- *   - fromCategory: 'Asiatisch' → /category/Asiatisch
- *   - Kein State → Fallback zu /tabs/categories
- * - CategoryPage → Kategorien
- *
- * @returns handleBack function die von onClick Handlers aufgerufen werden kann
+ * "Zurück" für UI-Buttons und die Wischgeste. Ziel nach Herkunft (Favoriten, Wochenplan, Kategorie,
+ * sonst Hierarchie aus getBackTarget). Ist der vorige Verlaufseintrag genau dieses Ziel, geht es echt zurück.
  */
 export function useBackNavigation() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const handleBack = useCallback(() => {
-    const state = location.state as NavState;
-
-    // 1. Prüfen ob wir von Favorites/Weekly kommen
-    if (state?.from === 'favorites') {
-      navigate('/tabs/favorites');
-      return;
-    }
-    if (state?.from === 'weekly') {
-      navigate('/tabs/weekly');
-      return;
-    }
-
-    // 2. Prüfen ob wir von einer Kategorie kommen
-    if (state?.fromCategory) {
-      navigate(`/category/${encodeURIComponent(state.fromCategory)}`);
-      return;
-    }
-
-    // 3. Fallback zur Standard-Logik
-    const target = getBackTarget(location.pathname);
-
-    if (target === 'EXIT') {
-      // Im UI sollten wir nie EXIT erreichen (nur native Back-Button)
-      // Als Fallback navigieren wir zu Kategorien
-      navigate('/tabs/categories');
-    } else {
-      navigate(target);
-    }
+  return useCallback(() => {
+    navigateBack(navigate, backTargetFor(location.pathname, location.state as BackNavState), historyIndex());
   }, [navigate, location.pathname, location.state]);
-
-  return handleBack;
 }

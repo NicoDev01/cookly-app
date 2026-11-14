@@ -5,7 +5,7 @@ import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
 import ShoppingListView, { type ShoppingMode } from '../components/shopping/ShoppingListView';
 import { useNotification } from '../contexts/NotificationContext';
-import { useStableQuery } from '../hooks/useStableQuery';
+import { usePersistedQuery } from '../hooks/usePersistedQuery';
 import { logger } from '../utils/logger';
 import { getUserErrorMessage } from '../utils/userErrors';
 import { buildShoppingItemKey, type ShoppingListViewItem } from '../utils/shoppingListView';
@@ -30,7 +30,7 @@ const ShoppingPage: React.FC = () => {
   const { showToast } = useNotification();
   const [mode, setMode] = useState<ShoppingMode>(readMode);
   // Beim Tab-Wechsel die letzte Liste zeigen statt kurz die leere Ansicht.
-  const items = useStableQuery(api.shopping.getShoppingList);
+  const items = usePersistedQuery(api.shopping.getShoppingList, {}, 'shopping-list');
   // Rezeptbilder nur in der Rezept-Ansicht; „Abteilungen“ kommt ohne aus.
   const recipes = useQuery(api.shopping.getShoppingRecipes, mode === 'recipes' && items && items.length > 0 ? {} : 'skip');
 

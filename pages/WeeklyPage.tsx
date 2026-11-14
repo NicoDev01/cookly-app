@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
+import { usePersistedQuery } from '../hooks/usePersistedQuery';
 import { api } from '../convex/_generated/api';
 import MealPlanModal from '../components/MealPlanModal';
 import WeeklyPlanView, { type WeekMeal } from '../components/weekly/WeeklyPlanView';
@@ -19,7 +20,7 @@ const WeeklyPage: React.FC = () => {
   const endDate = toDateString(addDays(weekStart, 6));
   const kw = weekNumber(weekStart);
 
-  const weekResult = useQuery(api.weekly.getWeek, { startDate, endDate });
+  const weekResult = usePersistedQuery(api.weekly.getWeek, { startDate, endDate }, `week-${startDate}`);
   // Beim Wochenwechsel die alte Woche gedimmt stehen lassen, bis die neue da ist (kein Flackern).
   const [lastMeals, setLastMeals] = useState<WeekMeal[]>([]);
   const meals = useMemo<WeekMeal[] | undefined>(

@@ -4,6 +4,7 @@ import { App } from '@capacitor/app';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Capacitor } from '@capacitor/core';
 import { getActiveBackButtonOverride } from '../services/backButtonOverride';
+import { backTargetFor, navigateBack } from '../services/backNavigation';
 
 type NavState = {
   from?: 'favorites' | 'weekly';
@@ -79,24 +80,11 @@ export function useBackButton({
         return;
       }
 
-      // 2. RecipePage → Historische Navigation
+      const historyIndex = (window.history.state as { idx?: number } | null)?.idx;
+
+      // 2. RecipePage → Herkunft (Favoriten, Wochenplan, Kategorie), echt zurück wenn möglich
       if (loc.pathname.startsWith('/recipe/')) {
-        const state = loc.state as NavState;
-
-        if (state?.from === 'favorites') {
-          nav('/tabs/favorites');
-          return;
-        }
-        if (state?.from === 'weekly') {
-          nav('/tabs/weekly');
-          return;
-        }
-        if (state?.fromCategory) {
-          nav(`/category/${encodeURIComponent(state.fromCategory)}`);
-          return;
-        }
-
-        nav('/tabs/categories');
+        navigateBack(nav, backTargetFor(loc.pathname, loc.state as NavState), historyIndex);
         return;
       }
 
@@ -111,13 +99,8 @@ export function useBackButton({
 
       // 4. Standard Navigation zu Root
       // SUBSCRIBE → Profil
-      if (loc.pathname.startsWith('/tabs/subscribe')) {
-        nav('/tabs/profile');
-        return;
-      }
-
-      // ALLE ANDEREN → Kategorien
-      nav('/tabs/categories');
+      // ALLE ANDEREN → Kategorien (Subscribe → Profil)
+      navigateBack(nav, backTargetFor(loc.pathname, null), historyIndex);
     }).then((h) => {
       handler = h;
     });

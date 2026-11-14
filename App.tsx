@@ -13,6 +13,8 @@ import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from './convex/_generated/api';
 import { initDeepLinkHandler, removeDeepLinkHandler } from './services/deepLinkHandler';
 import { useBackButton } from './hooks/useBackButton';
+import { useHistoryTracking } from './hooks/useBackNavigation';
+import { clearOfflineCache, getCachedUser, hasStoredAuthToken, rememberUser } from './services/offlineCache';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ModalProvider, useModal } from './contexts/ModalContext';
 import { QueryCacheProvider } from './contexts/QueryCacheContext';
@@ -101,12 +103,19 @@ const ProtectedLayout: React.FC = () => {
   const currentUser = useQuery(api.users.getCurrentUser);
   const createUser = useMutation(api.users.createOrSyncUser);
   const [hasTriedSync, setHasTriedSync] = useState(false);
+  // Kaltstart/offline: mit dem zuletzt bekannten Nutzer sofort rendern, solange Convex den Login noch prüft.
+  const [cachedUser] = useState(() => (hasStoredAuthToken() ? getCachedUser<NonNullable<typeof currentUser>>() : undefined));
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
+      clearOfflineCache();
       navigate(loggedOutHome(), { replace: true });
     }
   }, [isLoading, isAuthenticated, navigate]);
+
+  useEffect(() => {
+    if (currentUser) rememberUser(currentUser);
+  }, [currentUser]);
 
   // Bestehendes Konto mit abgeschlossenem Onboarding: liegengebliebene Gast-Antworten verwerfen.
   const onboardingCompleted = currentUser?.onboardingCompleted;
@@ -121,11 +130,13 @@ const ProtectedLayout: React.FC = () => {
     }
   }, [isLoading, isAuthenticated, currentUser, hasTriedSync, createUser]);
 
-  if (isLoading || !isAuthenticated || currentUser === undefined || currentUser === null) {
+  // Der Server gewinnt: Sobald er antwortet (auch "abgemeldet" oder "kein Nutzer"), zählt nur noch seine Antwort.
+  const user = currentUser === undefined && (isLoading || isAuthenticated) ? cachedUser : currentUser;
+  if ((!isLoading && !isAuthenticated) || !user) {
     return null;
   }
 
-  if (!currentUser.onboardingCompleted) {
+  if (!user.onboardingCompleted) {
     return <Navigate to="/onboarding" replace />;
   }
 
@@ -144,6 +155,7 @@ const AppContent: React.FC = () => {
   // Native Back Button Handler (Android)
   const { isAnyModalOpen, closeAllModals } = useModal();
   useBackButton({ isAnyModalOpen, closeModals: closeAllModals });
+  useHistoryTracking();
 
   // Ref für navigate — wird in Listener-Callbacks gelesen
   const navigateRef = useRef(navigate);
@@ -307,13 +319,16 @@ const App: React.FC = () => {
   useQuery(api.categories.list, shouldFetchCategories ? {} : "skip");
 
   const splashHiddenRef = useRef(false);
+  // Angemeldet und Daten vom letzten Start auf dem Gerät: Splash nicht aufs Netz warten lassen (Audit M6).
+  const [startFromCache] = useState(() => hasStoredAuthToken() && !!getCachedUser());
 
   const isAppReady = React.useMemo(() => {
+    if (startFromCache) return true;
     if (convexAuthLoading) return false;
     if (!isAuthenticated) return true;
     if (currentUser === undefined) return false;
     return true;
-  }, [convexAuthLoading, isAuthenticated, currentUser]);
+  }, [startFromCache, convexAuthLoading, isAuthenticated, currentUser]);
 
   useEffect(() => {
     if (isAppReady && !splashHiddenRef.current) {
@@ -338,7 +353,10 @@ const App: React.FC = () => {
       };
 
       let splashDone = false;
-      const fadeTimeout = setTimeout(hideSplash, 300);
+      // Nach dem ersten gezeichneten Frame der App ausblenden statt nach festen 300 ms (Audit S8).
+      let frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => void hideSplash());
+      });
 
       // Nur falls das Ausblenden hängt (z. B. Fonts); lief bisher bei jedem Start und meldete eine Warnung an Sentry.
       const safetyTimeout = setTimeout(async () => {
@@ -349,7 +367,7 @@ const App: React.FC = () => {
       }, 15000);
 
       return () => {
-        clearTimeout(fadeTimeout);
+        cancelAnimationFrame(frame);
         clearTimeout(safetyTimeout);
       };
     }

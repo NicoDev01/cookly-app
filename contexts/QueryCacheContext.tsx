@@ -1,5 +1,6 @@
 import React, { createContext, useContext, ReactNode, useRef } from 'react';
 import { useQuery } from 'convex/react';
+import { clearOfflineCache, readOfflineCache, writeOfflineCache } from '../services/offlineCache';
 
 /**
  * Query Cache Context für Performance-Optimierung (QW-2)
@@ -52,6 +53,7 @@ export const QueryCacheProvider: React.FC<{ children: ReactNode }> = ({ children
       delete cacheRef.current[key];
     } else {
       cacheRef.current = {};
+      clearOfflineCache();
     }
   };
 
@@ -92,9 +94,11 @@ export function useCachedQuery<T>(
 ): { data: T | undefined; isLoading: boolean; isRefreshing: boolean } {
   const { getCache, setCache } = useQueryCache();
   const convexResult = useQuery(queryFn, args);
+  const skipped = args === 'skip';
 
-  // Gecachte Daten sofort zurückgeben
-  const cachedData = getCache(cacheKey);
+  // Gecachte Daten sofort zurückgeben: erst aus dem Speicher dieser Sitzung, sonst vom Gerät (Kaltstart, offline).
+  const persisted = React.useMemo(() => (skipped ? undefined : readOfflineCache<T>(cacheKey)), [skipped, cacheKey]);
+  const cachedData = getCache(cacheKey) ?? persisted;
   // Convex useQuery returns undefined while loading, or the data directly
   const hasData = convexResult !== undefined;
 
@@ -102,8 +106,9 @@ export function useCachedQuery<T>(
   React.useEffect(() => {
     if (hasData) {
       setCache(cacheKey, convexResult);
+      if (!skipped) writeOfflineCache(cacheKey, convexResult);
     }
-  }, [hasData, convexResult, cacheKey, setCache]);
+  }, [hasData, convexResult, cacheKey, setCache, skipped]);
 
   return {
     // Gecachte Daten zurückgeben während loading, sonst frische Daten

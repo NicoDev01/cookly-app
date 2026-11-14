@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation } from "convex/react";
 import { logger } from "../utils/logger";
@@ -7,6 +7,7 @@ import { Id } from "../convex/_generated/dataModel";
 import ImageWithBlurhash from './ImageWithBlurhash';
 import DayGrid from './weekly/DayGrid';
 import { addDays, toDateString, type WeekSlot } from '../utils/weekPlan';
+import { useAnimatedClose, useDragToDismiss } from './addRecipe/motion';
 
 // Modal modes: selectDay (from recipe detail) or selectRecipes (from weekly page)
 type ModalMode = 'selectDay' | 'selectRecipes';
@@ -44,6 +45,12 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
   weekStartDate: weekStartDateProp, // Use parent's week start if provided
   plannedLabels,
 }) => {
+  // Schließen mit Ausblenden; nach unten wegwischen wie ein iOS-Sheet.
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const scrimRef = useRef<HTMLDivElement>(null);
+  const [closing, close] = useAnimatedClose(onClose);
+  useDragToDismiss(sheetRef, scrimRef, onClose, isOpen && !closing);
+
   // Mutations
   const addMeal = useMutation(api.weekly.addMeal);
   const addMeals = useMutation(api.weekly.addMeals);
@@ -143,7 +150,7 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
   const handleSelectSlot = async (slot: WeekSlot) => {
     if (!recipeId) return;
     await addMeal({ recipeId, date: slot.date, scope: slot.scope });
-    onClose();
+    close();
   };
 
   // selectRecipes mode: Toggle selection
@@ -178,7 +185,7 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
         date,
         scope,
       });
-      onClose();
+      close();
     } catch (err) {
       logger.error('MealPlan', 'Add meals failed', err);
       setError('Fehler beim Speichern der Mahlzeiten.');
@@ -218,13 +225,17 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
     <div className="kb-pad fixed inset-0 z-[100] flex items-end justify-center pointer-events-auto">
       {/* Backdrop: vollflächig, auch hinter der Tastatur */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm scrim-in"
-        onClick={onClose}
+        ref={scrimRef}
+        className={`absolute inset-0 bg-black/60 backdrop-blur-sm ${closing ? 'scrim-out' : 'scrim-in'}`}
+        onClick={close}
       />
-      <div className="kb-under bg-background-light dark:bg-background-dark" />
+      {!closing && <div className="kb-under bg-background-light dark:bg-background-dark" />}
 
       {/* Slide-up Panel */}
-      <div className="relative w-full h-[92%] bg-background-light dark:bg-background-dark rounded-t-3xl shadow-2xl flex flex-col overflow-hidden sheet-in will-change-transform pb-safe-offset">
+      <div
+        ref={sheetRef}
+        className={`relative w-full h-[92%] bg-background-light dark:bg-background-dark rounded-t-3xl shadow-2xl flex flex-col overflow-hidden will-change-transform pb-safe-offset ${closing ? 'sheet-out' : 'sheet-in'}`}
+      >
 
         {/* Drag Handle */}
         <div className="flex justify-center pt-3 pb-1">
@@ -238,7 +249,7 @@ const MealPlanModal: React.FC<MealPlanModalProps> = ({
           <div className="flex items-center justify-between">
             <button
               type="button"
-              onClick={onClose}
+              onClick={close}
               className="touch-btn p-2 -ml-2 rounded-full text-text-primary-light dark:text-text-primary-dark"
             >
               <span className="material-symbols-outlined text-2xl">close</span>

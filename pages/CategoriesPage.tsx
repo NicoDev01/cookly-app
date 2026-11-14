@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery } from "convex/react";
+import { usePersistedQuery } from '../hooks/usePersistedQuery';
 import { api } from "../convex/_generated/api";
 import type { FunctionReturnType } from "convex/server";
 import { Link, useSearchParams } from 'react-router-dom';
@@ -89,18 +90,10 @@ const CategoriesPage: React.FC = () => {
   // PERFORMANCE (QW-5): Debounce, damit nicht jeder Tastendruck eine neue Query startet
   const [debouncedSearch] = useDebounce(searchQuery.trim(), 300);
   const [categoryImageCache, setCategoryImageCache] = useState<CategoryImageCache>({});
-  const [isVisible, setIsVisible] = useState(false); // For fade-in animation
-
-  // Trigger fade-in animation on mount
-  React.useEffect(() => {
-    setIsVisible(true);
-  }, []);
 
 
-  // PERFORMANCE (QW-2): NICHT für Kategorien verwenden!
-  // Kategorien ändern sich (Bilder werden nachträglich hinzugefügt)
-  // useCachedQuery würde alte Daten ohne Bilder zurückgeben
-  const categoriesWithStats = useQuery(api.categories.getCategoriesWithStats, {});
+  // Kaltstart/offline: letzte Übersicht vom Gerät, bis der Server antwortet (der gewinnt, auch bei neuen Bildern).
+  const categoriesWithStats = usePersistedQuery(api.categories.getCategoriesWithStats, {}, 'categories-with-stats');
   const categoriesLoading = categoriesWithStats === undefined;
 
   // Ergebnisliste sofort weg, wenn das Feld leer ist; sonst Treffer zum entprellten Begriff.
@@ -250,7 +243,7 @@ const CategoriesPage: React.FC = () => {
   }, [stats]);
 
   return (
-    <div className={`page-enter relative flex w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark font-display transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
+    <div className={`page-enter relative flex w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark font-display`}>
       <div className="flex flex-col flex-1">
 
         {!isEmptyState && (

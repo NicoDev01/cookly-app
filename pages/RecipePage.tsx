@@ -3,8 +3,9 @@ import { usePreventPullDown } from '../hooks/usePreventPullDown';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useBackNavigation } from '../hooks/useBackNavigation';
-import { useQuery, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { useCachedQuery } from '../contexts/QueryCacheContext';
+import { usePersistedQuery } from '../hooks/usePersistedQuery';
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import useEmblaCarousel from 'embla-carousel-react';
@@ -303,9 +304,10 @@ const RecipePage: React.FC = () => {
   // Nur ohne mitgegebene IDs (z. B. Direktlink) eine ID-Liste abonnieren, und dann nur die passende:
   // Jede dieser Abfragen liest serverseitig alle Rezepte bzw. Wochenplan-Einträge.
   const navRecipeIds = (location.state as RecipeNavState | null)?.nav?.ids;
-  const allRecipeIds = useQuery(api.recipes.listIds, !navRecipeIds && !isFavoritesMode && !isWeeklyMode ? {} : 'skip');
-  const favoriteRecipeIds = useQuery(api.recipes.getFavoritesIds, !navRecipeIds && isFavoritesMode ? {} : 'skip');
-  const weeklyRecipeIds = useQuery(api.recipes.getWeeklyListIds, !navRecipeIds && isWeeklyMode ? {} : 'skip');
+  // Auch vom Gerät (Lese-Cache), damit ein Rezept offline nicht beim Ladekreis hängen bleibt.
+  const allRecipeIds = usePersistedQuery(api.recipes.listIds, !navRecipeIds && !isFavoritesMode && !isWeeklyMode ? {} : 'skip', 'ids-all');
+  const favoriteRecipeIds = usePersistedQuery(api.recipes.getFavoritesIds, !navRecipeIds && isFavoritesMode ? {} : 'skip', 'ids-favorites');
+  const weeklyRecipeIds = usePersistedQuery(api.recipes.getWeeklyListIds, !navRecipeIds && isWeeklyMode ? {} : 'skip', 'ids-weekly');
   const heroPreview = (location.state as RecipeNavState | null)?.heroPreview;
 
   // Determine the list of IDs to show
