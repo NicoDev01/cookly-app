@@ -8,7 +8,7 @@ import { GoogleGenAI } from "@google/genai";
 import { GEMINI_MODELS, RECIPE_CATEGORIES } from "./constants";
 import { createImportTimer } from "./importTiming";
 import { runLegacyImport } from "./legacyImport";
-import { GEMINI_TEXT_TIMEOUT_MS, isRetryableGeminiError, runWithGeminiModelFallback } from "../utils/geminiRetry";
+import { GEMINI_TEXT_HEDGE_MS, GEMINI_TEXT_TIMEOUT_MS, isRetryableGeminiError, runWithGeminiModelFallback } from "../utils/geminiRetry";
 import { extractPageText, extractRecipeFromHtml, type PageRecipe } from "../utils/recipeJsonLd";
 import { buildFastRecipe, type FastPathResult } from "../utils/recipeFastPath";
 import { fetchRemotePage } from "./remoteImages";
@@ -264,14 +264,16 @@ export const scrapeWebsiteInternal = internalAction({
                 .replace("{{TITLE}}", pageTitle)
                 .replace("{{MARKDOWN}}", truncatedMarkdown);
 
-            const result = await runWithGeminiModelFallback(GEMINI_MODELS.recipeTextExtraction, (model) =>
+            const result = await runWithGeminiModelFallback(GEMINI_MODELS.recipeTextExtraction, (model, abortSignal) =>
                 ai.models.generateContent({
                     model,
                     contents: prompt,
-                    config: { responseMimeType: "application/json", temperature: 0, httpOptions: { timeout: GEMINI_TEXT_TIMEOUT_MS } },
+                    config: { responseMimeType: "application/json", temperature: 0, httpOptions: { timeout: GEMINI_TEXT_TIMEOUT_MS }, abortSignal },
                 }), {
                     // Bei Überlast lieber früher aufs Ersatzmodell als 8,5 s auf dasselbe warten.
                     delaysMs: [1_000, 2_500],
+                    hedgeAfterMs: GEMINI_TEXT_HEDGE_MS,
+                    onHedge: ({ model }) => timer.mark("gemini_hedged", { model }),
                     onRetry: ({ attempt, error }) => timer.mark("gemini_retry", {
                         attempt,
                         error: error instanceof Error ? error.message.slice(0, 200) : String(error),

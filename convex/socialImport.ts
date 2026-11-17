@@ -22,7 +22,7 @@ import {
   type RecipeData,
   type ScrapedCandidate,
 } from "./socialImportShared";
-import { GEMINI_TEXT_TIMEOUT_MS, isRetryableGeminiError, runWithGeminiModelFallback } from "../utils/geminiRetry";
+import { GEMINI_TEXT_HEDGE_MS, GEMINI_TEXT_TIMEOUT_MS, isRetryableGeminiError, runWithGeminiModelFallback } from "../utils/geminiRetry";
 import { runApifyActorUntilDone } from "./lib/apifyRun";
 import { runAttemptPlan } from "./lib/attemptPlan";
 import { cachedImportResult, type ImportCacheInfo } from "./importCache";
@@ -215,7 +215,7 @@ async function extractRecipeWithGemini(
 
   // Kurze Wartezeiten: Scraping kann bereits bis zu 95 s des 150-s-Budgets verbraucht haben.
   const generate = (prompt: string) =>
-    runWithGeminiModelFallback(GEMINI_MODELS.recipeTextExtraction, (model) =>
+    runWithGeminiModelFallback(GEMINI_MODELS.recipeTextExtraction, (model, abortSignal) =>
       ai.models.generateContent({
         model,
         contents: prompt,
@@ -224,9 +224,12 @@ async function extractRecipeWithGemini(
           responseJsonSchema: RECIPE_RESPONSE_JSON_SCHEMA,
           temperature: 0,
           httpOptions: { timeout: GEMINI_TEXT_TIMEOUT_MS },
+          abortSignal,
         },
       }), {
       delaysMs: GEMINI_RETRY_DELAYS_MS,
+      hedgeAfterMs: GEMINI_TEXT_HEDGE_MS,
+      onHedge: ({ model }) => timer.mark("gemini_hedged", { model }),
       onRetry: ({ attempt, error }) => timer.mark("gemini_retry", {
         attempt,
         error: error instanceof Error ? error.message.slice(0, 200) : String(error),

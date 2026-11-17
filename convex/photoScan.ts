@@ -6,7 +6,7 @@ import { api, internal } from "./_generated/api";
 import { v, type Infer } from "convex/values";
 import { GoogleGenAI } from "@google/genai";
 import { GEMINI_MODELS } from "./constants";
-import { GEMINI_IMAGE_TIMEOUT_MS, runWithGeminiModelFallback } from "../utils/geminiRetry";
+import { GEMINI_IMAGE_HEDGE_MS, GEMINI_IMAGE_TIMEOUT_MS, runWithGeminiModelFallback } from "../utils/geminiRetry";
 import {
   AI_SCAN_MULTI_PAGE_HINT,
   AI_SCAN_PROMPT_FIXED,
@@ -103,7 +103,7 @@ export const scanRecipePhotoInternal = internalAction({
     }));
     const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
 
-    const response = await runWithGeminiModelFallback(GEMINI_MODELS.recipeImageScan, (model) =>
+    const response = await runWithGeminiModelFallback(GEMINI_MODELS.recipeImageScan, (model, abortSignal) =>
       ai.models.generateContent({
         model,
         contents: {
@@ -117,9 +117,14 @@ export const scanRecipePhotoInternal = internalAction({
           responseJsonSchema: AI_SCAN_RESPONSE_JSON_SCHEMA,
           temperature: 0,
           httpOptions: { timeout: GEMINI_IMAGE_TIMEOUT_MS },
+          abortSignal,
         },
       }),
-      { delaysMs: [1_000, 2_500] },
+      {
+        delaysMs: [1_000, 2_500],
+        hedgeAfterMs: GEMINI_IMAGE_HEDGE_MS,
+        onHedge: ({ model }) => console.log("[photo-scan] gemini_hedged", { model }),
+      },
     );
 
     const parsed = parseGeminiJson(response.text);

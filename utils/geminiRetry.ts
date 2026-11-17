@@ -121,8 +121,75 @@ const isModelUnavailableError = (error: unknown): boolean => {
   return info.code === 404 || info.status === "NOT_FOUND";
 };
 
+/**
+ * Ab wann eine zweite, gleiche Anfrage parallel startet ("hedged request"). Gemessen 2026-11-17: 3.1 Flash-Lite
+ * antwortet meist in 2–3 s, rund 5 % der Antworten brauchen über 6 s, einzelne Ausreißer 17 s.
+ */
+export const GEMINI_TEXT_HEDGE_MS = 6_000;
+/** Foto-Scan: Bilder brauchen länger (Median 2,5 s, p90 bis 7 s), daher später absichern. */
+export const GEMINI_IMAGE_HEDGE_MS = 9_000;
+
+/**
+ * Startet die Anfrage; ist sie nach `hedgeAfterMs` nicht fertig, läuft eine zweite parallel. Die erste
+ * erfolgreiche Antwort gewinnt, die andere wird abgebrochen. Scheitert die erste Anfrage, bevor die zweite
+ * startet, geht der Fehler sofort weiter (Neuversuch/Ersatzmodell entscheiden wie bisher).
+ */
+export const runHedged = <T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  hedgeAfterMs?: number,
+  onHedge?: () => void,
+): Promise<T> => {
+  if (!hedgeAfterMs) return operation(new AbortController().signal);
+
+  return new Promise<T>((resolve, reject) => {
+    const controllers: AbortController[] = [];
+    let settled = false;
+    let running = 0;
+    let firstError: { error: unknown } | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = () => {
+      settled = true;
+      if (timer) clearTimeout(timer);
+      for (const controller of controllers) controller.abort();
+    };
+    const start = () => {
+      const controller = new AbortController();
+      controllers.push(controller);
+      running++;
+      operation(controller.signal).then(
+        (value) => {
+          if (settled) return;
+          finish();
+          resolve(value);
+        },
+        (error) => {
+          running--;
+          if (settled) return;
+          firstError ??= { error };
+          // Läuft die andere Anfrage noch, auf sie warten. Scheitert die erste vor dem Parallelstart: sofort weiter.
+          if (running > 0) return;
+          finish();
+          reject(firstError.error);
+        },
+      );
+    };
+
+    start();
+    timer = setTimeout(() => {
+      timer = undefined;
+      if (settled) return;
+      onHedge?.();
+      start();
+    }, hedgeAfterMs);
+  });
+};
+
 export type GeminiFallbackOptions = GeminiRetryOptions & {
   onFallback?: (details: { from: string; to: string; error: unknown }) => void;
+  /** Zweite parallele Anfrage, wenn die erste so lange (ms) nicht antwortet. */
+  hedgeAfterMs?: number;
+  onHedge?: (details: { model: string }) => void;
 };
 
 /**
@@ -132,15 +199,16 @@ export type GeminiFallbackOptions = GeminiRetryOptions & {
  */
 export const runWithGeminiModelFallback = async <T>(
   models: readonly string[],
-  operation: (model: string) => Promise<T>,
+  operation: (model: string, signal: AbortSignal) => Promise<T>,
   options: GeminiFallbackOptions = {},
 ): Promise<T> => {
   if (models.length === 0) throw new Error("No Gemini model configured");
 
   for (const [index, model] of models.entries()) {
     const isLast = index === models.length - 1;
+    const attempt = () => runHedged((signal) => operation(model, signal), options.hedgeAfterMs, () => options.onHedge?.({ model }));
     try {
-      return await runWithGeminiRetry(() => operation(model), isLast ? options : { ...options, delaysMs: [] });
+      return await runWithGeminiRetry(attempt, isLast ? options : { ...options, delaysMs: [] });
     } catch (error) {
       const next = models[index + 1];
       if (!next || !(isRetryableGeminiError(error) || isModelUnavailableError(error))) throw error;
