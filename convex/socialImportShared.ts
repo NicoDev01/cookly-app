@@ -300,6 +300,16 @@ export const buildGeminiInput = (
   return maxChars && combined.length > maxChars ? combined.slice(0, maxChars).trim() : combined;
 };
 
+/** Unter so vielen Buchstaben echten Texts (ohne Hashtags, Erwähnungen, Links) steckt kein Rezept im Beitrag. */
+export const MIN_RECIPE_TEXT_LETTERS = 15;
+
+/** Buchstaben, die nach Abzug von Hashtags, @-Erwähnungen, Links und Trennern übrig bleiben. */
+export const meaningfulLetterCount = (text: string): number =>
+  (text
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/[#@][\p{L}\p{N}_.]+/gu, " ")
+    .match(/\p{L}/gu) ?? []).length;
+
 export type ScrapedCandidate = {
   post: Record<string, unknown>;
   caption: string;

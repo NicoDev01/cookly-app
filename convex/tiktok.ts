@@ -9,6 +9,7 @@ import {
   needsTiktokRedirectResolution,
   parseTiktokVideoPage,
   rankSubtitleLinks,
+  transcriptionLinkFromMeta,
   vttToPlainText,
 } from "./lib/tiktokContent";
 import { buildExtractionPrompt, buildRecoveryPrompt, type PromptOptions } from "./socialImportPrompts";
@@ -124,7 +125,7 @@ const PROMPT_OPTIONS: PromptOptions = {
   label: "TikTok",
   sourceDescription: "dieser TikTok-Beschreibung und dem Transkript des Videos",
   notes: [
-    'Das Transkript stammt aus automatischer Spracherkennung und kann Hörfehler enthalten (z. B. "kaneloni" statt "Cannelloni"). Korrigiere offensichtliche Fehler stillschweigend.',
+    'Das Transkript stammt aus automatischer Spracherkennung und kann Hörfehler enthalten (z. B. "Kreuz Kümmel" statt "Kreuzkümmel"). Korrigiere offensichtliche Fehler stillschweigend.',
     "Beschreibung und Transkript beschreiben dasselbe Gericht — führe beide zu EINEM Rezept zusammen, statt Schritte zu wiederholen.",
   ],
 };
@@ -169,7 +170,12 @@ export const tiktokPlatform: SocialPlatform = {
   ],
   urlPaths: ["webVideoUrl", "submittedVideoUrl"],
 
-  attempts: ({ url }): ApifyAttempt[] => {
+  attempts: ({ url, fastPath }): ApifyAttempt[] => {
+    // Videoseite gelesen, Text zu dünn: Apifys einfacher Abruf liefert dieselbe Beschreibung und dieselben
+    // Untertitel (geprüft 2026-11-17, kostete 12 s). Dann gleich die Transkription.
+    if (fastPath === "thin" && transcriptionFallbackEnabled()) {
+      return [{ label: "transcription", actor: ACTOR, input: actorInput(url, true), timeoutMs: TRANSCRIPTION_TIMEOUT_MS }];
+    }
     const attempts: ApifyAttempt[] = [
       { label: "primary", actor: ACTOR, input: actorInput(url, false), timeoutMs: PRIMARY_TIMEOUT_MS },
     ];
@@ -190,8 +196,10 @@ export const tiktokPlatform: SocialPlatform = {
   },
 
   collectExtraTexts: async (post) => {
-    const links = rankSubtitleLinks(getNestedValue(post, "videoMeta.subtitleLinks"));
-    const texts = await Promise.all(links.map(({ url }) => fetchSubtitleText(url)));
+    const links = rankSubtitleLinks(getNestedValue(post, "videoMeta.subtitleLinks")).map(({ url }) => url);
+    const transcription = transcriptionLinkFromMeta(getNestedValue(post, "videoMeta"));
+    if (transcription) links.push(transcription);
+    const texts = await Promise.all(links.map((url) => fetchSubtitleText(url)));
     return texts.filter(Boolean);
   },
 

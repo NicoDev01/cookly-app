@@ -13,6 +13,8 @@ import {
   extractTextCandidates,
   isExistingRecipeUsable,
   isGenericRecipeTitle,
+  MIN_RECIPE_TEXT_LETTERS,
+  meaningfulLetterCount,
   normalizeRecipeData,
   pickLongestText,
   scoreCandidate,
@@ -107,8 +109,8 @@ export type SocialPlatform = {
   maxTextParts?: number;
   maxGeminiInputChars?: number;
 
-  /** Versuche in Reihenfolge; der nächste läuft nur, wenn `shouldRetry` true liefert. */
-  attempts(context: { url: string; targetKey: string }): ApifyAttempt[];
+  /** Versuche in Reihenfolge; der nächste läuft nur, wenn `shouldRetry` true liefert. `fastPath`: Ergebnis des schnellen Wegs. */
+  attempts(context: { url: string; targetKey: string; fastPath?: FastPathOutcome }): ApifyAttempt[];
   shouldRetry?(best: ScrapedCandidate | null, context: { url: string; targetKey: string }): boolean;
 
   /** Zusätzlicher Text zum Post, z. B. TikTok-Untertitel. Nur für den besten Kandidaten. */
@@ -343,6 +345,8 @@ export async function runSocialImport(
   // --- Schneller Weg: reicht sein Text, entfällt Apify komplett --------------------------
   // Jeder Fehlschlag (Abruf, zu wenig Text, kein Rezept erkannt) fällt still auf Apify zurück.
   let fastPath: FastPathOutcome | undefined;
+  // Seite gelesen, aber zu wenig Text: bleibt als Rückfall, falls Apify nichts Besseres liefert.
+  let thinFast: ScrapedCandidate | null = null;
   if (platform.fastCandidate && targetKey) {
     const fastStartedAt = Date.now();
     let fast: ScrapedCandidate | null = null;
@@ -358,6 +362,7 @@ export async function runSocialImport(
       fastPath = "error";
       timer.mark("fast_path_failed", { error: error instanceof Error ? error.message.slice(0, 200) : String(error) });
     }
+    if (fast && fastPath === "thin") thinFast = fast;
     timer.mark("fast_path_done", {
       durationMs: Date.now() - fastStartedAt,
       outcome: fastPath,
@@ -383,7 +388,7 @@ export async function runSocialImport(
   }
 
   // --- Apify: Versuche nacheinander (oder abgesichert parallel), bis das Ergebnis reicht --
-  const attempts = platform.attempts(context);
+  const attempts = platform.attempts({ ...context, fastPath });
   let lastError: unknown = null;
   let unavailableCode: string | null = null;
 
@@ -447,7 +452,7 @@ export async function runSocialImport(
   };
   timer.mark("apify_phase_done", { ...stats });
 
-  const candidate = selectBestCandidate(plan.candidates);
+  const candidate = selectBestCandidate(plan.candidates) ?? thinFast;
   if (!candidate) {
     if (unavailableCode) throw postUnavailableError(platform.label, unavailableCode);
     if (lastError) throw serviceUnavailableError(platform.label, normalizedUrl);
@@ -485,6 +490,13 @@ async function extractAndBuild(
     { maxParts: platform.maxTextParts, maxChars: platform.maxGeminiInputChars },
   );
   timer.mark("gemini_input_ready", { captionLength: caption.length, inputLength: geminiInputText.length });
+
+  // Nur Hashtags, Musiktitel o. Ä.: Gemini würde sonst ein Gericht erfinden (gesehen 2026-11-17).
+  const letters = meaningfulLetterCount(geminiInputText);
+  if (letters < MIN_RECIPE_TEXT_LETTERS) {
+    timer.mark("no_recipe_text", { letters });
+    throw noRecipeContentError(`In diesem ${platform.label}-Beitrag steht das Rezept weder im Text noch wird es gesprochen.`);
+  }
 
   if (!geminiInputText) {
     throw noRecipeContentError(`${platform.label} lieferte keinen Text für die Rezept-Extraktion.`);

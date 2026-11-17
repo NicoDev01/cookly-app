@@ -18,6 +18,7 @@ const COMMON_RULES = [
   "Strukturiere die Zubereitung in klare Einzelschritte; lieber mehr präzise Schritte als wenige zusammengefasste.",
   "Jeder Schritt MUSS ein passendes Material-Symbol-Icon enthalten.",
   'Nur "imageKeywords" bleibt auf Englisch.',
+  'Nutze nur, was im Text steht. Nennt der Text weder ein konkretes Gericht noch Zutaten (z. B. nur Hashtags, Musiktitel oder Grüße), gib für "ingredients" und "instructions" leere Listen zurück. Erfinde kein Gericht.',
 ] as const;
 
 const RESPONSE_FORMAT = `
@@ -53,7 +54,7 @@ ${RESPONSE_FORMAT}`;
 
 export const buildRecoveryPrompt = (options: PromptOptions, text: string): string => `
   Du bekommst einen eher kurzen oder unstrukturierten Text von ${options.label}.
-  Extrahiere trotzdem ein brauchbares, detailliertes Kochrezept.
+  Nennt der Text ein konkretes Gericht, extrahiere trotzdem ein brauchbares, detailliertes Kochrezept.
   Wenn Mengen fehlen, schätze sinnvolle Mengen konservativ.
 ${bulletList([...COMMON_RULES, ...(options.notes ?? [])])}
 

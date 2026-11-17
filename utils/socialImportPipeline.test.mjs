@@ -16,6 +16,7 @@ import {
   isSupportedTiktokUrl,
   needsTiktokRedirectResolution,
   rankSubtitleLinks,
+  transcriptionLinkFromMeta,
   vttToPlainText,
 } from "../convex/lib/tiktokContent.ts";
 import {
@@ -311,4 +312,12 @@ test("unvollständige Bestandsrezepte gelten als stale und werden überschrieben
   assert.equal(isExistingRecipeUsable({ ...vollstaendig, instructions: [] }), false);
   assert.equal(isExistingRecipeUsable({ ...vollstaendig, title: "Rezept" }), false);
   assert.equal(isExistingRecipeUsable(null), false);
+});
+
+test("TikTok: Apify-Transkription kommt aus videoMeta.transcriptionLink, nur von api.apify.com", () => {
+  const link = "https://api.apify.com/v2/key-value-stores/abc/records/transcription-x-1.txt";
+  assert.equal(transcriptionLinkFromMeta({ transcriptionLink: link, subtitleLinks: [] }), link);
+  assert.equal(transcriptionLinkFromMeta({ transcriptionLink: "https://evil.example/t.txt" }), null);
+  assert.equal(transcriptionLinkFromMeta({ transcriptionLink: null }), null);
+  assert.equal(transcriptionLinkFromMeta(undefined), null);
 });

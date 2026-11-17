@@ -98,6 +98,15 @@ export const rankSubtitleLinks = (rawLinks: unknown): Array<{ url: string; langu
     .map(({ url, language }) => ({ url, language }));
 };
 
+/**
+ * Link auf Apifys Spracherkennung (`videoMeta.transcriptionLink`, Klartext). Nur Apify-eigene Links.
+ * Apify liefert die Transkription dort, nicht in `subtitleLinks` (geprüft 2026-11-17).
+ */
+export const transcriptionLinkFromMeta = (meta: unknown): string | null => {
+  const link = toRecord(meta)?.transcriptionLink;
+  return typeof link === "string" && link.startsWith("https://api.apify.com/") ? link : null;
+};
+
 /** WebVTT → Fließtext: Cue-Timings, Sequenznummern, Tags und Wiederholungen raus. */
 export const vttToPlainText = (vtt: string): string => {
   const out: string[] = [];
