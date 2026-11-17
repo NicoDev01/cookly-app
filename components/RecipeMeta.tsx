@@ -1,8 +1,6 @@
 import React from 'react';
 import { Recipe } from '../types';
-import { FaFacebook, FaInstagram, FaTiktok, FaGlobe } from 'react-icons/fa';
-import { ChefHat, Link2, Minus, Plus } from 'lucide-react';
-import type { IconType } from 'react-icons';
+import { ChefHat, Minus, Plus } from 'lucide-react';
 
 interface RecipeMetaProps {
   recipe: Recipe;
@@ -11,28 +9,6 @@ interface RecipeMetaProps {
   onPortionsChange: (portions: number) => void;
   onStartCooking?: () => void;
 }
-
-// Quelle: 3 s Plattform-Icon, dann kurz (≈1 s) das Link-Icon, nie beide gleichzeitig.
-// Zyklus 4,4 s: 0–68 % Plattform · 68–73 % aus · 73–77 % Link ein · 77–91 % Link · 91–95 % aus · 95–100 % Plattform ein
-const morphStyles = `
-  @keyframes sourcePlatform {
-    0%, 68%  { opacity: 1; transform: scale(1); }
-    73%, 95% { opacity: 0; transform: scale(0.6); }
-    100%     { opacity: 1; transform: scale(1); }
-  }
-  @keyframes sourceLink {
-    0%, 73%  { opacity: 0; transform: scale(0.6); }
-    77%, 91% { opacity: 1; transform: scale(1); }
-    95%, 100% { opacity: 0; transform: scale(0.6); }
-  }
-  .source-icon-platform { animation: sourcePlatform 4.4s ease-in-out infinite; }
-  .source-icon-link { animation: sourceLink 4.4s ease-in-out infinite; }
-  @media (prefers-reduced-motion: reduce) {
-    .source-icon-platform { animation: none; }
-    .source-icon-link { animation: none; opacity: 0; }
-  }
-`;
-
 
 export const MIN_PORTIONS = 1;
 export const MAX_PORTIONS = 50;
@@ -45,36 +21,12 @@ const RecipeMeta: React.FC<RecipeMetaProps> = ({ recipe, selectedPortions, onPor
   const shownPortions = canScale ? selectedPortions : portions;
   const isScaled = canScale && shownPortions !== portions;
 
-  // Determine source type (Instagram vs. Facebook vs. TikTok vs. Website)
-  const isInstagram = recipe.sourceUrl?.includes('instagram.com');
-  const isFacebook = recipe.sourceUrl?.includes('facebook.com');
-  const isTiktok = recipe.sourceUrl?.includes('tiktok.com');
-
-  // Use react-icons (Font Awesome) for reliable brand icons
-  let SourceIcon: IconType = FaGlobe;
-  let sourceLabel: string;
-
-  if (isInstagram) {
-    SourceIcon = FaInstagram;
-    sourceLabel = 'IG';
-  } else if (isFacebook) {
-    SourceIcon = FaFacebook;
-    sourceLabel = 'FB';
-  } else if (isTiktok) {
-    SourceIcon = FaTiktok;
-    sourceLabel = 'TT';
-  } else {
-    SourceIcon = FaGlobe;
-    sourceLabel = 'Web';
-  }
-
   return (
     <div className="mb-2">
-      <style>{morphStyles}</style>
       <h1 className="uppercase text-[#111718] dark:text-white tracking-tight text-3xl font-black leading-tight">
         {title}
       </h1>
-      {/* Eine ruhige Zeile: Portionen · Quelle · Kochmodus */}
+      {/* Eine ruhige Zeile: Portionen · Kochmodus (Quelle sitzt als Pille im Bild, siehe RecipeSourcePill) */}
       <div className="mt-2 flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
         {canScale ? (
           <div className="flex items-center gap-1.5 whitespace-nowrap">
@@ -102,22 +54,6 @@ const RecipeMeta: React.FC<RecipeMetaProps> = ({ recipe, selectedPortions, onPor
             </button>
           </div>
         ) : null}
-        {recipe.sourceUrl && (
-          <a
-            href={recipe.sourceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 whitespace-nowrap transition-colors hover:text-primary"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Wechselt zwischen Plattform-Icon und Link-Icon: zeigt, dass es ein Link ist */}
-            <span className="relative inline-flex h-[12px] w-[12px] items-center justify-center">
-              <SourceIcon className="!text-xs absolute source-icon-platform" aria-hidden />
-              <Link2 size={13} className="absolute source-icon-link" aria-hidden strokeWidth={2.5} />
-            </span>
-            <span>{sourceLabel}</span>
-          </a>
-        )}
         {/* Öffnet den Kochmodus (CookMode). */}
         <button
           type="button"

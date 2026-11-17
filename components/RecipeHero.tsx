@@ -15,6 +15,7 @@ import { sizedImageUrl } from "../utils/imageUrl";
 import { useLoadedImageSrc } from "../hooks/useLoadedImageSrc";
 import { api } from "../convex/_generated/api";
 import { ModalLoader } from "./PageLoader";
+import RecipeSourcePill from "./RecipeSourcePill";
 import { useOfflineAwareMutation, useOnlineOnly, useOutbox } from "../hooks/useOfflineWrites";
 
 // Lazy load modals - they are only needed when user interacts with them
@@ -301,6 +302,7 @@ const RecipeHero: React.FC<RecipeHeroProps> = ({
           </span>
         </div>
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-b from-transparent to-white" />
+        {recipe.sourceUrl && <RecipeSourcePill url={recipe.sourceUrl} />}
       </div>
 
       {isPlanModalOpen && (

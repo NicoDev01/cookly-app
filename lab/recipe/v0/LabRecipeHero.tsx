@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, memo, useCallback, Suspense, lazy }
 import { createPortal } from 'react-dom';
 import { Recipe } from '../../../types';
 import { ModalLoader } from '../../../components/PageLoader';
+import RecipeSourcePill from '../../../components/RecipeSourcePill';
 
 // Labor-Kopie von components/RecipeHero.tsx: Favorit lokal statt Convex, Wochenplan ohne Funktion.
 const ImageZoomModal = lazy(() => import('../../../components/ImageZoomModal'));
@@ -149,6 +150,7 @@ const LabRecipeHero: React.FC<RecipeHeroProps> = ({ recipe, onSidebarToggle, onE
           <span className="material-symbols-outlined text-white opacity-0 group-hover/hero:opacity-100 transition-opacity !text-4xl scale-75 group-hover/hero:scale-100 duration-300">zoom_in</span>
         </div>
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-b from-transparent to-white" />
+        {recipe.sourceUrl && <RecipeSourcePill url={recipe.sourceUrl} />}
       </div>
 
       {isZoomOpen && (
