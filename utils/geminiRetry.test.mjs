@@ -11,16 +11,36 @@ test('Überlastung wird wiederholt, aufgebrauchtes Guthaben (402) nicht', () => 
   assert.equal(isRetryableGeminiError(apiError(400, 'INVALID_ARGUMENT')), false);
 });
 
-test('Überlastung wechselt sofort zum Ersatzmodell, erst dort wird mit Wartezeit wiederholt', async () => {
+test('Überlastung wechselt sofort zum Ersatzmodell; sind alle überlastet, folgt nach Wartezeit eine neue Runde', async () => {
   const { runWithGeminiModelFallback } = await import('./geminiRetry.ts');
   const calls = [];
+  const retries = [];
   const result = await runWithGeminiModelFallback(['neu', 'alt'], async (model) => {
     calls.push(model);
     if (model === 'neu' || calls.length < 3) throw apiError(503, 'UNAVAILABLE');
     return 'ok';
-  }, { delaysMs: [0, 0] });
+  }, { delaysMs: [0, 0], onRetry: ({ attempt }) => retries.push(attempt) });
   assert.equal(result, 'ok');
-  assert.deepEqual(calls, ['neu', 'alt', 'alt']);
+  assert.deepEqual(calls, ['neu', 'alt', 'neu', 'alt']);
+  assert.deepEqual(retries, [1]);
+
+  // Erholt sich das erste Modell, gewinnt es in der nächsten Runde (gesehen 2026-11-17).
+  const recovered = [];
+  const first = await runWithGeminiModelFallback(['neu', 'alt'], async (model) => {
+    recovered.push(model);
+    if (recovered.length <= 2) throw apiError(503, 'UNAVAILABLE');
+    return model;
+  }, { delaysMs: [0] });
+  assert.equal(first, 'neu');
+  assert.deepEqual(recovered, ['neu', 'alt', 'neu']);
+
+  // Fehlendes Modell fällt aus der Rotation, alle Runden scheitern: letzter Fehler kommt durch.
+  const gone = [];
+  await assert.rejects(runWithGeminiModelFallback(['weg', 'alt'], async (model) => {
+    gone.push(model);
+    throw model === 'weg' ? apiError(404, 'NOT_FOUND') : apiError(503, 'UNAVAILABLE');
+  }, { delaysMs: [0, 0] }), /503/);
+  assert.deepEqual(gone, ['weg', 'alt', 'alt', 'alt']);
 
   const contentCalls = [];
   await assert.rejects(runWithGeminiModelFallback(['neu', 'alt'], async (model) => {

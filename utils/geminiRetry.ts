@@ -194,8 +194,10 @@ export type GeminiFallbackOptions = GeminiRetryOptions & {
 
 /**
  * Probiert die Modelle der Reihe nach. Bei Überlastung oder fehlendem Modell geht es sofort zum nächsten
- * Modell (gemessen 2026-11-17: das überlastete Modell brauchte im Neuversuch bis 10 s, das Ersatzmodell 2,5–3,7 s);
- * erst das letzte Modell bekommt Retries mit Wartezeit. Inhaltliche Fehler werden direkt weitergereicht.
+ * Modell (gemessen 2026-11-17: das überlastete Modell brauchte im Neuversuch bis 10 s, das Ersatzmodell 2,5–3,7 s).
+ * Sind alle überlastet, startet nach der nächsten Wartezeit aus `delaysMs` eine neue Runde über alle Modelle:
+ * Überlast trifft oft ein Modell nur kurz (gesehen 2026-11-17: 3.1 und 3.5 beide 503, 3.1 Minuten später ok).
+ * Inhaltliche Fehler werden direkt weitergereicht; ein fehlendes Modell wird nicht erneut versucht.
  */
 export const runWithGeminiModelFallback = async <T>(
   models: readonly string[],
@@ -203,20 +205,33 @@ export const runWithGeminiModelFallback = async <T>(
   options: GeminiFallbackOptions = {},
 ): Promise<T> => {
   if (models.length === 0) throw new Error("No Gemini model configured");
+  const delaysMs = options.delaysMs ?? DEFAULT_RETRY_DELAYS_MS;
+  const maxAttempts = delaysMs.length + 1;
+  let pool = [...models];
+  let lastError: unknown;
 
-  for (const [index, model] of models.entries()) {
-    const isLast = index === models.length - 1;
-    const attempt = () => runHedged((signal) => operation(model, signal), options.hedgeAfterMs, () => options.onHedge?.({ model }));
-    try {
-      return await runWithGeminiRetry(attempt, isLast ? options : { ...options, delaysMs: [] });
-    } catch (error) {
-      const next = models[index + 1];
-      if (!next || !(isRetryableGeminiError(error) || isModelUnavailableError(error))) throw error;
-      options.onFallback?.({ from: model, to: next, error });
+  for (let round = 0; round < maxAttempts && pool.length > 0; round++) {
+    if (round > 0) {
+      const delayMs = delaysMs[round - 1] ?? 0;
+      options.onRetry?.({ attempt: round, maxAttempts, delayMs, error: lastError });
+      if (delayMs > 0) await delay(delayMs);
+    }
+    const roundModels = pool;
+    for (const [index, model] of roundModels.entries()) {
+      try {
+        return await runHedged((signal) => operation(model, signal), options.hedgeAfterMs, () => options.onHedge?.({ model }));
+      } catch (error) {
+        const gone = isModelUnavailableError(error);
+        if (!gone && !isRetryableGeminiError(error)) throw error;
+        lastError = error;
+        if (gone) pool = pool.filter((m) => m !== model);
+        const next = roundModels[index + 1];
+        if (next) options.onFallback?.({ from: model, to: next, error });
+      }
     }
   }
 
-  throw new Error("Gemini fallback loop exited unexpectedly");
+  throw lastError;
 };
 
 export const getAiScanErrorMessage = (error: unknown): string => {

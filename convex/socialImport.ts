@@ -30,7 +30,8 @@ import { runAttemptPlan } from "./lib/attemptPlan";
 import { cachedImportResult, type ImportCacheInfo } from "./importCache";
 import { socialCacheKey } from "./lib/importCacheKey";
 
-const GEMINI_RETRY_DELAYS_MS = [1_500, 4_000] as const;
+/** Wartezeiten zwischen den Runden über alle Modelle; Überlast-Antworten (503) kommen meist binnen 1–4 s. */
+const GEMINI_RETRY_DELAYS_MS = [1_500, 4_000, 8_000] as const;
 
 const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
@@ -215,7 +216,8 @@ async function extractRecipeWithGemini(
 ): Promise<RecipeData> {
   const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
 
-  // Kurze Wartezeiten: Scraping kann bereits bis zu 95 s des 150-s-Budgets verbraucht haben.
+  // Wartezeiten zusammen 13,5 s: Scraping kann bereits bis zu 95 s des 150-s-Budgets verbraucht haben,
+  // der Import läuft danach aber serverseitig weiter.
   const generate = (prompt: string) =>
     runWithGeminiModelFallback(GEMINI_MODELS.recipeTextExtraction, (model, abortSignal) =>
       ai.models.generateContent({
