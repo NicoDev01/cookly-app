@@ -6,6 +6,12 @@
 ---
 
 
+## [1.5.1] - 17.11.2026 (Build 54, TestFlight)
+
+### ✨ Neu
+- **Rezeptseite:** Die Quelle (Instagram, TikTok, Facebook, Website) sitzt als Pille unten links im Rezeptbild
+  statt in der Zeile unter dem Titel.
+
 ## [1.5.1] - 17.11.2026 (Build 53, TestFlight)
 
 ### 🐛 Fixes
