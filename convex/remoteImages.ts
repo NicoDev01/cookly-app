@@ -268,8 +268,10 @@ type ProxyResult = {
 
 type ProxyRecipe = Pick<
   Doc<"recipes">,
-  "_id" | "title" | "sourceUrl" | "sourceImageUrl" | "imageStorageId"
+  "_id" | "title" | "sourceUrl" | "sourceImageUrl" | "imageStorageId" | "image"
 >;
+
+const httpsUrl = (value?: string) => (value && value.toLowerCase().startsWith("https://") ? value : undefined);
 
 async function proxyRecipeImage(
   ctx: ActionCtx,
@@ -282,11 +284,14 @@ async function proxyRecipeImage(
   timer.mark("recipe_loaded");
   if (recipe.imageStorageId) return { success: true, imageStorageId: recipe.imageStorageId };
 
-  const fallback = !recipe.sourceImageUrl;
+  // Quelle: Originalbild des Imports, sonst das angezeigte Bild (z. B. KI-Bild eines Foto-Scans, dessen
+  // sourceImageUrl nur ein Marker ist), sonst ein neu generiertes Ersatzbild.
+  const existingUrl = httpsUrl(recipe.sourceImageUrl) ?? httpsUrl(recipe.image);
+  const fallback = !existingUrl;
   if (fallback && !await ctx.runMutation(internal.rateLimiter.checkAndConsumeProviderBudget, { provider: "pollinations" })) {
     throw new Error("PROVIDER_BUDGET_EXHAUSTED");
   }
-  const rawUrl = recipe.sourceImageUrl ?? buildRecipeImageUrl(
+  const rawUrl = existingUrl ?? buildRecipeImageUrl(
     recipe.title || "Delicious Food",
     getConsistentSeed(recipe.title || "Delicious Food"),
   );
@@ -302,10 +307,12 @@ async function proxyRecipeImage(
       storageId = await ctx.storage.store(cached);
       timer.mark("copied_from_import_cache");
     } else {
+      const provider = getProvider(recipe.sourceUrl, sourceImageUrl);
       const image = await fetchValidatedRemoteImage({
         url: sourceImageUrl,
-        provider: getProvider(recipe.sourceUrl, sourceImageUrl),
-        timeoutMs: 12_000,
+        provider,
+        // KI-Bilder entstehen erst beim Abruf und brauchen länger (wie generateAndStoreAiImage).
+        timeoutMs: provider === "pollinations" ? 20_000 : 12_000,
       });
       timer.mark("source_fetched");
       storageId = await ctx.storage.store(toBlob(image));

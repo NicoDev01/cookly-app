@@ -503,6 +503,10 @@ export const completePhoto = internalMutation({
       });
       await adjustCategoryCount(ctx, doc.category, 1, args.userId);
       await ensureCategoryExists(ctx, doc.category, args.userId);
+      // KI-Bild in eigenen Storage übernehmen (offline verfügbar, Vorschaubild, keine Abhängigkeit vom Bilddienst).
+      if (!dish && typeof doc.image === "string" && doc.image) {
+        await ctx.scheduler.runAfter(0, internal.remoteImages.proxyImportedImage, { userId: args.userId, recipeId });
+      }
       await ctx.db.patch(operation._id, {
         status: "succeeded",
         resultRecipeId: recipeId,
