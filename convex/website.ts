@@ -109,7 +109,7 @@ Format:
   "prepTimeMinutes": Zahl (geschätzt wenn nicht angegeben),
   "difficulty": "Einfach" | "Mittel" | "Schwer",
   "portions": Zahl (Standard 4 wenn nicht angegeben),
-  "ingredients": [{"name": "Zutat", "amount": "Menge"}],
+  "ingredients": [{"name": "Zutat inkl. Zusatz wie 'gewürfelt' oder 'in Scheiben'", "amount": "Nur Menge und Einheit, z. B. '200 g', '1 EL', 'etwas'"}],
   "instructions": [{"text": "Schrittbeschreibung", "icon": "passendes Material Symbol Icon (snake_case)"}],
   "imageKeywords": "Kurze englische Beschreibung für Bildsuche"
 }
