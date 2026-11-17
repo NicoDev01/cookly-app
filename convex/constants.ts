@@ -12,8 +12,9 @@ export type FreeLimitType = keyof typeof FREE_LIMITS;
 
 // Reihenfolge = Priorität; das zweite Modell springt bei Überlastung oder Abschaltung ein.
 export const GEMINI_MODELS = {
-  recipeImageScan: ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"],
-  // 3.1 zuerst: 3.5 war bei der Messung am 17.11.2026 in 7 von 16 Aufrufen überlastet bzw. hing (3.1: 0 von 16).
+  // 3.1 zuerst: 3.5 war bei Messungen am 17.11.2026 oft überlastet (Text 7/16, Foto 9/18 Ausfälle; 3.1: 0),
+  // bei gleicher Qualität. 3.5 bleibt Ersatz.
+  recipeImageScan: ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"],
   recipeTextExtraction: ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"],
 } as const;
 

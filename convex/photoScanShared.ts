@@ -25,6 +25,7 @@ export type AiScanDoc = {
 
 export const AI_SCAN_PROMPT_FIXED = `
   Analysiere dieses Rezeptbild. Extrahiere die Daten und gib sie als JSON zurück.
+  Gib Titel, Zutaten und Zubereitung IMMER auf Deutsch aus, auch wenn das Rezept in einer anderen Sprache ist.
   Format:
   {
     "title": "Name des Gerichts",
@@ -32,7 +33,7 @@ export const AI_SCAN_PROMPT_FIXED = `
     "prepTimeMinutes": Zahl (geschätzt oder gelesen),
     "difficulty": "Einfach" | "Mittel" | "Schwer",
     "portions": Zahl,
-    "ingredients": [{"name": "Zutat", "amount": "Menge"}],
+    "ingredients": [{"name": "Zutat inkl. Zusatz wie 'gewürfelt' oder 'in Scheiben'", "amount": "Nur Menge und Einheit, z. B. '200 g', '1 EL', 'etwas'"}],
     "instructions": [{"text": "Schrittbeschreibung", "icon": "passendes Material Symbol Icon (snake_case)"}],
     "imageKeywords": "Kurze englische Beschreibung für Bildsuche (z.B. 'spaghetti bolognese', 'chocolate cake')"
   }
