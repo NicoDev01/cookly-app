@@ -17,6 +17,10 @@ struct ShareCredentials: Codable {
     static let accessGroup = "group.com.cookly-app.recipe"
     private static let service = "com.cookly.recipe.share-import"
     private static let account = "default"
+    /// Merker im Container der App-Gruppe. Den löscht iOS beim Deinstallieren, den Keychain-Eintrag nicht:
+    /// Fehlt der Merker, stammt der Token aus einer früheren Installation und wird ignoriert.
+    private static let markerKey = "shareImport.issuedAt"
+    private static var groupDefaults: UserDefaults? { UserDefaults(suiteName: accessGroup) }
 
     var isExpired: Bool { expiresAt <= Date().timeIntervalSince1970 * 1000 }
 
@@ -35,7 +39,9 @@ struct ShareCredentials: Codable {
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: AnyObject?
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
-        return try? JSONDecoder().decode(ShareCredentials.self, from: data)
+        guard let credentials = try? JSONDecoder().decode(ShareCredentials.self, from: data) else { return nil }
+        guard groupDefaults?.double(forKey: markerKey) == credentials.issuedAt else { return nil }
+        return credentials
     }
 
     @discardableResult
@@ -45,11 +51,14 @@ struct ShareCredentials: Codable {
         var attributes = baseQuery
         attributes[kSecValueData as String] = data
         attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        return SecItemAdd(attributes as CFDictionary, nil)
+        let status = SecItemAdd(attributes as CFDictionary, nil)
+        if status == errSecSuccess { groupDefaults?.set(credentials.issuedAt, forKey: markerKey) }
+        return status
     }
 
     @discardableResult
     static func clear() -> OSStatus {
-        SecItemDelete(baseQuery as CFDictionary)
+        groupDefaults?.removeObject(forKey: markerKey)
+        return SecItemDelete(baseQuery as CFDictionary)
     }
 }

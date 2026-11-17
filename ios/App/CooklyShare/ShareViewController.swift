@@ -56,7 +56,8 @@ class ShareViewController: UIViewController {
         }
         let model = ShareImportModel(client: client, url: url, text: shared.text, title: shared.title)
         model.onUnauthorized = { [weak self] in
-            ShareCredentials.clear()
+            // Nur den eigenen, abgelehnten Token löschen; hat die App inzwischen einen neuen gesetzt, bleibt der.
+            if ShareCredentials.load()?.token == stored.token { ShareCredentials.clear() }
             self?.openAppWithLegacyLink()
         }
         self.model = model

@@ -21,8 +21,19 @@ const isAvailable = () => Capacitor.getPlatform() === 'ios' && Capacitor.isPlugi
 type IssueToken = (args: { installationId: string }) => Promise<{ token: string; expiresAt: number }>;
 type RevokeToken = (args: { installationId: string }) => Promise<unknown>;
 
+/** Server-Widerruf beim Abmelden höchstens so lange abwarten; offline hält Convex die Mutation sonst bis zur Verbindung an. */
+const REVOKE_TIMEOUT_MS = 2500;
+
+let ensuring: Promise<void> | null = null;
+
 /** Nach Login und App-Start: Token ausstellen, wenn keiner da ist, er zu einem anderen Konto gehört oder alt ist. */
-export async function ensureShareToken(userId: string, issue: IssueToken): Promise<void> {
+export function ensureShareToken(userId: string, issue: IssueToken): Promise<void> {
+  // Nie zwei Ausstellungen parallel: Die zweite würde den Token der ersten auf dem Server ersetzen.
+  ensuring ??= runEnsure(userId, issue).finally(() => { ensuring = null; });
+  return ensuring;
+}
+
+async function runEnsure(userId: string, issue: IssueToken): Promise<void> {
   if (!isAvailable()) return;
   const apiBase = convexSiteUrl(convexUrl);
   if (!apiBase) return;
@@ -42,7 +53,12 @@ export async function revokeShareToken(revoke: RevokeToken): Promise<void> {
   if (!isAvailable()) return;
   try {
     const state = await ShareAuth.getState();
-    if (state.hasToken) await revoke({ installationId: state.installationId });
+    if (state.hasToken) {
+      await Promise.race([
+        revoke({ installationId: state.installationId }),
+        new Promise((resolve) => window.setTimeout(resolve, REVOKE_TIMEOUT_MS)),
+      ]);
+    }
   } catch (error: unknown) {
     logger.info('ShareAuth', 'Server revoke failed', error);
   }

@@ -31,11 +31,16 @@ final class ShareImportModel: ObservableObject {
     private let text: String?
     private let title: String?
     private var task: Task<Void, Never>?
+    /// Bleibt bei einem Netzfehler vor der Server-Antwort gleich, damit „Erneut versuchen“ keinen zweiten Import startet.
+    private var operationId = UUID().uuidString.lowercased()
     /// Token ungültig: Die Extension fällt auf den alten Weg (App öffnen) zurück.
     var onUnauthorized: (() -> Void)?
 
     private static let pollIntervalNs: UInt64 = 1_000_000_000
-    private static let maxPollSeconds = 60
+    /// Nur Zeit im Vordergrund zählt: Ein Abschnitt zählt höchstens `maxTickSeconds`, auch wenn iOS die Extension
+    /// zwischendurch angehalten hat (App gewechselt, gesperrt).
+    private static let maxPollSeconds = 60.0
+    private static let maxTickSeconds = 3.0
     private static let pillDelayNs: UInt64 = 45_000_000
     private static let stepDelayNs: UInt64 = 90_000_000
 
@@ -65,6 +70,9 @@ final class ShareImportModel: ObservableObject {
     func retry() {
         task?.cancel()
         task = nil
+        // Lief der Import auf dem Server schon (und ist gescheitert), braucht der neue Versuch eine neue ID.
+        if serverKnowsOperation { operationId = UUID().uuidString.lowercased() }
+        serverKnowsOperation = false
         step = .detect
         progress = 0
         outcome = .loading
@@ -91,19 +99,23 @@ final class ShareImportModel: ObservableObject {
         withAnimation(.easeOut(duration: seconds)) { progress = target }
     }
 
+    private var serverKnowsOperation = false
+
     private func run() async {
         setStep(.detect)
-        let operationId = UUID().uuidString.lowercased()
+        let operationId = self.operationId
         let pollId: String
         do {
             let started = try await client.start(operationId: operationId, url: url, text: text, title: title)
             pollId = started.operationId
+            serverKnowsOperation = true
         } catch {
             handle(error)
             return
         }
 
-        let startedAt = Date()
+        var activeSeconds = 0.0
+        var lastTick = Date()
         while !Task.isCancelled {
             do {
                 let poll = try await client.poll(operationId: pollId)
@@ -112,8 +124,11 @@ final class ShareImportModel: ObservableObject {
                 case "succeeded":
                     if let recipe = poll.recipe {
                         await reveal(recipe, duplicate: pollId != operationId)
-                        return
+                    } else {
+                        // Rezept inzwischen gelöscht (oder nicht mehr lesbar): nicht bis zum Zeitlimit weiterpollen.
+                        outcome = .failed(message: "Das Rezept ist nicht mehr in deinem Kochbuch. Teile den Beitrag noch einmal, um es neu zu importieren.")
                     }
+                    return
                 case "failed", "released":
                     outcome = poll.errorCode == "NO_RECIPE_CONTENT"
                         ? .noRecipe
@@ -125,14 +140,18 @@ final class ShareImportModel: ObservableObject {
                     break
                 }
             } catch ShareImportError.unauthorized {
-                handle(ShareImportError.unauthorized)
+                // Token während des Imports ersetzt (z. B. Cookly geöffnet) oder widerrufen.
+                // Der Import läuft auf dem Server weiter; die App nicht noch einmal öffnen.
+                outcome = .stillRunning
                 return
             } catch {
-                // Einzelner Netzfehler beim Pollen: weiter versuchen, bis die Zeit um ist.
+                // Einzelner Netzfehler beim Pollen (auch direkt nach der Rückkehr aus dem Hintergrund): weiter versuchen.
             }
-            let elapsed = Date().timeIntervalSince(startedAt)
-            if elapsed > 6 { slow = true }
-            if elapsed > Double(Self.maxPollSeconds) {
+            let now = Date()
+            activeSeconds += min(now.timeIntervalSince(lastTick), Self.maxTickSeconds)
+            lastTick = now
+            if activeSeconds > 6 { slow = true }
+            if activeSeconds > Self.maxPollSeconds {
                 outcome = .stillRunning
                 return
             }

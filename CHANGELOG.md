@@ -6,6 +6,17 @@
 ---
 
 
+## [1.5.1] - 17.11.2026 (Build 53, TestFlight)
+
+### 🐛 Fixes
+- **Import-Overlay:** App-Wechsel während des Imports zeigt danach das fertige Rezept statt „dauert länger“;
+  „Erneut versuchen“ nach Netzfehler meldet nicht mehr fälschlich „Schon in deinem Kochbuch“; gelöschtes Rezept
+  zeigt sofort einen Hinweis.
+- Abmelden ohne Netz hängt nicht mehr; Neuinstallation nutzt keinen alten Import-Zugang mehr.
+- Cookly während eines Overlay-Imports öffnen (Token-Erneuerung) löscht den neuen Import-Zugang nicht mehr und
+  öffnet die App nicht doppelt.
+
+
 ## [1.5.1] - 17.11.2026 (Build 52, TestFlight)
 
 ### 🚀 Verbesserungen
