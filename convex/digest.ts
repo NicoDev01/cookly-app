@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction, internalQuery } from "./_generated/server";
 import { entitlementIsValid } from "./billingModel";
-import { type DigestData, berlinTime, isDigestHour, renderDigest } from "./digestModel";
+import { type DigestData, berlinTime, isDigestHour, renderDigest, summarizeImportPaths } from "./digestModel";
 import { PROVIDER_BUDGETS, providerDailyLimit } from "./rateLimiter";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -95,6 +95,7 @@ export const collect = internalQuery({
         failed: failed.length,
         topError: topError ? { code: topError[0], count: topError[1] } : undefined,
       },
+      importPaths: summarizeImportPaths(succeeded),
       providerUsage,
       integrationFailures: [...failuresByProvider.entries()].map(([provider, { count, lastError }]) => ({
         provider,
@@ -106,6 +107,33 @@ export const collect = internalQuery({
   },
 });
 
+/** Betriebs-Mail über Resend an DIGEST_RECIPIENT (Digest und Alarme). */
+export async function sendOpsMail(mail: { subject: string; html: string; idempotencyKey: string }): Promise<"sent" | "not_configured"> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const recipient = process.env.DIGEST_RECIPIENT;
+  if (!apiKey || !recipient) {
+    console.warn("[ops-mail] RESEND_API_KEY oder DIGEST_RECIPIENT fehlt – Mail nicht versendet");
+    return "not_configured";
+  }
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json",
+      // Schützt vor Doppelversand bei Cron-Wiederholung.
+      "idempotency-key": mail.idempotencyKey,
+    },
+    body: JSON.stringify({
+      from: process.env.DIGEST_FROM || DEFAULT_FROM,
+      to: recipient.split(",").map((address) => address.trim()).filter(Boolean),
+      subject: mail.subject,
+      html: mail.html,
+    }),
+  });
+  if (!response.ok) throw new Error(`Resend ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  return "sent";
+}
+
 // Läuft per Cron um 06:00 und 07:00 UTC; nur der Lauf um 08:00 deutscher Zeit versendet.
 export const sendDaily = internalAction({
   args: { force: v.optional(v.boolean()) },
@@ -113,32 +141,19 @@ export const sendDaily = internalAction({
     const now = Date.now();
     if (!force && !isDigestHour(now)) return "skipped";
 
-    const apiKey = process.env.RESEND_API_KEY;
-    const recipient = process.env.DIGEST_RECIPIENT;
-    if (!apiKey || !recipient) {
+    if (!process.env.RESEND_API_KEY || !process.env.DIGEST_RECIPIENT) {
       console.warn("[digest] RESEND_API_KEY oder DIGEST_RECIPIENT fehlt – Digest nicht versendet");
       return "not_configured";
     }
 
     const data: DigestData = await ctx.runQuery(internal.digest.collect, { windowEnd: now });
     const { subject, html } = renderDigest(data);
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-        // Schützt vor Doppelversand bei Cron-Wiederholung; manuelle Läufe sind immer neu.
-        "idempotency-key": force ? `cookly-digest/manual/${now}` : `cookly-digest/${berlinTime(now).date}`,
-      },
-      body: JSON.stringify({
-        from: process.env.DIGEST_FROM || DEFAULT_FROM,
-        to: recipient.split(",").map((address) => address.trim()).filter(Boolean),
-        subject,
-        html,
-      }),
+    return await sendOpsMail({
+      subject,
+      html,
+      // Manuelle Läufe sind immer neu.
+      idempotencyKey: force ? `cookly-digest/manual/${now}` : `cookly-digest/${berlinTime(now).date}`,
     });
-    if (!response.ok) throw new Error(`Resend ${response.status}: ${(await response.text()).slice(0, 300)}`);
-    return "sent";
   },
 });
 

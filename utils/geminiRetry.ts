@@ -126,8 +126,9 @@ export type GeminiFallbackOptions = GeminiRetryOptions & {
 };
 
 /**
- * Probiert die Modelle der Reihe nach, jedes mit eigenen Retries. Zum nächsten Modell geht es
- * nur bei Überlastung oder fehlendem Modell; inhaltliche Fehler werden direkt weitergereicht.
+ * Probiert die Modelle der Reihe nach. Bei Überlastung oder fehlendem Modell geht es sofort zum nächsten
+ * Modell (gemessen 2026-11-17: das überlastete Modell brauchte im Neuversuch bis 10 s, das Ersatzmodell 2,5–3,7 s);
+ * erst das letzte Modell bekommt Retries mit Wartezeit. Inhaltliche Fehler werden direkt weitergereicht.
  */
 export const runWithGeminiModelFallback = async <T>(
   models: readonly string[],
@@ -137,8 +138,9 @@ export const runWithGeminiModelFallback = async <T>(
   if (models.length === 0) throw new Error("No Gemini model configured");
 
   for (const [index, model] of models.entries()) {
+    const isLast = index === models.length - 1;
     try {
-      return await runWithGeminiRetry(() => operation(model), options);
+      return await runWithGeminiRetry(() => operation(model), isLast ? options : { ...options, delaysMs: [] });
     } catch (error) {
       const next = models[index + 1];
       if (!next || !(isRetryableGeminiError(error) || isModelUnavailableError(error))) throw error;

@@ -11,6 +11,8 @@ export type DigestData = {
     expirations: number;
   };
   imports: { started: number; succeeded: number; failed: number; topError?: { code: string; count: number } };
+  /** Erfolgreiche Imports je Anbieter: wie viele über Schnellweg oder Cache liefen, Median-Dauer. */
+  importPaths?: Array<{ provider: string; succeeded: number; fast: number; cache: number; medianMs?: number }>;
   providerUsage: Array<{ provider: string; day: string; used: number; limit: number }>;
   integrationFailures: Array<{ provider: string; count: number; lastError: string }>;
   failedAccountDeletions: number;
@@ -20,6 +22,9 @@ export const DIGEST_HOUR_BERLIN = 8;
 const IMPORT_FAILURE_THRESHOLD = 0.2;
 const IMPORT_MIN_FINISHED = 5;
 const PROVIDER_USAGE_THRESHOLD = 0.8;
+const FAST_PATH_PROVIDERS = new Set(["instagram", "tiktok"]);
+const FAST_PATH_MIN_IMPORTS = 3;
+const FAST_PATH_MIN_SHARE = 0.5;
 
 const lastSundayUtc = (year: number, month: number) => {
   const lastDay = new Date(Date.UTC(year, month + 1, 0));
@@ -47,6 +52,13 @@ export function digestWarnings(data: DigestData): string[] {
   if (finished >= IMPORT_MIN_FINISHED && data.imports.failed / finished > IMPORT_FAILURE_THRESHOLD) {
     warnings.push(`Import-Fehlerquote ${percent(data.imports.failed / finished)} (${data.imports.failed} von ${finished})`);
   }
+  for (const path of data.importPaths ?? []) {
+    if (!FAST_PATH_PROVIDERS.has(path.provider)) continue;
+    const scraped = path.succeeded - path.cache;
+    if (scraped >= FAST_PATH_MIN_IMPORTS && path.fast / scraped < FAST_PATH_MIN_SHARE) {
+      warnings.push(`${path.provider}: Schnellweg nur bei ${path.fast} von ${scraped} Imports (${percent(path.fast / scraped)}), Rest über Apify`);
+    }
+  }
   for (const usage of data.providerUsage) {
     if (usage.used / usage.limit > PROVIDER_USAGE_THRESHOLD) {
       warnings.push(`${usage.provider}: Tagesbudget zu ${percent(usage.used / usage.limit)} verbraucht (${usage.used}/${usage.limit})`);
@@ -59,6 +71,27 @@ export function digestWarnings(data: DigestData): string[] {
     warnings.push(`${data.failedAccountDeletions} fehlgeschlagene Kontolöschung(en)`);
   }
   return warnings;
+}
+
+/** Erfolgreiche Import-Events (properties: provider, winner, fastPath, durationMs) je Anbieter zusammenfassen. */
+export function summarizeImportPaths(events: Array<{ properties?: unknown }>): NonNullable<DigestData["importPaths"]> {
+  const byProvider = new Map<string, { succeeded: number; fast: number; cache: number; durations: number[] }>();
+  for (const event of events) {
+    const p = (event.properties ?? {}) as { provider?: unknown; winner?: unknown; fastPath?: unknown; durationMs?: unknown };
+    if (typeof p.provider !== "string") continue;
+    const row = byProvider.get(p.provider) ?? { succeeded: 0, fast: 0, cache: 0, durations: [] };
+    row.succeeded++;
+    if (p.winner === "cache") row.cache++;
+    else if (p.winner === "page" || p.fastPath === "hit") row.fast++;
+    if (typeof p.durationMs === "number") row.durations.push(p.durationMs);
+    byProvider.set(p.provider, row);
+  }
+  return [...byProvider.entries()]
+    .sort((a, b) => b[1].succeeded - a[1].succeeded)
+    .map(([provider, { succeeded, fast, cache, durations }]) => {
+      const sorted = durations.sort((a, b) => a - b);
+      return { provider, succeeded, fast, cache, ...(sorted.length && { medianMs: sorted[Math.floor(sorted.length / 2)] }) };
+    });
 }
 
 const percent = (value: number) => `${Math.round(value * 100)} %`;
@@ -102,6 +135,10 @@ export function renderDigest(data: DigestData) {
       ["Erfolgreich", data.imports.succeeded],
       ["Fehlgeschlagen", data.imports.failed],
       ["Häufigster Fehler", data.imports.topError ? `${data.imports.topError.code} (${data.imports.topError.count}×)` : "–"],
+      ...(data.importPaths ?? []).map((path): [string, string] => [
+        path.provider,
+        `${path.succeeded} ok · Schnellweg ${path.fast} · Cache ${path.cache}${path.medianMs !== undefined ? ` · Median ${(path.medianMs / 1000).toFixed(1)} s` : ""}`,
+      ]),
     ])}`,
     `<h3>Externe Dienste (${escapeHtml(data.providerUsage[0]?.day ?? "")}, UTC)</h3>${table(
       data.providerUsage.map((usage) => [usage.provider, `${usage.used} / ${usage.limit}`]),

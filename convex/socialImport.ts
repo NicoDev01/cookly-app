@@ -72,6 +72,18 @@ export type ScrapeStats = {
   attemptsStarted: number;
   hedged: boolean;
   winner?: string;
+  /** Ergebnis des schnellen Wegs (Monitoring): hit, thin, none, error, extract_failed. */
+  fastPath?: FastPathOutcome;
+};
+
+export type FastPathOutcome = "hit" | "thin" | "none" | "error" | "extract_failed";
+
+const isNoRecipeContentError = (error: unknown) => {
+  try {
+    return JSON.parse(error instanceof Error ? error.message : String(error))?.type === "NO_RECIPE_CONTENT";
+  } catch {
+    return false;
+  }
 };
 
 export type SocialPlatform = {
@@ -107,6 +119,8 @@ export type SocialPlatform = {
    * (`shouldRetry` false), entfällt die Scraping-Phase. Sonst oder bei Fehlern (null) läuft der normale Apify-Plan.
    */
   fastCandidate?(context: { url: string; targetKey: string }): Promise<ScrapedCandidate | null>;
+  /** Mindestlänge des Texts aus dem schnellen Weg; darunter läuft Apify (das z. B. ein Reel-Transkript liefern kann). */
+  fastMinTextLength?: number;
 
   buildPrompt(text: string): string;
   buildRecoveryPrompt(text: string): string;
@@ -324,30 +338,44 @@ export async function runSocialImport(
   const shouldRetry = platform.shouldRetry ?? ((candidate: ScrapedCandidate | null) => !candidate);
 
   // --- Schneller Weg: reicht sein Text, entfällt Apify komplett --------------------------
+  // Jeder Fehlschlag (Abruf, zu wenig Text, kein Rezept erkannt) fällt still auf Apify zurück.
+  let fastPath: FastPathOutcome | undefined;
   if (platform.fastCandidate && targetKey) {
     const fastStartedAt = Date.now();
     let fast: ScrapedCandidate | null = null;
     try {
       fast = await platform.fastCandidate(context);
+      const fastText = fast ? [fast.caption, ...fast.extraTexts].join(" ").trim() : "";
+      fastPath = !fast
+        ? "none"
+        : shouldRetry(fast, context) || fastText.length < (platform.fastMinTextLength ?? 0)
+          ? "thin"
+          : "hit";
     } catch (error) {
+      fastPath = "error";
       timer.mark("fast_path_failed", { error: error instanceof Error ? error.message.slice(0, 200) : String(error) });
     }
-    const usable = !!fast && !shouldRetry(fast, context);
     timer.mark("fast_path_done", {
       durationMs: Date.now() - fastStartedAt,
-      found: !!fast,
-      usable,
+      outcome: fastPath,
       captionLength: fast?.caption.length ?? 0,
       extraTextCount: fast?.extraTexts.length ?? 0,
     });
-    if (fast && usable) {
-      return extractAndBuild(ctx, platform, args, timer, {
-        candidate: fast,
-        normalizedUrl,
-        targetKey,
-        staleExistingId,
-        stats: { scrapeMs: Date.now() - fastStartedAt, attemptsStarted: 0, hedged: false, winner: "page" },
-      });
+    if (fast && fastPath === "hit") {
+      try {
+        return await extractAndBuild(ctx, platform, args, timer, {
+          candidate: fast,
+          normalizedUrl,
+          targetKey,
+          staleExistingId,
+          stats: { scrapeMs: Date.now() - fastStartedAt, attemptsStarted: 0, hedged: false, winner: "page", fastPath },
+        });
+      } catch (error) {
+        // Gemini überlastet: Apify brächte denselben Fehler, nur später und teurer.
+        if (!isNoRecipeContentError(error)) throw error;
+        fastPath = "extract_failed";
+        timer.mark("fast_path_extract_failed");
+      }
     }
   }
 
@@ -412,6 +440,7 @@ export async function runSocialImport(
     attemptsStarted: plan.attemptsStarted,
     hedged: plan.hedged,
     winner: plan.winner?.label,
+    ...(fastPath && { fastPath }),
   };
   timer.mark("apify_phase_done", { ...stats });
 

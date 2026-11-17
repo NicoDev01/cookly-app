@@ -6,6 +6,7 @@ crons.hourly("cleanup expired storage assets", { minuteUTC: 0 }, internal.storag
 crons.hourly("cleanup expired import operations", { minuteUTC: 10 }, internal.importOperations.cleanupExpired);
 crons.daily("cleanup expired import cache", { hourUTC: 3, minuteUTC: 40 }, internal.importCache.cleanupExpired);
 crons.daily("cleanup account deletion tombstones", { hourUTC: 3, minuteUTC: 20 }, internal.accountDeletion.cleanupCompleted);
+crons.hourly("import fast path canary", { minuteUTC: 25 }, internal.importCanary.run, {});
 crons.interval("process integration jobs", { minutes: 5 }, internal.integrations.processJobs);
 crons.daily("analytics synthetic control", { hourUTC: 2, minuteUTC: 10 }, internal.analytics.syntheticCheck);
 crons.daily("mark dormant users", { hourUTC: 2, minuteUTC: 30 }, internal.growth.markDormantUsers);

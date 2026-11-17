@@ -58,19 +58,23 @@ const fetchPageSubtitle = async (url: string): Promise<string> => {
   }
 };
 
-const fastCandidateFromPage = async ({ url, targetKey }: { url: string; targetKey: string }): Promise<ScrapedCandidate | null> => {
-  if (!pageFastPathEnabled()) return null;
+/** Videoseite abrufen und auslesen (auch vom Kontroll-Check in importCanary.ts genutzt). */
+export const fetchTiktokVideoPage = async (url: string, videoId: string) => {
   const parsed = new URL(url);
   // Nur die kanonische Videoseite auf www.tiktok.com abrufen (normalizeTiktokUrl hat Kurzlinks schon aufgelöst).
-  if (parsed.protocol !== "https:" || parsed.hostname !== "www.tiktok.com" || extractTiktokVideoId(parsed.pathname) !== targetKey) return null;
-
+  if (parsed.protocol !== "https:" || parsed.hostname !== "www.tiktok.com" || extractTiktokVideoId(parsed.pathname) !== videoId) return null;
   const response = await fetch(parsed.toString(), {
     redirect: "follow",
     signal: AbortSignal.timeout(PAGE_TIMEOUT_MS),
     headers: { "User-Agent": PAGE_USER_AGENT, "Accept-Language": "de-DE,de;q=0.9,en;q=0.5" },
   });
   if (!response.ok) return null;
-  const page = parseTiktokVideoPage(await response.text(), targetKey);
+  return parseTiktokVideoPage(await response.text(), videoId);
+};
+
+const fastCandidateFromPage = async ({ url, targetKey }: { url: string; targetKey: string }): Promise<ScrapedCandidate | null> => {
+  if (!pageFastPathEnabled()) return null;
+  const page = await fetchTiktokVideoPage(url, targetKey);
   if (!page) return null;
 
   const extraTexts = (await Promise.all(page.subtitles.map(({ url: subtitleUrl }) => fetchPageSubtitle(subtitleUrl)))).filter(Boolean);

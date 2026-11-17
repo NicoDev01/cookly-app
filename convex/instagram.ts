@@ -8,8 +8,10 @@ import {
   isSupportedInstagramUrl,
   needsInstagramRedirectResolution,
 } from "./lib/socialUrls";
+import { parseInstagramEmbedPage, type InstagramEmbedData } from "./lib/instagramContent";
 import { buildExtractionPrompt, buildRecoveryPrompt, type PromptOptions } from "./socialImportPrompts";
 import { runSocialImport, type ApifyAttempt, type SocialPlatform } from "./socialImport";
+import type { ScrapedCandidate } from "./socialImportShared";
 
 const POST_ACTOR = "apify~instagram-scraper";
 const REEL_ACTOR = "apify~instagram-reel-scraper";
@@ -38,6 +40,47 @@ const normalizeInstagramUrl = async (rawUrl: string): Promise<string> => {
     // Best effort: die kanonische URL bleibt auch ohne Redirect brauchbar.
     return canonical;
   }
+};
+
+/**
+ * Schneller Weg über die öffentliche Einbettungsseite (gemessen 2026-11-17 aus Convex: 18 von 18 Beiträgen,
+ * 0,2–0,4 s statt 8–24 s mit Apify). Liefert Caption und Vorschaubild, also denselben Text wie Apify.
+ * Per Convex-Env-Variable abschaltbar; bei Fehlern, privaten Beiträgen oder zu kurzer Caption läuft Apify wie bisher.
+ */
+const embedFastPathEnabled = (): boolean =>
+  (process.env.INSTAGRAM_EMBED_FAST_PATH ?? "true").toLowerCase() !== "false";
+const EMBED_TIMEOUT_MS = 3_000;
+/** Kürzere Captions verweisen meist nur auf Video oder Bio; dann kann Apify (Reel-Transkript) mehr liefern. */
+const EMBED_MIN_CAPTION_LENGTH = 150;
+const EMBED_USER_AGENT =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+
+/** Einbettungsseite abrufen und auslesen (auch vom Kontroll-Check in importCanary.ts genutzt). */
+export const fetchInstagramEmbed = async (shortcode: string): Promise<InstagramEmbedData | null> => {
+  if (!/^[A-Za-z0-9_-]{5,64}$/.test(shortcode)) return null;
+  // Fester Host, Shortcode aus der bereits normalisierten URL.
+  const response = await fetch(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, {
+    redirect: "follow",
+    signal: AbortSignal.timeout(EMBED_TIMEOUT_MS),
+    headers: { "User-Agent": EMBED_USER_AGENT, "Accept-Language": "de-DE,de;q=0.9,en;q=0.5" },
+  });
+  if (!response.ok) return null;
+  return parseInstagramEmbedPage(await response.text(), shortcode);
+};
+
+const fastCandidateFromEmbed = async ({ url, targetKey }: { url: string; targetKey: string }): Promise<ScrapedCandidate | null> => {
+  if (!embedFastPathEnabled()) return null;
+  const embed = await fetchInstagramEmbed(targetKey);
+  if (!embed) return null;
+  return {
+    post: { shortCode: embed.shortcode, caption: embed.caption },
+    caption: embed.caption,
+    extraTexts: [],
+    imageUrl: embed.imageUrl ?? "",
+    canonicalUrl: url,
+    key: embed.shortcode,
+    score: 0,
+  };
 };
 
 const PROMPT_OPTIONS: PromptOptions = {
@@ -91,6 +134,9 @@ export const instagramPlatform: SocialPlatform = {
       { label: "fallback", actor: fallback, input: actorInput(fallback, url), timeoutMs: FALLBACK_TIMEOUT_MS },
     ];
   },
+
+  fastCandidate: fastCandidateFromEmbed,
+  fastMinTextLength: EMBED_MIN_CAPTION_LENGTH,
 
   buildPrompt: (text) => buildExtractionPrompt(PROMPT_OPTIONS, text),
   buildRecoveryPrompt: (text) => buildRecoveryPrompt(PROMPT_OPTIONS, text),

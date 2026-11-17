@@ -64,7 +64,7 @@ test('maps exhausted Gemini capacity errors to an actionable user message', () =
   );
 });
 
-test('falls back to the next Gemini model after the primary stays overloaded', async () => {
+test('falls back to the next Gemini model as soon as the primary is overloaded', async () => {
   const { runWithGeminiModelFallback } = await import('../../utils/geminiRetry.ts');
   const calls = [];
   const fallbacks = [];
@@ -75,7 +75,7 @@ test('falls back to the next Gemini model after the primary stays overloaded', a
   }, { delaysMs: [0], onFallback: ({ from, to }) => fallbacks.push(`${from}->${to}`) });
 
   assert.equal(result, 'ok:backup');
-  assert.deepEqual(calls, ['primary', 'primary', 'backup']);
+  assert.deepEqual(calls, ['primary', 'backup']);
   assert.deepEqual(fallbacks, ['primary->backup']);
 });
 

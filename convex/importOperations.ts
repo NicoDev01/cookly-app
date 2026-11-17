@@ -370,6 +370,7 @@ export const completeLink = internalMutation({
       attemptsStarted: v.number(),
       hedged: v.boolean(),
       winner: v.optional(v.string()),
+      fastPath: v.optional(v.string()),
     })),
     /** Geteilter Import-Cache (importCache.ts): Treffer oder speicherbares Ergebnis. */
     cache: v.optional(v.object({
@@ -441,6 +442,7 @@ export const completeLink = internalMutation({
         attemptCount: args.scrapeStats.attemptsStarted,
         hedged: args.scrapeStats.hedged,
         winner: args.scrapeStats.winner,
+        ...(args.scrapeStats.fastPath && { fastPath: args.scrapeStats.fastPath }),
       }),
     });
     const cacheHit = !args.recipeId && args.payload && args.cache?.hit ? args.cache : undefined;

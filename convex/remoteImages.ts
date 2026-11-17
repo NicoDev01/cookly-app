@@ -29,11 +29,17 @@ import {
   type RemoteImageProvider,
 } from "./lib/remoteImagePolicy";
 
-const USER_AGENT = "Cookly/1.0 remote-image-proxy";
-const IMAGE_HEADERS = { "User-Agent": USER_AGENT, Accept: "image/avif,image/webp,image/png,image/jpeg" };
-// Rezeptseiten liefern Bots oft eine Sperrseite; mit einem normalen Mobil-Browser-Kennzeichen kommt die echte Seite.
+// Rezeptseiten und Bild-CDNs sperren Bots oft. Chefkochs CDN (Fastly) antwortet aus Rechenzentren mit 403, solange
+// Browser-Kennzeichen oder Accept-Language fehlen (gemessen 2026-11-17); mit beidem kommen Seite und Bild.
+const BROWSER_USER_AGENT =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+const IMAGE_HEADERS = {
+  "User-Agent": BROWSER_USER_AGENT,
+  Accept: "image/avif,image/webp,image/png,image/jpeg,*/*;q=0.8",
+  "Accept-Language": "de-DE,de;q=0.9,en;q=0.5",
+};
 const PAGE_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+  "User-Agent": BROWSER_USER_AGENT,
   Accept: "text/html,application/xhtml+xml",
   "Accept-Language": "de-DE,de;q=0.9,en;q=0.5",
 };
