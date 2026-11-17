@@ -6,6 +6,16 @@
 ---
 
 
+## [1.5.1] - 17.11.2026 (Build 52, TestFlight)
+
+### 🚀 Verbesserungen
+- **Import-Overlay beim Teilen (iOS):** Teilen aus TikTok, Instagram oder dem Browser öffnet eine Cookly-Karte
+  über der App, statt zu Cookly zu wechseln. Bild, Zutaten und Schritte bauen sich wie beim Import in der App auf,
+  das Rezept wird sofort gespeichert; „Bearbeiten“ öffnet es in Cookly, Schließen per X oder Wischen.
+- Ohne Anmeldung oder bei Problemen öffnet Teilen wie bisher die App.
+
+
+
 ## [1.5.1] - 14.11.2026 (Build 51, TestFlight)
 
 ### 🚀 Verbesserungen

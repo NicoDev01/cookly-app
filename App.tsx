@@ -15,6 +15,7 @@ import { initDeepLinkHandler, removeDeepLinkHandler } from './services/deepLinkH
 import { useBackButton } from './hooks/useBackButton';
 import { useHistoryTracking } from './hooks/useBackNavigation';
 import { clearOfflineCache, getCachedUser, hasStoredAuthToken, rememberUser } from './services/offlineCache';
+import { clearShareToken, ensureShareToken } from './services/shareAuth';
 import { useOutboxSync } from './hooks/useOfflineWrites';
 import { useCurrentWeekCache } from './hooks/useCurrentWeekCache';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -111,6 +112,7 @@ const ProtectedLayout: React.FC = () => {
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       clearOfflineCache();
+      void clearShareToken();
       navigate(loggedOutHome(), { replace: true });
     }
   }, [isLoading, isAuthenticated, navigate]);
@@ -118,6 +120,12 @@ const ProtectedLayout: React.FC = () => {
   useEffect(() => {
     if (currentUser) rememberUser(currentUser);
   }, [currentUser]);
+  // Import-Zugang für das Teilen-Overlay (nur iOS): pro Konto und Gerät, erneuert nach 30 Tagen.
+  const issueShareToken = useMutation(api.shareTokens.issue);
+  const currentUserId = currentUser?._id;
+  useEffect(() => {
+    if (currentUserId) void ensureShareToken(currentUserId, issueShareToken);
+  }, [currentUserId, issueShareToken]);
   // Offline Gemerktes nachreichen, erst wenn der Server diesen Nutzer bestätigt hat (rememberUser lief davor).
   useOutboxSync(currentUser?._id);
   // Wochenplan offline verfügbar halten, ohne dass der Tab offen sein muss.

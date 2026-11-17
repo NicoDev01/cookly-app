@@ -547,6 +547,19 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_user", ["userId"]),
 
+  // Import-Token der iOS-Share-Extension: pro Gerät, nur der SHA-256-Hash, gilt nur für /share/*.
+  shareTokens: defineTable({
+    userId: v.id("users"),
+    tokenHash: v.string(),
+    installationId: v.string(),
+    createdAt: v.number(),
+    lastUsedAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_tokenHash", ["tokenHash"])
+    .index("by_user", ["userId"])
+    .index("by_expiresAt", ["expiresAt"]),
+
   accountDeletionRequests: defineTable({
     userId: v.id("users"),
     requestId: v.string(),

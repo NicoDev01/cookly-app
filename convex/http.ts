@@ -1,10 +1,12 @@
 import { httpRouter } from "convex/server";
-import { httpAction } from "./_generated/server";
+import { httpAction, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import Stripe from "stripe";
 import { auth } from "./auth";
 import type { Id } from "./_generated/dataModel";
 import { sanitizeConvexValue } from "./billingModel";
+import { detectImportTarget } from "../utils/importTarget";
+import { hashShareToken, mapShareImportError, parseBearerToken, parseShareImportBody, sharedTextFor } from "./lib/shareImport";
 
 const http = httpRouter();
 let stripeWebhookClient: Stripe | null = null;
@@ -328,6 +330,61 @@ http.route({
       console.error("RevenueCat webhook processing failed", error);
       return new Response("Webhook processing failed", { status: 500 });
     }
+  }),
+});
+
+// iOS-Share-Extension: eigener Import-Token pro Gerät (shareTokens.ts), gilt nur für diese Routen.
+const unauthorized = () => json({ error: "UNAUTHORIZED" }, 401);
+
+async function shareTokenUser(ctx: ActionCtx, request: Request) {
+  const token = parseBearerToken(request.headers.get("authorization"));
+  if (!token) return null;
+  return await ctx.runQuery(internal.shareTokens.resolve, { tokenHash: await hashShareToken(token) });
+}
+
+http.route({
+  path: "/share/import",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const session = await shareTokenUser(ctx, request);
+    if (!session) return unauthorized();
+    const body = parseShareImportBody(await request.json().catch(() => null));
+    if (!body) return json({ error: "INVALID_REQUEST" }, 400);
+    const target = detectImportTarget(sharedTextFor(body));
+    if (!target) return json({ error: "INVALID_IMPORT_URL" }, 400);
+
+    await ctx.runMutation(internal.shareTokens.touch, { tokenId: session.tokenId });
+    try {
+      const started = await ctx.runMutation(internal.importOperations.startImportForUser, {
+        userId: session.userId,
+        operationId: body.operationId,
+        provider: target.provider,
+        url: target.url,
+      });
+      // Dedupe liefert eine bestehende Operation: Die Extension pollt dann deren ID.
+      return json({
+        operationId: started.operationId,
+        status: started.status,
+        duplicate: started.operationId !== body.operationId,
+      });
+    } catch (error) {
+      const mapped = mapShareImportError(error);
+      if (mapped.status >= 500 && mapped.body.error === "IMPORT_FAILED") console.error("share import start failed", error);
+      return json(mapped.body, mapped.status);
+    }
+  }),
+});
+
+http.route({
+  path: "/share/import",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const session = await shareTokenUser(ctx, request);
+    if (!session) return unauthorized();
+    const operationId = new URL(request.url).searchParams.get("operationId");
+    if (!operationId || operationId.length > 64) return json({ error: "INVALID_REQUEST" }, 400);
+    const result = await ctx.runQuery(internal.importOperations.getForShare, { userId: session.userId, operationId });
+    return result ? json(result) : json({ error: "NOT_FOUND" }, 404);
   }),
 });
 

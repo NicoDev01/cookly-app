@@ -192,6 +192,7 @@ export const deleteLocalData = internalMutation({
         () => ctx.db.query("categoryStats").withIndex("by_user_category", (q) => q.eq("userId", userId)).take(DELETE_BATCH_SIZE),
         () => ctx.db.query("importOperations").withIndex("by_user_operation", (q) => q.eq("userId", userId)).take(DELETE_BATCH_SIZE),
         () => ctx.db.query("appleSignInTokens").withIndex("by_user", (q) => q.eq("userId", userId)).take(DELETE_BATCH_SIZE),
+        () => ctx.db.query("shareTokens").withIndex("by_user", (q) => q.eq("userId", userId)).take(DELETE_BATCH_SIZE),
       ];
       for (const loadBatch of loadBatches) {
         const rows = await loadBatch();

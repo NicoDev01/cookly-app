@@ -413,6 +413,19 @@ const RecipePage: React.FC = () => {
     setEditingRecipe(null);
   }, []);
 
+  // „Bearbeiten“ im Teilen-Overlay (cookly://recipe/<id>?edit=1): Bearbeiten-Dialog direkt öffnen.
+  const editRequested = new URLSearchParams(location.search).get('edit') === '1';
+  const { data: recipeToEdit } = useCachedQuery<Recipe | null>(
+    api.recipes.get,
+    editRequested && routeRecipeId ? { id: routeRecipeId } : 'skip',
+    `recipe-${routeRecipeId}`,
+  );
+  useEffect(() => {
+    if (!editRequested || !recipeToEdit) return;
+    handleEdit(recipeToEdit);
+    navigate(location.pathname, { replace: true, state: location.state });
+  }, [editRequested, recipeToEdit, handleEdit, navigate, location.pathname, location.state]);
+
   const handleSidebarToggle = useCallback(() => handleBack(), [handleBack]);
 
   if (!recipeIds) {

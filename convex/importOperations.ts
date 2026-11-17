@@ -1,8 +1,8 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { v } from "convex/values";
+import { v, type ObjectType } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalAction, internalMutation, mutation, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { FREE_LIMITS } from "./constants";
 import { consumeProviderBudget, consumeRateLimit, type ProviderBudget, type RateLimitBucket } from "./rateLimiter";
 import { adjustCategoryCount, ensureCategoryExists, insertRecipe } from "./recipes";
@@ -12,6 +12,7 @@ import { importErrorCode } from "./lib/importErrors";
 import { deleteTrackedAsset } from "./storageAssets";
 import { cachedImportResult } from "./importCache";
 import { websiteCacheKey } from "./lib/importCacheKey";
+import { buildSharePollResponse } from "./lib/shareImport";
 
 const provider = v.union(
   v.literal("instagram"),
@@ -181,131 +182,160 @@ async function trackImport(
   await ctx.scheduler.runAfter(0, internal.integrations.processJobs);
 }
 
+const startImportArgs = {
+  operationId: v.string(),
+  provider,
+  url: v.optional(v.string()),
+  sourceAssetId: v.optional(v.id("_storage")),
+  /** Weitere Seiten desselben Rezepts (nur photo_scan), in Lesereihenfolge nach sourceAssetId. */
+  extraAssetIds: v.optional(v.array(v.id("_storage"))),
+  input: v.optional(photoFallback),
+  /** Nur photo_scan: Rezept direkt auf dem Server anlegen, auch wenn die App inzwischen geschlossen ist. */
+  saveRecipe: v.optional(v.boolean()),
+  /** Nur mit saveRecipe: hochgeladenes Gerichtsfoto (purpose recipe_image) als Rezeptbild. */
+  dishImage: v.optional(dishImage),
+  runImmediately: v.optional(v.boolean()),
+};
+type StartImportArgs = ObjectType<typeof startImportArgs>;
+
+/**
+ * Gemeinsamer Start eines Imports für App (startImport) und Share-Extension (startImportForUser):
+ * Limit, Rate-Limit, Provider-Budget, Dedupe und Analytics nur hier.
+ */
+async function startLinkImportCore(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  args: StartImportArgs,
+  startedProperties: Record<string, unknown> = {},
+) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(args.operationId)) {
+    throw new Error("INVALID_OPERATION_ID");
+  }
+
+  const existing = await ctx.db.query("importOperations")
+    .withIndex("by_user_operation", (q) => q.eq("userId", userId).eq("operationId", args.operationId))
+    .unique();
+  if (existing) return { operationId: existing.operationId, status: existing.status, userId };
+
+  const feature: Feature = args.provider === "photo_scan" ? "photo_scans" : "link_imports";
+  if (feature === "photo_scans" && !args.sourceAssetId) throw new Error("PHOTO_ASSET_REQUIRED");
+  if (feature === "link_imports" && !args.url) throw new Error("IMPORT_URL_REQUIRED");
+
+  const sourceUrl = args.url ? normalizeUrl(args.url) : undefined;
+  if (sourceUrl && args.provider !== "photo_scan" && !supportsProvider(args.provider, sourceUrl)) {
+    throw new Error("INVALID_IMPORT_URL");
+  }
+  const extraAssetIds = args.extraAssetIds ?? [];
+  if (extraAssetIds.length && feature !== "photo_scans") throw new Error("PHOTO_PAGES_ONLY_FOR_SCAN");
+  if (extraAssetIds.length > MAX_EXTRA_PHOTO_PAGES) throw new Error("TOO_MANY_PHOTO_PAGES");
+  if (feature === "photo_scans") {
+    const pages = [args.sourceAssetId!, ...extraAssetIds];
+    if (new Set(pages).size !== pages.length) throw new Error("DUPLICATE_PHOTO_PAGE");
+    for (const storageId of pages) {
+      const asset = await ctx.db.query("storageAssets")
+        .withIndex("by_storageId", (q) => q.eq("storageId", storageId))
+        .first();
+      if (!asset || asset.userId !== userId || asset.purpose !== "photo_scan" || asset.state !== "pending") {
+        throw new Error("STORAGE_NOT_OWNED");
+      }
+    }
+  }
+  if ((args.saveRecipe || args.dishImage) && feature !== "photo_scans") throw new Error("PHOTO_SAVE_ONLY_FOR_SCAN");
+  if (args.dishImage) {
+    if (!args.saveRecipe) throw new Error("DISH_IMAGE_REQUIRES_SAVE");
+    const dish = await ctx.db.query("storageAssets")
+      .withIndex("by_storageId", (q) => q.eq("storageId", args.dishImage!.storageId))
+      .first();
+    if (!dish || dish.userId !== userId || dish.purpose !== "recipe_image" || dish.state !== "pending") {
+      throw new Error("STORAGE_NOT_OWNED");
+    }
+  }
+  const canonicalUrlHash = sourceUrl ? await urlHash(sourceUrl) : undefined;
+  if (canonicalUrlHash) {
+    const duplicates = await ctx.db.query("importOperations")
+      .withIndex("by_user_canonicalUrlHash", (q) => q.eq("userId", userId).eq("canonicalUrlHash", canonicalUrlHash))
+      .order("desc")
+      .take(10);
+    for (const duplicate of duplicates) {
+      if (duplicate.status === "reserved" || duplicate.status === "running") {
+        return { operationId: duplicate.operationId, status: duplicate.status, userId };
+      }
+      // Ein erfolgreicher Import zählt nur als Duplikat, solange sein Rezept noch existiert –
+      // sonst würde ein gelöschtes Rezept nie erneut importiert werden können.
+      if (duplicate.status === "succeeded" && duplicate.resultRecipeId && await ctx.db.get(duplicate.resultRecipeId)) {
+        return { operationId: duplicate.operationId, status: duplicate.status, userId };
+      }
+    }
+  }
+
+  const user = await ctx.db.get(userId);
+  if (!user) throw new Error("NOT_AUTHENTICATED");
+  const active = (await Promise.all(["reserved", "running"].map((status) =>
+    ctx.db.query("importOperations")
+      .withIndex("by_user_feature_status", (q) => q.eq("userId", userId).eq("feature", feature).eq("status", status as "reserved" | "running"))
+      .collect()
+  ))).flat().length;
+  const current = usage(user, feature);
+  const featureLimit = limit(feature);
+  if ((user.subscription ?? "free") === "free" && current + active >= featureLimit) {
+    throw new Error(JSON.stringify({ type: "LIMIT_REACHED", feature, current, limit: featureLimit }));
+  }
+
+  const bucket = (args.provider === "photo_scan" ? "photo" : args.provider) as RateLimitBucket;
+  const rate = await consumeRateLimit(ctx, userId, bucket);
+  if (!rate.allowed) throw new Error(JSON.stringify({ type: "RATE_LIMIT_EXCEEDED", resetAt: rate.resetAt }));
+  for (const cost of providerCosts(args.provider)) {
+    if (!await consumeProviderBudget(ctx, cost)) {
+      throw new Error(JSON.stringify({ type: "PROVIDER_BUDGET_EXHAUSTED" }));
+    }
+  }
+
+  const now = Date.now();
+  const operationId = await ctx.db.insert("importOperations", {
+    userId,
+    operationId: args.operationId,
+    provider: args.provider,
+    feature,
+    canonicalUrlHash,
+    sourceUrl,
+    sourceAssetId: args.sourceAssetId,
+    extraSourceAssetIds: extraAssetIds.length ? extraAssetIds : undefined,
+    saveRecipe: args.saveRecipe || undefined,
+    dishImage: args.dishImage,
+    input: args.input,
+    status: "reserved",
+    createdAt: now,
+    updatedAt: now,
+    expiresAt: now + ACTIVE_TTL_MS,
+  });
+  const operation = await ctx.db.get(operationId);
+  if (operation) await trackImport(ctx, user, operation, "import_started", startedProperties);
+  if (!args.runImmediately) {
+    await ctx.scheduler.runAfter(0, internal.importOperations.runImport, { userId, operationId: args.operationId });
+  }
+  return { operationId: args.operationId, status: "reserved" as const, userId };
+}
+
 export const startImport = mutation({
-  args: {
-    operationId: v.string(),
-    provider,
-    url: v.optional(v.string()),
-    sourceAssetId: v.optional(v.id("_storage")),
-    /** Weitere Seiten desselben Rezepts (nur photo_scan), in Lesereihenfolge nach sourceAssetId. */
-    extraAssetIds: v.optional(v.array(v.id("_storage"))),
-    input: v.optional(photoFallback),
-    /** Nur photo_scan: Rezept direkt auf dem Server anlegen, auch wenn die App inzwischen geschlossen ist. */
-    saveRecipe: v.optional(v.boolean()),
-    /** Nur mit saveRecipe: hochgeladenes Gerichtsfoto (purpose recipe_image) als Rezeptbild. */
-    dishImage: v.optional(dishImage),
-    runImmediately: v.optional(v.boolean()),
-  },
+  args: startImportArgs,
   handler: async (ctx, args) => {
     const authUserId = await getAuthUserId(ctx);
     if (!authUserId) throw new Error("NOT_AUTHENTICATED");
     const userId = await resolveUserId(ctx, authUserId);
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(args.operationId)) {
-      throw new Error("INVALID_OPERATION_ID");
-    }
+    return await startLinkImportCore(ctx, userId, args);
+  },
+});
 
-    const existing = await ctx.db.query("importOperations")
-      .withIndex("by_user_operation", (q) => q.eq("userId", userId).eq("operationId", args.operationId))
-      .unique();
-    if (existing) return { operationId: existing.operationId, status: existing.status, userId };
-
-    const feature: Feature = args.provider === "photo_scan" ? "photo_scans" : "link_imports";
-    if (feature === "photo_scans" && !args.sourceAssetId) throw new Error("PHOTO_ASSET_REQUIRED");
-    if (feature === "link_imports" && !args.url) throw new Error("IMPORT_URL_REQUIRED");
-
-    const sourceUrl = args.url ? normalizeUrl(args.url) : undefined;
-    if (sourceUrl && args.provider !== "photo_scan" && !supportsProvider(args.provider, sourceUrl)) {
-      throw new Error("INVALID_IMPORT_URL");
-    }
-    const extraAssetIds = args.extraAssetIds ?? [];
-    if (extraAssetIds.length && feature !== "photo_scans") throw new Error("PHOTO_PAGES_ONLY_FOR_SCAN");
-    if (extraAssetIds.length > MAX_EXTRA_PHOTO_PAGES) throw new Error("TOO_MANY_PHOTO_PAGES");
-    if (feature === "photo_scans") {
-      const pages = [args.sourceAssetId!, ...extraAssetIds];
-      if (new Set(pages).size !== pages.length) throw new Error("DUPLICATE_PHOTO_PAGE");
-      for (const storageId of pages) {
-        const asset = await ctx.db.query("storageAssets")
-          .withIndex("by_storageId", (q) => q.eq("storageId", storageId))
-          .first();
-        if (!asset || asset.userId !== userId || asset.purpose !== "photo_scan" || asset.state !== "pending") {
-          throw new Error("STORAGE_NOT_OWNED");
-        }
-      }
-    }
-    if ((args.saveRecipe || args.dishImage) && feature !== "photo_scans") throw new Error("PHOTO_SAVE_ONLY_FOR_SCAN");
-    if (args.dishImage) {
-      if (!args.saveRecipe) throw new Error("DISH_IMAGE_REQUIRES_SAVE");
-      const dish = await ctx.db.query("storageAssets")
-        .withIndex("by_storageId", (q) => q.eq("storageId", args.dishImage!.storageId))
-        .first();
-      if (!dish || dish.userId !== userId || dish.purpose !== "recipe_image" || dish.state !== "pending") {
-        throw new Error("STORAGE_NOT_OWNED");
-      }
-    }
-    const canonicalUrlHash = sourceUrl ? await urlHash(sourceUrl) : undefined;
-    if (canonicalUrlHash) {
-      const duplicates = await ctx.db.query("importOperations")
-        .withIndex("by_user_canonicalUrlHash", (q) => q.eq("userId", userId).eq("canonicalUrlHash", canonicalUrlHash))
-        .order("desc")
-        .take(10);
-      for (const duplicate of duplicates) {
-        if (duplicate.status === "reserved" || duplicate.status === "running") {
-          return { operationId: duplicate.operationId, status: duplicate.status, userId };
-        }
-        // Ein erfolgreicher Import zählt nur als Duplikat, solange sein Rezept noch existiert –
-        // sonst würde ein gelöschtes Rezept nie erneut importiert werden können.
-        if (duplicate.status === "succeeded" && duplicate.resultRecipeId && await ctx.db.get(duplicate.resultRecipeId)) {
-          return { operationId: duplicate.operationId, status: duplicate.status, userId };
-        }
-      }
-    }
-
-    const user = await ctx.db.get(userId);
-    if (!user) throw new Error("NOT_AUTHENTICATED");
-    const active = (await Promise.all(["reserved", "running"].map((status) =>
-      ctx.db.query("importOperations")
-        .withIndex("by_user_feature_status", (q) => q.eq("userId", userId).eq("feature", feature).eq("status", status as "reserved" | "running"))
-        .collect()
-    ))).flat().length;
-    const current = usage(user, feature);
-    const featureLimit = limit(feature);
-    if ((user.subscription ?? "free") === "free" && current + active >= featureLimit) {
-      throw new Error(JSON.stringify({ type: "LIMIT_REACHED", feature, current, limit: featureLimit }));
-    }
-
-    const bucket = (args.provider === "photo_scan" ? "photo" : args.provider) as RateLimitBucket;
-    const rate = await consumeRateLimit(ctx, userId, bucket);
-    if (!rate.allowed) throw new Error(JSON.stringify({ type: "RATE_LIMIT_EXCEEDED", resetAt: rate.resetAt }));
-    for (const cost of providerCosts(args.provider)) {
-      if (!await consumeProviderBudget(ctx, cost)) {
-        throw new Error(JSON.stringify({ type: "PROVIDER_BUDGET_EXHAUSTED" }));
-      }
-    }
-
-    const now = Date.now();
-    const operationId = await ctx.db.insert("importOperations", {
-      userId,
-      operationId: args.operationId,
-      provider: args.provider,
-      feature,
-      canonicalUrlHash,
-      sourceUrl,
-      sourceAssetId: args.sourceAssetId,
-      extraSourceAssetIds: extraAssetIds.length ? extraAssetIds : undefined,
-      saveRecipe: args.saveRecipe || undefined,
-      dishImage: args.dishImage,
-      input: args.input,
-      status: "reserved",
-      createdAt: now,
-      updatedAt: now,
-      expiresAt: now + ACTIVE_TTL_MS,
-    });
-    const operation = await ctx.db.get(operationId);
-    if (operation) await trackImport(ctx, user, operation, "import_started");
-    if (!args.runImmediately) {
-      await ctx.scheduler.runAfter(0, internal.importOperations.runImport, { userId, operationId: args.operationId });
-    }
-    return { operationId: args.operationId, status: "reserved" as const, userId };
+/** HTTP-Pfad der iOS-Share-Extension (http.ts, /share/import): nur Link-Imports, Nutzer aus dem Share-Token. */
+export const startImportForUser = internalMutation({
+  args: {
+    userId: v.id("users"),
+    operationId: v.string(),
+    provider: v.union(v.literal("instagram"), v.literal("facebook"), v.literal("tiktok"), v.literal("website")),
+    url: v.string(),
+  },
+  handler: async (ctx, { userId, ...args }) => {
+    return await startLinkImportCore(ctx, userId, args, { entryPoint: "share_extension" });
   },
 });
 
@@ -329,6 +359,22 @@ export const get = query({
       previewImageUrl: operation.previewImageUrl,
       updatedAt: operation.updatedAt,
     };
+  },
+});
+
+/** Status für das Polling der Share-Extension; nur Operationen dieses Nutzers, Rezeptdetails nur für das eine Ergebnis. */
+export const getForShare = internalQuery({
+  args: { userId: v.id("users"), operationId: v.string() },
+  handler: async (ctx, args) => {
+    const operation = await ctx.db.query("importOperations")
+      .withIndex("by_user_operation", (q) => q.eq("userId", args.userId).eq("operationId", args.operationId))
+      .unique();
+    if (!operation) return null;
+    const recipe = operation.status === "succeeded" && operation.resultRecipeId ? await ctx.db.get(operation.resultRecipeId) : null;
+    const ownRecipe = recipe && recipe.userId === args.userId ? recipe : null;
+    const storageId = ownRecipe?.imageThumbStorageId ?? ownRecipe?.imageStorageId;
+    const imageUrl = (storageId ? await ctx.storage.getUrl(storageId) : null) ?? ownRecipe?.image ?? null;
+    return buildSharePollResponse(operation, ownRecipe, imageUrl);
   },
 });
 

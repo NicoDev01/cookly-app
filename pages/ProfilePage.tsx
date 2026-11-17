@@ -16,6 +16,7 @@ import { createBillingClient } from '../services/billing';
 import { resetAnalyticsIdentity } from "../services/analytics";
 import { ensureNotificationPermission } from "../utils/notifications";
 import { forgetAccountOnDevice } from "../components/onboarding/onboardingData";
+import { clearShareToken, revokeShareToken } from "../services/shareAuth";
 
 export const ProfilePage: React.FC = () => {
   const { signOut } = useAuthActions();
@@ -33,6 +34,7 @@ export const ProfilePage: React.FC = () => {
   const ensureBillingUserId = useMutation(api.users.ensureBillingUserId);
   const requestAccountDeletion = useAction(api.accountDeletion.requestDeletion);
   const updateNotificationPreference = useMutation(api.users.updateNotificationPreference);
+  const revokeShareTokenMutation = useMutation(api.shareTokens.revoke);
   const deletionRequestIdRef = useRef<string | null>(null);
 
   const billing = useMemo(() => createBillingClient(currentUser?.billingUserId, {
@@ -59,6 +61,7 @@ export const ProfilePage: React.FC = () => {
 
   const handleSignOut = async () => {
     resetAnalyticsIdentity();
+    await revokeShareToken(revokeShareTokenMutation);
     await signOut();
     navigate('/sign-in', { replace: true });
   };
@@ -95,6 +98,7 @@ export const ProfilePage: React.FC = () => {
       clearLogs();
       resetAnalyticsIdentity();
       forgetAccountOnDevice();
+      await clearShareToken();
       await signOut();
       navigate('/welcome', { replace: true });
       return true;

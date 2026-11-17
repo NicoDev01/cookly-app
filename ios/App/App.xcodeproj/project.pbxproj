@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		ABF17401768DE0D16BBDBFED /* ShareCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDBEA2EE288473185E676A9F /* ShareCredentials.swift */; };
+		155F0D5873104D67B5BA8D55 /* ShareCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDBEA2EE288473185E676A9F /* ShareCredentials.swift */; };
+		1A2742C718117B6497A6693D /* ShareAuthPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8751539ECAACCB0277F9077C /* ShareAuthPlugin.swift */; };
+		C726EEF83FB57471AFB77AE9 /* CooklyBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27B2B71AC382329D51DB7017 /* CooklyBridgeViewController.swift */; };
+		7BABA9892C015D9FB9EB84A9 /* ShareImportClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDFF25010B0582B3B5F08DA8 /* ShareImportClient.swift */; };
+		1E19EEECD3CEC001182D4B0A /* ShareImportModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43FAE9D917B093FB83CB5FF6 /* ShareImportModel.swift */; };
+		0A2315DDD0908E1AEF4150CA /* ShareOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E63973DCC2E49EB466CAC3A /* ShareOverlayView.swift */; };
 		0ECAFE655F5E36E1C8E698B3 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 281CE3ADDB5F9AE4D1DCA87B /* ShareViewController.swift */; };
 		1D6E1C87CBA9B1A85FFE57B3 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 310378F440AE030D150BE8CD /* Foundation.framework */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
@@ -47,6 +54,12 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		CDBEA2EE288473185E676A9F /* ShareCredentials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCredentials.swift; sourceTree = "<group>"; };
+		8751539ECAACCB0277F9077C /* ShareAuthPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareAuthPlugin.swift; sourceTree = "<group>"; };
+		27B2B71AC382329D51DB7017 /* CooklyBridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CooklyBridgeViewController.swift; sourceTree = "<group>"; };
+		CDFF25010B0582B3B5F08DA8 /* ShareImportClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareImportClient.swift; sourceTree = "<group>"; };
+		43FAE9D917B093FB83CB5FF6 /* ShareImportModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareImportModel.swift; sourceTree = "<group>"; };
+		5E63973DCC2E49EB466CAC3A /* ShareOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareOverlayView.swift; sourceTree = "<group>"; };
 		281CE3ADDB5F9AE4D1DCA87B /* ShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		310378F440AE030D150BE8CD /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
@@ -102,6 +115,7 @@
 				504EC3051FED79650016851F /* Products */,
 				C5CD362E593D6D6539C94DB2 /* Frameworks */,
 				F2AE768AFA55D1C0C562D5B2 /* CooklyShare */,
+				3DE2915C8B7836F8EDA7F323 /* Shared */,
 			);
 			sourceTree = "<group>";
 		};
@@ -127,6 +141,8 @@
 				50B271D01FEDC1A000F3C39B /* public */,
 				3D2F9F43D340B085DB0FAB2B /* PrivacyInfo.xcprivacy */,
 				CF53640711FA40DAACEC8FB3 /* SceneDelegate.swift */,
+				8751539ECAACCB0277F9077C /* ShareAuthPlugin.swift */,
+				27B2B71AC382329D51DB7017 /* CooklyBridgeViewController.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -143,10 +159,21 @@
 			isa = PBXGroup;
 			children = (
 				281CE3ADDB5F9AE4D1DCA87B /* ShareViewController.swift */,
+				CDFF25010B0582B3B5F08DA8 /* ShareImportClient.swift */,
+				43FAE9D917B093FB83CB5FF6 /* ShareImportModel.swift */,
+				5E63973DCC2E49EB466CAC3A /* ShareOverlayView.swift */,
 				F3BB751A8B92DF439E182900 /* Info.plist */,
 				E86DFCBA54214AD7AC9956FC /* CooklyShare.entitlements */,
 			);
 			path = CooklyShare;
+			sourceTree = "<group>";
+		};
+		3DE2915C8B7836F8EDA7F323 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				CDBEA2EE288473185E676A9F /* ShareCredentials.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -275,6 +302,9 @@
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				B9FB743A1D5A424F9D991D6D /* SceneDelegate.swift in Sources */,
+				ABF17401768DE0D16BBDBFED /* ShareCredentials.swift in Sources */,
+				1A2742C718117B6497A6693D /* ShareAuthPlugin.swift in Sources */,
+				C726EEF83FB57471AFB77AE9 /* CooklyBridgeViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -283,6 +313,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				0ECAFE655F5E36E1C8E698B3 /* ShareViewController.swift in Sources */,
+				155F0D5873104D67B5BA8D55 /* ShareCredentials.swift in Sources */,
+				7BABA9892C015D9FB9EB84A9 /* ShareImportClient.swift in Sources */,
+				1E19EEECD3CEC001182D4B0A /* ShareImportModel.swift in Sources */,
+				0A2315DDD0908E1AEF4150CA /* ShareOverlayView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -323,7 +357,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = CooklyShare/CooklyShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 51;
+				CURRENT_PROJECT_VERSION = 52;
 				DEVELOPMENT_TEAM = X8LYFSW6LP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CooklyShare/Info.plist;
@@ -459,7 +493,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 51;
+				CURRENT_PROJECT_VERSION = 52;
 				DEVELOPMENT_TEAM = X8LYFSW6LP;
 				INFOPLIST_FILE = App/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.food-and-drink";
@@ -484,7 +518,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 51;
+				CURRENT_PROJECT_VERSION = 52;
 				DEVELOPMENT_TEAM = X8LYFSW6LP;
 				INFOPLIST_FILE = App/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.food-and-drink";
@@ -508,7 +542,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = CooklyShare/CooklyShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 51;
+				CURRENT_PROJECT_VERSION = 52;
 				DEVELOPMENT_TEAM = X8LYFSW6LP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CooklyShare/Info.plist;
