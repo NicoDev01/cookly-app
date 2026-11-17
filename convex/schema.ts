@@ -248,6 +248,8 @@ export default defineSchema({
       v.literal("photo_scan"),
     ),
     feature: v.union(v.literal("link_imports"), v.literal("photo_scans")),
+    // Start über das Teilen-Overlay (iOS-Share-Extension); steht an allen Import-Events für Digest und PostHog.
+    entryPoint: v.optional(v.literal("share_extension")),
     canonicalUrlHash: v.optional(v.string()),
     sourceUrl: v.optional(v.string()),
     sourceAssetId: v.optional(v.id("_storage")),

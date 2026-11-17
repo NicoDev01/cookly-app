@@ -139,9 +139,10 @@ async function trackImport(
   user: Doc<"users">,
   operation: Doc<"importOperations">,
   name: string,
-  properties: Record<string, unknown> = {},
+  extraProperties: Record<string, unknown> = {},
 ) {
   const occurredAt = Date.now();
+  const properties = operation.entryPoint ? { entryPoint: operation.entryPoint, ...extraProperties } : extraProperties;
   await storeAnalyticsEvent(ctx, {
     eventId: `${operation.operationId}:${name}`,
     name,
@@ -206,7 +207,7 @@ async function startLinkImportCore(
   ctx: MutationCtx,
   userId: Id<"users">,
   args: StartImportArgs,
-  startedProperties: Record<string, unknown> = {},
+  entryPoint?: "share_extension",
 ) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(args.operationId)) {
     throw new Error("INVALID_OPERATION_ID");
@@ -296,6 +297,7 @@ async function startLinkImportCore(
     operationId: args.operationId,
     provider: args.provider,
     feature,
+    entryPoint,
     canonicalUrlHash,
     sourceUrl,
     sourceAssetId: args.sourceAssetId,
@@ -309,7 +311,7 @@ async function startLinkImportCore(
     expiresAt: now + ACTIVE_TTL_MS,
   });
   const operation = await ctx.db.get(operationId);
-  if (operation) await trackImport(ctx, user, operation, "import_started", startedProperties);
+  if (operation) await trackImport(ctx, user, operation, "import_started");
   if (!args.runImmediately) {
     await ctx.scheduler.runAfter(0, internal.importOperations.runImport, { userId, operationId: args.operationId });
   }
@@ -335,7 +337,7 @@ export const startImportForUser = internalMutation({
     url: v.string(),
   },
   handler: async (ctx, { userId, ...args }) => {
-    return await startLinkImportCore(ctx, userId, args, { entryPoint: "share_extension" });
+    return await startLinkImportCore(ctx, userId, args, "share_extension");
   },
 });
 

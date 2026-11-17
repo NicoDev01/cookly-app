@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { berlinOffsetHours, berlinTime, digestWarnings, isDigestHour, renderDigest } from "../convex/digestModel.ts";
+import { berlinOffsetHours, berlinTime, countShareExtension, digestWarnings, isDigestHour, renderDigest } from "../convex/digestModel.ts";
 
 const base = () => ({
   windowStart: Date.UTC(2026, 9, 21, 6),
@@ -34,6 +34,14 @@ test("quiet day renders without warnings", () => {
   const { subject, html } = renderDigest(base());
   assert.match(subject, /Alles ok – Cookly 2026-10-22/);
   assert.match(html, /App Store 1/);
+});
+
+test("share overlay imports get their own row, only when there were any", () => {
+  const events = [{ properties: { entryPoint: "share_extension" } }, { properties: { provider: "tiktok" } }, {}];
+  assert.equal(countShareExtension(events), 1);
+  assert.doesNotMatch(renderDigest(base()).html, /Teilen-Overlay/);
+  const { html } = renderDigest({ ...base(), shareExtension: { started: 3, succeeded: 2, failed: 1 } });
+  assert.match(html, /Davon Teilen-Overlay.*3 gestartet · 2 ok · 1 Fehler/);
 });
 
 test("thresholds produce warnings", () => {

@@ -140,8 +140,11 @@ test("app and share extension start imports through the same core", () => {
   // Ein Kern für beide Wege, nur die Analytics unterscheiden sich.
   assert.equal(operations.match(/startLinkImportCore\(ctx, userId, args/g)?.length, 2);
   assert.match(operations, /return await startLinkImportCore\(ctx, userId, args\);/);
-  assert.match(operations, /startLinkImportCore\(ctx, userId, args, \{ entryPoint: "share_extension" \}\)/);
-  assert.match(operations, /trackImport\(ctx, user, operation, "import_started", startedProperties\)/);
+  assert.match(operations, /startLinkImportCore\(ctx, userId, args, "share_extension"\)/);
+  // entryPoint steht an der Operation und damit an allen Import-Events (gestartet, erfolgreich, fehlgeschlagen).
+  assert.match(operations, /feature,\n\s+entryPoint,/);
+  assert.match(operations, /const properties = operation\.entryPoint \? \{ entryPoint: operation\.entryPoint, \.\.\.extraProperties \}/);
+  assert.match(schema, /entryPoint: v\.optional\(v\.literal\("share_extension"\)\)/);
   assert.match(operations, /export const startImportForUser = internalMutation/);
   // Polling liest nur die eigene Operation.
   assert.match(operations, /getForShare = internalQuery[\s\S]*?by_user_operation", \(q\) => q\.eq\("userId", args\.userId\)/);

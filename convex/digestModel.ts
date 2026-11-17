@@ -11,6 +11,8 @@ export type DigestData = {
     expirations: number;
   };
   imports: { started: number; succeeded: number; failed: number; topError?: { code: string; count: number } };
+  /** Davon über das Teilen-Overlay (iOS-Share-Extension) gestartet. */
+  shareExtension?: { started: number; succeeded: number; failed: number };
   /** Erfolgreiche Imports je Anbieter: wie viele über Schnellweg oder Cache liefen, Median-Dauer. */
   importPaths?: Array<{ provider: string; succeeded: number; fast: number; cache: number; medianMs?: number }>;
   providerUsage: Array<{ provider: string; day: string; used: number; limit: number }>;
@@ -94,6 +96,11 @@ export function summarizeImportPaths(events: Array<{ properties?: unknown }>): N
     });
 }
 
+/** Import-Events mit `entryPoint: "share_extension"` (Teilen-Overlay) zählen. */
+export function countShareExtension(events: Array<{ properties?: unknown }>) {
+  return events.filter((event) => (event.properties as { entryPoint?: unknown } | undefined)?.entryPoint === "share_extension").length;
+}
+
 const percent = (value: number) => `${Math.round(value * 100)} %`;
 
 const escapeHtml = (value: string) =>
@@ -135,6 +142,9 @@ export function renderDigest(data: DigestData) {
       ["Erfolgreich", data.imports.succeeded],
       ["Fehlgeschlagen", data.imports.failed],
       ["Häufigster Fehler", data.imports.topError ? `${data.imports.topError.code} (${data.imports.topError.count}×)` : "–"],
+      ...(data.shareExtension?.started
+        ? [["Davon Teilen-Overlay", `${data.shareExtension.started} gestartet · ${data.shareExtension.succeeded} ok · ${data.shareExtension.failed} Fehler`] as [string, string]]
+        : []),
       ...(data.importPaths ?? []).map((path): [string, string] => [
         path.provider,
         `${path.succeeded} ok · Schnellweg ${path.fast} · Cache ${path.cache}${path.medianMs !== undefined ? ` · Median ${(path.medianMs / 1000).toFixed(1)} s` : ""}`,

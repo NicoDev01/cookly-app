@@ -130,9 +130,15 @@ final class ShareImportModel: ObservableObject {
                     }
                     return
                 case "failed", "released":
-                    outcome = poll.errorCode == "NO_RECIPE_CONTENT"
-                        ? .noRecipe
-                        : .failed(message: "Das Rezept konnte nicht geladen werden. In Cookly kannst du es noch einmal versuchen.")
+                    // Fehlercodes aus convex/lib/importErrors.ts; der Button darunter heißt „Erneut versuchen“.
+                    switch poll.errorCode {
+                    case "NO_RECIPE_CONTENT":
+                        outcome = .noRecipe
+                    case "API_UNAVAILABLE":
+                        outcome = .failed(message: "Die KI ist gerade ausgelastet. Bitte versuch es gleich noch einmal.")
+                    default:
+                        outcome = .failed(message: "Das Rezept konnte nicht geladen werden. Bitte versuch es noch einmal.")
+                    }
                     return
                 case "running":
                     setStep(poll.phase == "extracting" ? .extract : .scrape)

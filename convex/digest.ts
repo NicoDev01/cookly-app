@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction, internalQuery } from "./_generated/server";
 import { entitlementIsValid } from "./billingModel";
-import { type DigestData, berlinTime, isDigestHour, renderDigest, summarizeImportPaths } from "./digestModel";
+import { type DigestData, berlinTime, countShareExtension, isDigestHour, renderDigest, summarizeImportPaths } from "./digestModel";
 import { PROVIDER_BUDGETS, providerDailyLimit } from "./rateLimiter";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -94,6 +94,11 @@ export const collect = internalQuery({
         succeeded: succeeded.length,
         failed: failed.length,
         topError: topError ? { code: topError[0], count: topError[1] } : undefined,
+      },
+      shareExtension: {
+        started: countShareExtension(started),
+        succeeded: countShareExtension(succeeded),
+        failed: countShareExtension(failed),
       },
       importPaths: summarizeImportPaths(succeeded),
       providerUsage,
