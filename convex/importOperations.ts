@@ -8,7 +8,7 @@ import { consumeProviderBudget, consumeRateLimit, type ProviderBudget, type Rate
 import { adjustCategoryCount, ensureCategoryExists, insertRecipe } from "./recipes";
 import { storeAnalyticsEvent } from "./analytics";
 import { enqueueIntegration } from "./integrations";
-import { importErrorCode } from "./lib/importErrors";
+import { importErrorCode, importErrorDetail } from "./lib/importErrors";
 import { deleteTrackedAsset } from "./storageAssets";
 import { cachedImportResult } from "./importCache";
 import { websiteCacheKey } from "./lib/importCacheKey";
@@ -140,6 +140,8 @@ async function trackImport(
   operation: Doc<"importOperations">,
   name: string,
   extraProperties: Record<string, unknown> = {},
+  /** Nur im eigenen Convex-Event, nicht an PostHog oder Brevo (z. B. Fehlertexte). */
+  internalProperties: Record<string, unknown> = {},
 ) {
   const occurredAt = Date.now();
   const properties = operation.entryPoint ? { entryPoint: operation.entryPoint, ...extraProperties } : extraProperties;
@@ -156,6 +158,7 @@ async function trackImport(
       provider: operation.provider,
       durationMs: occurredAt - operation.createdAt,
       ...properties,
+      ...internalProperties,
     },
     occurredAt,
   });
@@ -588,7 +591,7 @@ export const completePhoto = internalMutation({
 });
 
 export const fail = internalMutation({
-  args: { userId: v.id("users"), operationId: v.string(), errorCode: v.string() },
+  args: { userId: v.id("users"), operationId: v.string(), errorCode: v.string(), errorDetail: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const operation = await ctx.db.query("importOperations")
       .withIndex("by_user_operation", (q) => q.eq("userId", args.userId).eq("operationId", args.operationId))
@@ -599,7 +602,9 @@ export const fail = internalMutation({
     if (operation.dishImage) await deleteTrackedAsset(ctx, args.userId, operation.dishImage.storageId).catch(() => undefined);
     await ctx.db.patch(operation._id, { status: "failed", errorCode: args.errorCode, input: undefined, sourceUrl: undefined, sourceAssetId: undefined, extraSourceAssetIds: undefined, dishImage: undefined, updatedAt: now, expiresAt: now + RESULT_TTL_MS });
     const user = await ctx.db.get(args.userId);
-    if (user) await trackImport(ctx, user, operation, "import_failed", { errorCode: args.errorCode });
+    if (user) {
+      await trackImport(ctx, user, operation, "import_failed", { errorCode: args.errorCode }, args.errorDetail ? { errorDetail: args.errorDetail } : {});
+    }
   },
 });
 
@@ -643,7 +648,10 @@ export const runImport = internalAction({
       });
       await ctx.runMutation(internal.importOperations.completeLink, { ...args, ...result });
     } catch (error) {
-      await ctx.runMutation(internal.importOperations.fail, { ...args, errorCode: importErrorCode(error) });
+      const errorCode = importErrorCode(error);
+      const errorDetail = errorCode === "IMPORT_FAILED" ? importErrorDetail(error) : undefined;
+      if (errorDetail) console.error("import failed without error code", { provider: operation.provider, errorDetail });
+      await ctx.runMutation(internal.importOperations.fail, { ...args, errorCode, errorDetail });
     }
   },
 });

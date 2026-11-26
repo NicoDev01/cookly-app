@@ -16,3 +16,12 @@ export function importErrorCode(error: unknown): string {
   const code = message.match(/\b(INVALID_[A-Z_]+|NO_RECIPE[A-Z_]*|NOT_AUTHENTICATED)\b/);
   return code ? code[1].slice(0, 80) : "IMPORT_FAILED";
 }
+
+/**
+ * Gekürzter Originaltext für Fehler ohne eigenen Code (IMPORT_FAILED), damit die Ursache später noch
+ * nachvollziehbar ist. Links fallen weg: Sie enthalten die geteilte Beitrags-URL des Nutzers.
+ */
+export function importErrorDetail(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/https?:\/\/\S+/g, "<url>").replace(/\s+/g, " ").trim().slice(0, 300);
+}
