@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import { getPasswordSignInErrorMessage } from './authErrors.ts';
+import { duplicateEmailCandidates } from '../convex/lib/authEmail.ts';
 
 test('maps invalid account ids to a neutral credential error', () => {
   const error = new Error('[CONVEX A(auth:signIn)] Server Error\nUncaught Error: InvalidAccountId');
@@ -29,4 +31,23 @@ test('uses a generic login message for unknown sign-in failures', () => {
     getPasswordSignInErrorMessage(new Error('Unexpected backend failure')),
     'Anmeldung fehlgeschlagen. Bitte versuche es erneut.',
   );
+});
+
+test('generates case-normalized and gmail/googlemail duplicate email candidates', () => {
+  assert.deepEqual(
+    duplicateEmailCandidates(' Max.Muster@Googlemail.com '),
+    ['Max.Muster@Googlemail.com', 'max.muster@googlemail.com', 'max.muster@gmail.com'],
+  );
+  assert.deepEqual(
+    duplicateEmailCandidates('test@gmail.com'),
+    ['test@gmail.com', 'test@googlemail.com'],
+  );
+  assert.deepEqual(duplicateEmailCandidates('alice@web.de'), ['alice@web.de']);
+});
+
+test('convex auth blocks duplicate password signups via ConvexError', () => {
+  const source = readFileSync('convex/auth.ts', 'utf8');
+  assert.match(source, /afterUserCreatedOrUpdated/);
+  assert.match(source, /duplicateEmailCandidates/);
+  assert.match(source, /throw new ConvexError\("Account already exists"\)/);
 });

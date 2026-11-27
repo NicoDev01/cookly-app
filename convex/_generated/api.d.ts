@@ -34,6 +34,7 @@ import type * as integrations from "../integrations.js";
 import type * as legacyImport from "../legacyImport.js";
 import type * as lib_apifyRun from "../lib/apifyRun.js";
 import type * as lib_attemptPlan from "../lib/attemptPlan.js";
+import type * as lib_authEmail from "../lib/authEmail.js";
 import type * as lib_authUser from "../lib/authUser.js";
 import type * as lib_importCacheKey from "../lib/importCacheKey.js";
 import type * as lib_importCanaryModel from "../lib/importCanaryModel.js";
@@ -102,6 +103,7 @@ declare const fullApi: ApiFromModules<{
   legacyImport: typeof legacyImport;
   "lib/apifyRun": typeof lib_apifyRun;
   "lib/attemptPlan": typeof lib_attemptPlan;
+  "lib/authEmail": typeof lib_authEmail;
   "lib/authUser": typeof lib_authUser;
   "lib/importCacheKey": typeof lib_importCacheKey;
   "lib/importCanaryModel": typeof lib_importCanaryModel;

@@ -19,7 +19,7 @@ type StructuredError = {
 const INVALID_CREDENTIALS_MESSAGE = 'E-Mail oder Passwort ist falsch.';
 const RATE_LIMIT_MESSAGE = 'Zu viele fehlgeschlagene Anmeldeversuche. Bitte warte kurz und versuche es erneut.';
 const NETWORK_MESSAGE = 'Keine Verbindung. Prüfe dein Internet und versuche es erneut.';
-const DUPLICATE_SIGNUP_MESSAGE = 'Diese E-Mail ist bereits registriert. Möchtest du dich anmelden?';
+const DUPLICATE_SIGNUP_MESSAGE = 'Mit dieser E-Mail gibt es bereits ein Konto. Bitte melde dich stattdessen an (z. B. mit Google, Apple oder deinem Passwort).';
 const INVALID_CODE_MESSAGE = 'Der Code ist ungültig oder abgelaufen. Fordere einen neuen an.';
 
 const fallbackByContext: Record<UserErrorContext, string> = {

@@ -12,11 +12,11 @@ test('strips Convex wrapper noise before matching the actual auth error', () => 
 });
 
 test('maps duplicate signup/account errors to a sign-in hint', () => {
-  const error = new Error('Server Error: Uncaught Error: account already exists');
+  const error = new Error('[CONVEX A(auth:signIn)] [Request ID: req] Uncaught ConvexError: "Account already exists"');
 
   assert.equal(
     getUserErrorMessage(error, 'auth-signup'),
-    'Diese E-Mail ist bereits registriert. Möchtest du dich anmelden?'
+    'Mit dieser E-Mail gibt es bereits ein Konto. Bitte melde dich stattdessen an (z. B. mit Google, Apple oder deinem Passwort).'
   );
 });
 
