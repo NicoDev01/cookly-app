@@ -89,7 +89,8 @@ export const recordStripeEvent = internalMutation({
           .filter((item) => item.clickedAt && item.clickedAt > Date.now() - 30 * 86_400_000)
           .sort((a, b) => (b.clickedAt ?? 0) - (a.clickedAt ?? 0))[0]
       : undefined;
-    if (args.eventType === "invoice.paid") {
+    // Testmodus-Zahlungen sind kein Umsatz.
+    if (args.eventType === "invoice.paid" && data.livemode === true) {
       const existing = await ctx.db.query("revenueEvents").withIndex("by_externalId", (q) => q.eq("externalId", args.eventId)).unique();
       if (!existing) {
         const gross = Number(data.amount_paid ?? 0) / 100;
@@ -130,7 +131,8 @@ export const recordRevenueCatEvent = internalMutation({
   handler: async (ctx, args) => {
     const event = ((args.payload as { event?: unknown }).event ?? args.payload) as Record<string, unknown>;
     const id = String(event.id ?? "");
-    if (!id) return;
+    // Sandbox-Käufe (TestFlight, Testkonten) sind kein Umsatz.
+    if (!id || event.environment !== "PRODUCTION") return;
     const existing = await ctx.db.query("revenueEvents").withIndex("by_externalId", (q) => q.eq("externalId", id)).unique();
     const billingUserId = typeof event.app_user_id === "string" ? event.app_user_id : undefined;
     const user = billingUserId
